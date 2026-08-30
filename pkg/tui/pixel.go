@@ -8,6 +8,7 @@ import (
 	"image/color"
 	_ "image/jpeg"
 	"image/png"
+	"os"
 	"strings"
 )
 
@@ -24,7 +25,22 @@ const (
 
 // DetectTerminalProtocol returns the safest, highest-fidelity protocol for TUI layouts.
 func DetectTerminalProtocol() GraphicProtocol {
+	if isKittySupported() {
+		return ProtocolKitty
+	}
 	return ProtocolHalfBlock
+}
+
+// isKittySupported returns true if the current terminal supports Kitty graphics protocol (Ghostty, Kitty, WezTerm).
+func isKittySupported() bool {
+	termProg := strings.ToLower(os.Getenv("TERM_PROGRAM"))
+	if strings.Contains(termProg, "ghostty") || strings.Contains(termProg, "kitty") || strings.Contains(termProg, "wezterm") {
+		return true
+	}
+	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
+		return true
+	}
+	return false
 }
 
 // EncodeImageToProtocol converts an image to the chosen graphics protocol escape sequence.

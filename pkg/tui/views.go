@@ -1,11 +1,14 @@
 package tui
 
 import (
+	"bytes"
 	"fmt"
+	"image"
 	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dagalp/r19dev-scraper/pkg/cache"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -75,17 +78,42 @@ func (m Model) renderFullscreenCover() string {
 	// Calculate maximum possible resolution for full terminal screen
 	fullW := max(20, m.width-4)
 	fullH := max(10, m.height-5)
-	var coverANSI string
+	var coverDisplay string
+	isKitty := isKittySupported() || m.protocol == ProtocolKitty
 
-	if hasMeta && movie != nil {
-		targetURL := movie.CoverURL
-		if targetURL == "" {
-			targetURL = movie.PosterURL
+	if isKitty {
+		// Native Kitty GPU Graphics Protocol for Ghostty / Kitty (100% Real Full HD Photo)
+		if localBytes, found := cache.Default().GetImage(cur.ID); found && len(localBytes) > 0 {
+			img, _, err := image.Decode(bytes.NewReader(localBytes))
+			if err == nil {
+				pngBytes, pErr := ensurePNGBytes(img, localBytes)
+				if pErr == nil {
+					bounds := img.Bounds()
+					srcW := bounds.Dx()
+					srcH := bounds.Dy()
+					cellW := fullW
+					cellH := cellW * srcH / (srcW * 2)
+					if cellH > fullH {
+						cellH = fullH
+						cellW = cellH * (srcW * 2) / srcH
+					}
+					coverDisplay = EncodeKitty(pngBytes, cellW, cellH)
+				}
+			}
 		}
-		// If cached locally, render instantly in ultra high resolution
-		coverANSI, _ = FetchAndRenderCover(cur.ID, targetURL, m.protocol, fullW, fullH)
-	} else {
-		coverANSI = lipgloss.NewStyle().Foreground(mutedColor).Render("Press Enter on table to scrape metadata & cover first")
+	}
+
+	// Fallback to Truecolor Half-Block if not Kitty or if local image is being fetched
+	if coverDisplay == "" {
+		if hasMeta && movie != nil {
+			targetURL := movie.CoverURL
+			if targetURL == "" {
+				targetURL = movie.PosterURL
+			}
+			coverDisplay, _ = FetchAndRenderCover(cur.ID, targetURL, m.protocol, fullW, fullH)
+		} else {
+			coverDisplay = lipgloss.NewStyle().Foreground(mutedColor).Render("Press Enter on table to scrape metadata & cover first")
+		}
 	}
 
 	imageBox := lipgloss.Place(
@@ -93,15 +121,20 @@ func (m Model) renderFullscreenCover() string {
 		m.height-3,
 		lipgloss.Center,
 		lipgloss.Center,
-		coverANSI,
+		coverDisplay,
 	)
+
+	protoLabel := "Truecolor Half-Block"
+	if isKitty {
+		protoLabel = "Ghostty Kitty GPU (100% Full HD Native)"
+	}
 
 	footer := lipgloss.JoinHorizontal(
 		lipgloss.Left,
 		footerKeyStyle.Render("v / Esc"), footerDescStyle.Render("Back"),
 		footerKeyStyle.Render("o"), footerDescStyle.Render("macOS Preview"),
 		footerKeyStyle.Render("←/→ or ↑/↓"), footerDescStyle.Render("Prev/Next"),
-		footerKeyStyle.Render("q"), footerDescStyle.Render("Quit"),
+		statProto.Render("🎨 "+protoLabel),
 	)
 
 	return lipgloss.JoinVertical(

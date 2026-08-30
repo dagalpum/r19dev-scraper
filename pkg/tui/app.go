@@ -296,7 +296,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "v", "esc", "enter", "backspace":
 				m.isFullscreenCover = false
-				return m, nil
+				return m, clearKittyCmd()
 
 			case "o":
 				if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
@@ -311,6 +311,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 					m.adjustScroll()
+					cmds = append(cmds, clearKittyCmd())
 					if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
 						if _, ok := m.metadataCache[curMatch.ID]; !ok {
 							cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
@@ -323,6 +324,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor < len(m.matches)-1 {
 					m.cursor++
 					m.adjustScroll()
+					cmds = append(cmds, clearKittyCmd())
 					if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
 						if _, ok := m.metadataCache[curMatch.ID]; !ok {
 							cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
@@ -490,6 +492,13 @@ func (m Model) getCoverTargetDims() (int, int) {
 	}
 
 	return targetW, targetH
+}
+
+func clearKittyCmd() tea.Cmd {
+	return func() tea.Msg {
+		fmt.Print("\x1b_Ga=d,d=a\x1b\\")
+		return nil
+	}
 }
 
 func openFileInDefaultApp(filePath string) error {

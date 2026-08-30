@@ -62,12 +62,10 @@ var (
 	selectedItemStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(lipgloss.Color("#FFFFFF")).
-				Background(lipgloss.Color("#45475A")).
-				Padding(0, 1)
+				Background(lipgloss.Color("#45475A"))
 
 	normalItemStyle = lipgloss.NewStyle().
-			Foreground(textLightColor).
-			Padding(0, 1)
+			Foreground(textLightColor)
 
 	// Text helpers
 	labelStyle = lipgloss.NewStyle().

@@ -69,31 +69,31 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderBody() string {
-	// Exact frame math:
-	// panelStyle: Border(2) + Padding(2) = 4 cols
-	// detailPanelStyle: Border(2) + Padding(2) = 4 cols
-	// Space between panels = 1 col
-	// Total horizontal overhead = 4 + 4 + 1 = 9 cols
+	// Frame overhead:
+	// Left panel: Border(2) + Padding(2) = 4 cols
+	// Right panel: Border(2) + Padding(2) = 4 cols
+	// Separator space between panels = 1 col
+	// Total horizontal overhead = 9 cols
 	totalInnerWidth := m.width - 9
 	if totalInnerWidth < 40 {
 		totalInnerWidth = 40
 	}
 
 	tableInnerWidth := int(float64(totalInnerWidth) * 0.52)
-	if tableInnerWidth < 28 {
-		tableInnerWidth = 28
+	if tableInnerWidth < 30 {
+		tableInnerWidth = 30
 	}
 	detailInnerWidth := totalInnerWidth - tableInnerWidth
 	if detailInnerWidth < 24 {
 		detailInnerWidth = 24
 	}
 
-	// Height math:
-	// Header: 1 blank + 1 topBar + 1 divider = 3 rows
-	// Footer: 1 status + 1 hints = 2 rows
+	// Height overhead:
+	// Header: 3 rows (top margin, content, divider)
+	// Footer: 2 rows (status, hints)
 	// Panel vertical borders: 2 rows
 	// Safety margin: 1 row
-	// Total vertical overhead = 3 + 2 + 2 + 1 = 8 rows
+	// Total vertical overhead = 8 rows
 	bodyInnerHeight := m.height - 8
 	if bodyInnerHeight < 5 {
 		bodyInnerHeight = 5
@@ -122,11 +122,12 @@ func (m Model) renderTable(innerWidth, innerHeight int) string {
 
 	var rows []string
 
-	// Calculate column widths safely
-	// ST (4: "🟢 ") + JAV ID (12) + PART (5) + SIZE (6) + spaces (5) = 32 cols
+	// Calculate name column width with a comfortable buffer
+	// Columns: cursor(2) + icon(2) + space(1) + name(W) + space(1) + ID(12) + space(1) + Part(4) + space(1) + Size(6) = W + 28
+	// We set W = innerWidth - 32 so total line width is innerWidth - 4 (never wraps)
 	nameColWidth := max(8, innerWidth-32)
 	headerRow := lipgloss.NewStyle().Bold(true).Foreground(accentColor).Render(
-		fmt.Sprintf("  %-3s %-*s %-12s %-5s %-6s", "ST", nameColWidth, "FILE NAME", "JAV ID", "PART", "SIZE"),
+		fmt.Sprintf("  %-3s %-*s %-12s %-4s %-6s", "ST", nameColWidth, "FILE NAME", "JAV ID", "PART", "SIZE"),
 	)
 	rows = append(rows, headerRow, lipgloss.NewStyle().Foreground(mutedColor).Render(strings.Repeat("─", innerWidth)))
 
@@ -142,6 +143,11 @@ func (m Model) renderTable(innerWidth, innerHeight int) string {
 
 	for i := m.scrollOffset; i < endIdx; i++ {
 		match := m.matches[i]
+		prefix := "  "
+		if i == m.cursor {
+			prefix = "▶ "
+		}
+
 		statusIcon := "🟢"
 		if match.ID == "" {
 			statusIcon = "🔴"
@@ -162,17 +168,17 @@ func (m Model) renderTable(innerWidth, innerHeight int) string {
 		if match.IsMultiPart {
 			partStr = fmt.Sprintf("P%d", match.PartNumber)
 		}
-		partPadded := runewidth.FillRight(partStr, 5)
+		partPadded := runewidth.FillRight(partStr, 4)
 
 		sizeStr := fmt.Sprintf("%.0fM", match.File.SizeMB())
 		sizePadded := runewidth.FillRight(sizeStr, 6)
 
-		rowContent := fmt.Sprintf("%s %s %s %s %s", statusIcon, paddedName, idPadded, partPadded, sizePadded)
+		rowLine := fmt.Sprintf("%s%s %s %s %s %s", prefix, statusIcon, paddedName, idPadded, partPadded, sizePadded)
 
 		if i == m.cursor {
-			rows = append(rows, selectedItemStyle.Width(innerWidth).Render("▶ "+rowContent))
+			rows = append(rows, selectedItemStyle.Width(innerWidth).Render(rowLine))
 		} else {
-			rows = append(rows, normalItemStyle.Width(innerWidth).Render("  "+rowContent))
+			rows = append(rows, normalItemStyle.Width(innerWidth).Render(rowLine))
 		}
 	}
 
@@ -187,7 +193,7 @@ func (m Model) renderDetail(innerWidth, innerHeight int) string {
 
 	var lines []string
 
-	lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("📄 File:"), valueStyle.Render(truncateDisplay(filepath.Base(cur.File.Name), innerWidth-10))))
+	lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("📄 File:"), valueStyle.Render(truncateDisplay(filepath.Base(cur.File.Name), innerWidth-12))))
 	lines = append(lines, fmt.Sprintf("%s %s (%.0f MB, %s)", labelStyle.Render("JAV ID:"), lipgloss.NewStyle().Bold(true).Foreground(secondaryColor).Render(cur.ID), cur.File.SizeMB(), cur.MatchedBy))
 	if cur.IsMultiPart {
 		lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Multi-part:"), valueStyle.Render(fmt.Sprintf("Part %d (%s)", cur.PartNumber, cur.PartSuffix))))
@@ -207,9 +213,9 @@ func (m Model) renderDetail(innerWidth, innerHeight int) string {
 			}
 		}
 
-		lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Title:"), valueStyle.Render(truncateDisplay(movie.Title, innerWidth-8))))
+		lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Title:"), valueStyle.Render(truncateDisplay(movie.Title, innerWidth-10))))
 		if movie.Maker != "" {
-			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Studio:"), valueStyle.Render(truncateDisplay(movie.Maker, innerWidth-9))))
+			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Studio:"), valueStyle.Render(truncateDisplay(movie.Maker, innerWidth-11))))
 		}
 		if movie.ReleaseDate != "" {
 			lines = append(lines, fmt.Sprintf("%s %s (%d min)", labelStyle.Render("Release:"), valueStyle.Render(movie.ReleaseDate), movie.RuntimeMinutes))
@@ -220,15 +226,15 @@ func (m Model) renderDetail(innerWidth, innerHeight int) string {
 			for _, act := range movie.Actresses {
 				actNames = append(actNames, act.Name)
 			}
-			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Cast:"), lipgloss.NewStyle().Foreground(lipgloss.Color("#F38BA8")).Render(truncateDisplay(strings.Join(actNames, ", "), innerWidth-7))))
+			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Cast:"), lipgloss.NewStyle().Foreground(lipgloss.Color("#F38BA8")).Render(truncateDisplay(strings.Join(actNames, ", "), innerWidth-9))))
 		}
 
 		if len(movie.Genres) > 0 {
-			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Genres:"), valueStyle.Render(truncateDisplay(strings.Join(movie.Genres, ", "), innerWidth-9))))
+			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Genres:"), valueStyle.Render(truncateDisplay(strings.Join(movie.Genres, ", "), innerWidth-11))))
 		}
 	} else if errStr, hasErr := m.scrapeErrors[cur.ID]; hasErr {
 		lines = append(lines, lipgloss.NewStyle().Foreground(errorColor).Render("❌ Not Found on R18.dev"))
-		lines = append(lines, lipgloss.NewStyle().Foreground(mutedColor).Render(truncateDisplay(errStr, innerWidth)))
+		lines = append(lines, lipgloss.NewStyle().Foreground(mutedColor).Render(truncateDisplay(errStr, innerWidth-2)))
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(warningColor).Render("Tip: Press 'e' to edit/override ID"))
 	} else if m.isScraping {
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, m.spinner.View(), " Fetching metadata from R18.dev..."))

@@ -28,34 +28,10 @@ func DetectTerminalProtocol() GraphicProtocol {
 }
 
 // EncodeImageToProtocol converts an image to the chosen graphics protocol escape sequence.
+// In Bubble Tea / Lipgloss layouts, 24-bit Truecolor Half-Block (▀) is the safest and highest-fidelity
+// format because it integrates natively with terminal cells without breaking box borders or leaking escape sequences.
 func EncodeImageToProtocol(img image.Image, rawBytes []byte, proto GraphicProtocol, widthCols, heightRows int) (string, error) {
-	if proto == ProtocolAuto {
-		proto = DetectTerminalProtocol()
-	}
-
-	switch proto {
-	case ProtocolKitty:
-		pngBytes, err := ensurePNGBytes(img, rawBytes)
-		if err != nil {
-			return ImageToANSI(img, widthCols, heightRows), nil
-		}
-		return EncodeKitty(pngBytes, widthCols, heightRows), nil
-
-	case ProtocolITerm2:
-		return EncodeITerm2(rawBytes, widthCols, heightRows), nil
-
-	case ProtocolSixel:
-		sixelStr, err := EncodeSixel(img, widthCols*8, heightRows*16)
-		if err != nil {
-			return ImageToANSI(img, widthCols, heightRows), nil
-		}
-		return sixelStr, nil
-
-	case ProtocolHalfBlock:
-		fallthrough
-	default:
-		return ImageToANSI(img, widthCols, heightRows), nil
-	}
+	return ImageToANSI(img, widthCols, heightRows), nil
 }
 
 // EncodeITerm2 wraps image bytes in iTerm2's inline image escape protocol.

@@ -116,11 +116,7 @@ func (m Model) ActiveProtocol() GraphicProtocol {
 
 // ProtocolDisplayString returns a user-friendly label of the current graphics mode.
 func (m Model) ProtocolDisplayString() string {
-	active := m.ActiveProtocol()
-	if m.protocol == ProtocolAuto {
-		return fmt.Sprintf("AUTO (%s)", strings.ToUpper(string(active)))
-	}
-	return strings.ToUpper(string(m.protocol))
+	return "Truecolor"
 }
 
 // Init triggers initial directory scanning and spinner tick.

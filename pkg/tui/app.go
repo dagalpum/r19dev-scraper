@@ -29,6 +29,10 @@ type scrapeDoneMsg struct {
 	err   error
 }
 
+type scanChunkMsg struct {
+	chunk []scanner.FileInfo
+}
+
 type coverDoneMsg struct {
 	id   string
 	ansi string
@@ -62,6 +66,7 @@ type Model struct {
 	isScraping     bool
 	isCoverLoading bool
 	showCover      bool
+	scanChan       chan []scanner.FileInfo
 	statusMessage  string
 	keys           KeyMap
 	spinner        spinner.Model
@@ -88,7 +93,7 @@ func New(targetDir, lang string, proto GraphicProtocol) (*Model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(accentColor)
 
-	return &Model{
+	model := &Model{
 		targetDir:     targetDir,
 		language:      lang,
 		protocol:      proto,
@@ -103,7 +108,9 @@ func New(targetDir, lang string, proto GraphicProtocol) (*Model, error) {
 		spinner:       s,
 		editModal:     NewEditModal(),
 		isScanning:    true,
-	}, nil
+	}
+	model.scanChan, _ = model.startScanCmd()
+	return model, nil
 }
 
 // ActiveProtocol returns the currently active terminal graphics protocol.
@@ -123,14 +130,32 @@ func (m Model) ProtocolDisplayString() string {
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
-		m.startScanCmd(),
+		listenScanChunk(m.scanChan),
 	)
 }
 
-func (m Model) startScanCmd() tea.Cmd {
+func (m Model) startScanCmd() (chan []scanner.FileInfo, tea.Cmd) {
+	ch := make(chan []scanner.FileInfo, 20)
+	go func() {
+		defer close(ch)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		// Stream in small chunks of 5 files for immediate responsiveness
+		_, _ = m.scanner.ScanStream(ctx, m.targetDir, 5, ch)
+	}()
+	return ch, listenScanChunk(ch)
+}
+
+func listenScanChunk(ch <-chan []scanner.FileInfo) tea.Cmd {
 	return func() tea.Msg {
-		res, err := m.scanner.Scan(m.targetDir)
-		return scanDoneMsg{result: res, err: err}
+		if ch == nil {
+			return scanDoneMsg{}
+		}
+		chunk, ok := <-ch
+		if !ok {
+			return scanDoneMsg{}
+		}
+		return scanChunkMsg{chunk: chunk}
 	}
 }
 
@@ -177,21 +202,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
+	case scanChunkMsg:
+		if len(msg.chunk) > 0 {
+			isFirstChunk := len(m.files) == 0
+			newMatches := m.matcher.Match(msg.chunk)
+			m.files = append(m.files, msg.chunk...)
+			m.matches = append(m.matches, newMatches...)
+			m.recomputeStats()
+			m.statusMessage = fmt.Sprintf("🔍 Discovered %d files (%d matched)...", len(m.files), m.matchedCount)
+
+			// Auto-fetch metadata for the first item as soon as it appears
+			if isFirstChunk && len(m.matches) > 0 && m.matches[0].ID != "" {
+				cmds = append(cmds, m.scrapeMovieCmd(m.matches[0].ID))
+			}
+		}
+		if m.scanChan != nil {
+			cmds = append(cmds, listenScanChunk(m.scanChan))
+		}
+
 	case scanDoneMsg:
 		m.isScanning = false
-		if msg.err != nil {
-			m.statusMessage = "❌ Scan error: " + msg.err.Error()
-			return m, nil
+		m.scanChan = nil
+		// Re-run matching on full slice for directory-wide multi-part sibling validation
+		if len(m.files) > 0 {
+			m.matches = m.matcher.Match(m.files)
+			m.recomputeStats()
 		}
-		m.files = msg.result.Files
-		m.matches = m.matcher.Match(m.files)
-		m.recomputeStats()
 		m.statusMessage = fmt.Sprintf("✅ Scan complete: %d files found (%d matched)", len(m.files), m.matchedCount)
-
-		// Auto-fetch metadata for the first item if available
-		if len(m.matches) > 0 && m.matches[0].ID != "" {
-			cmds = append(cmds, m.scrapeMovieCmd(m.matches[0].ID))
-		}
 
 	case scrapeDoneMsg:
 		m.isScraping = false
@@ -363,9 +400,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "r":
+			m.files = nil
+			m.matches = nil
+			m.matchedCount = 0
+			m.unmatchedCount = 0
+			m.cursor = 0
+			m.scrollOffset = 0
 			m.isScanning = true
 			m.statusMessage = "🔄 Rescanning directory..."
-			cmds = append(cmds, m.startScanCmd())
+			var cmd tea.Cmd
+			m.scanChan, cmd = m.startScanCmd()
+			cmds = append(cmds, cmd)
 		}
 	}
 

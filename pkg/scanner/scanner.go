@@ -65,6 +65,14 @@ func (s *Scanner) Scan(rootPath string) (*ScanResult, error) {
 
 // ScanContext traverses rootPath with context cancellation and timeout support.
 func (s *Scanner) ScanContext(ctx context.Context, rootPath string) (*ScanResult, error) {
+	return s.ScanStream(ctx, rootPath, 0, nil)
+}
+
+// ScanStream walks rootPath and streams discovered files in batches of chunkSize (e.g. 5-10 files) to the provided channel.
+func (s *Scanner) ScanStream(ctx context.Context, rootPath string, chunkSize int, out chan<- []FileInfo) (*ScanResult, error) {
+	if chunkSize <= 0 {
+		chunkSize = 10
+	}
 	absPath, err := filepath.Abs(rootPath)
 	if err != nil {
 		return nil, err
@@ -91,13 +99,17 @@ func (s *Scanner) ScanContext(ctx context.Context, rootPath string) (*ScanResult
 			return result, nil
 		}
 		if s.shouldIncludeFile(absPath, lstat.Size()) {
-			result.Files = append(result.Files, FileInfo{
+			file := FileInfo{
 				Path:      absPath,
 				Name:      lstat.Name(),
 				Extension: filepath.Ext(absPath),
 				Size:      lstat.Size(),
 				ModTime:   lstat.ModTime(),
-			})
+			}
+			result.Files = append(result.Files, file)
+			if out != nil {
+				out <- []FileInfo{file}
+			}
 		} else {
 			result.SkippedCount++
 		}
@@ -105,10 +117,12 @@ func (s *Scanner) ScanContext(ctx context.Context, rootPath string) (*ScanResult
 		return result, nil
 	}
 
+	var buffer []FileInfo
 	fileCount := 0
-	err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+
+	err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, walkErr error) error {
 		fileCount++
-		if fileCount%100 == 0 {
+		if fileCount%50 == 0 {
 			select {
 			case <-ctx.Done():
 				result.TimedOut = true
@@ -117,8 +131,8 @@ func (s *Scanner) ScanContext(ctx context.Context, rootPath string) (*ScanResult
 			}
 		}
 
-		if err != nil {
-			result.Errors = append(result.Errors, err)
+		if walkErr != nil {
+			result.Errors = append(result.Errors, walkErr)
 			return nil
 		}
 
@@ -143,13 +157,24 @@ func (s *Scanner) ScanContext(ctx context.Context, rootPath string) (*ScanResult
 		result.TotalScanned++
 
 		if s.shouldIncludeFile(path, lstat.Size()) {
-			result.Files = append(result.Files, FileInfo{
+			fi := FileInfo{
 				Path:      path,
 				Name:      d.Name(),
 				Extension: filepath.Ext(path),
 				Size:      lstat.Size(),
 				ModTime:   lstat.ModTime(),
-			})
+			}
+			result.Files = append(result.Files, fi)
+			buffer = append(buffer, fi)
+
+			if len(buffer) >= chunkSize {
+				if out != nil {
+					sendChunk := make([]FileInfo, len(buffer))
+					copy(sendChunk, buffer)
+					out <- sendChunk
+				}
+				buffer = buffer[:0]
+			}
 
 			if s.config.MaxFiles > 0 && len(result.Files) >= s.config.MaxFiles {
 				result.LimitReached = true
@@ -161,6 +186,12 @@ func (s *Scanner) ScanContext(ctx context.Context, rootPath string) (*ScanResult
 
 		return nil
 	})
+
+	if len(buffer) > 0 && out != nil {
+		sendChunk := make([]FileInfo, len(buffer))
+		copy(sendChunk, buffer)
+		out <- sendChunk
+	}
 
 	if err != nil {
 		return nil, err

@@ -196,6 +196,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.coverCache = make(map[string]string) // Invalidate in-memory ANSI on resize to re-scale from disk images
 
 	case spinner.TickMsg:
 		if m.isScanning || m.isScraping || m.isCoverLoading {
@@ -242,16 +243,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delete(m.scrapeErrors, msg.id)
 			m.statusMessage = fmt.Sprintf("🎉 Loaded metadata for %s", msg.id)
 
-			// Fetch cover preview if available and not cached yet
-			targetURL := msg.movie.PosterURL
+			// Fetch high-res cover preview if available and not cached yet
+			targetURL := msg.movie.CoverURL
 			if targetURL == "" {
-				targetURL = msg.movie.CoverURL
+				targetURL = msg.movie.PosterURL
 			}
 			if targetURL != "" && m.showCover {
 				if _, ok := m.coverCache[msg.id]; !ok {
 					m.isCoverLoading = true
-					coverW := 22
-					coverH := 8
+					coverW, coverH := m.getCoverTargetDims()
 					cmds = append(cmds, m.fetchCoverCmd(msg.id, targetURL, coverW, coverH))
 				}
 			}
@@ -352,46 +352,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMessage = "🖼️ Cover view enabled"
 				if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
 					if mov, ok := m.metadataCache[curMatch.ID]; ok {
-						targetURL := mov.PosterURL
+						targetURL := mov.CoverURL
 						if targetURL == "" {
-							targetURL = mov.CoverURL
+							targetURL = mov.PosterURL
 						}
 						if targetURL != "" {
-							cmds = append(cmds, m.fetchCoverCmd(curMatch.ID, targetURL, 22, 8))
+							coverW, coverH := m.getCoverTargetDims()
+							cmds = append(cmds, m.fetchCoverCmd(curMatch.ID, targetURL, coverW, coverH))
 						}
 					}
 				}
 			} else {
 				m.statusMessage = "🖼️ Cover view hidden"
-			}
-
-		case "p":
-			// Cycle graphics protocol: auto -> halfblock -> kitty -> iterm2 -> sixel -> auto
-			switch m.protocol {
-			case ProtocolAuto:
-				m.protocol = ProtocolHalfBlock
-			case ProtocolHalfBlock:
-				m.protocol = ProtocolKitty
-			case ProtocolKitty:
-				m.protocol = ProtocolITerm2
-			case ProtocolITerm2:
-				m.protocol = ProtocolSixel
-			default:
-				m.protocol = ProtocolAuto
-			}
-			m.coverCache = make(map[string]string) // Invalidate cache on protocol switch
-			m.statusMessage = fmt.Sprintf("🎨 Switched graphics mode to: %s", m.ProtocolDisplayString())
-			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
-				if mov, ok := m.metadataCache[curMatch.ID]; ok {
-					targetURL := mov.PosterURL
-					if targetURL == "" {
-						targetURL = mov.CoverURL
-					}
-					if targetURL != "" {
-						m.isCoverLoading = true
-						cmds = append(cmds, m.fetchCoverCmd(curMatch.ID, targetURL, 22, 8))
-					}
-				}
 			}
 
 		case "enter", "space":
@@ -417,6 +389,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m Model) getCoverTargetDims() (int, int) {
+	// Total available width for detail panel:
+	// detailInnerWidth is ~ 48% of (m.width - 9)
+	detailInnerWidth := (m.width - 9) * 48 / 100
+	targetW := detailInnerWidth - 4
+	if targetW < 24 {
+		targetW = 24
+	}
+	if targetW > 44 {
+		targetW = 44
+	}
+
+	targetH := (m.height - 12) / 2
+	if targetH < 10 {
+		targetH = 10
+	}
+	if targetH > 18 {
+		targetH = 18
+	}
+
+	return targetW, targetH
 }
 
 func (m *Model) adjustScroll() {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dagalp/r19dev-scraper/pkg/cache"
+	"golang.org/x/image/draw"
 )
 
 // FetchAndRenderCover downloads or loads from disk cache, and converts to ANSI Truecolor half-block.
@@ -21,7 +22,7 @@ func FetchAndRenderCover(id, coverURL string, proto GraphicProtocol, targetWidth
 	if localBytes, found := cache.Default().GetImage(id); found && len(localBytes) > 0 {
 		img, _, err := image.Decode(bytes.NewReader(localBytes))
 		if err == nil {
-			return EncodeImageToProtocol(img, localBytes, proto, targetWidth, targetHeight)
+			return ImageToANSI(img, targetWidth, targetHeight), nil
 		}
 	}
 
@@ -61,42 +62,70 @@ func FetchAndRenderCover(id, coverURL string, proto GraphicProtocol, targetWidth
 		return "", fmt.Errorf("image decode error: %w", err)
 	}
 
-	return EncodeImageToProtocol(img, rawBytes, proto, targetWidth, targetHeight)
+	return ImageToANSI(img, targetWidth, targetHeight), nil
 }
 
-// ImageToANSI converts an image.Image into ANSI 24-bit half-block characters (▀).
-// targetHeight is in terminal character rows (each row contains 2 vertical pixels).
-func ImageToANSI(img image.Image, targetWidth, targetHeight int) string {
+// ImageToANSI converts an image.Image into ANSI 24-bit half-block characters (▀)
+// using high-quality Catmull-Rom bicubic resampling with aspect ratio preservation.
+// targetHeight is in terminal character rows (each character row contains 2 vertical pixels).
+func ImageToANSI(img image.Image, maxCols, maxRows int) string {
 	bounds := img.Bounds()
-	srcWidth := bounds.Dx()
-	srcHeight := bounds.Dy()
-
-	if targetWidth <= 0 {
-		targetWidth = 22
-	}
-	if targetHeight <= 0 {
-		targetHeight = 8
+	srcW := bounds.Dx()
+	srcH := bounds.Dy()
+	if srcW <= 0 || srcH <= 0 {
+		return ""
 	}
 
-	pixelHeight := targetHeight * 2
+	if maxCols <= 0 {
+		maxCols = 38
+	}
+	if maxRows <= 0 {
+		maxRows = 14
+	}
+
+	// Terminal monospace cells have an aspect ratio of roughly 1:2 (width:height).
+	// Because half-block characters contain 2 vertical pixels per cell (top & bottom),
+	// 1 character cell corresponds to a 1:1 square pixel area on screen!
+	// Therefore, pixel width = maxCols, pixel height = maxRows * 2.
+	maxPixelW := maxCols
+	maxPixelH := maxRows * 2
+
+	// Scale while strictly preserving aspect ratio
+	pixelW := maxPixelW
+	pixelH := pixelW * srcH / srcW
+	if pixelH > maxPixelH {
+		pixelH = maxPixelH
+		pixelW = pixelH * srcW / srcH
+	}
+	if pixelW < 4 {
+		pixelW = 4
+	}
+	if pixelH < 4 {
+		pixelH = 4
+	}
+
+	// High-fidelity Catmull-Rom bicubic interpolation
+	dst := image.NewRGBA(image.Rect(0, 0, pixelW, pixelH))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), img, bounds, draw.Over, nil)
+
+	charRows := (pixelH + 1) / 2
 	var b strings.Builder
 
-	for row := 0; row < targetHeight; row++ {
+	for row := 0; row < charRows; row++ {
 		topY := row * 2
 		botY := row*2 + 1
 
-		for col := 0; col < targetWidth; col++ {
-			srcX := col * srcWidth / targetWidth
-			srcTopY := topY * srcHeight / pixelHeight
-			srcBotY := botY * srcHeight / pixelHeight
+		for col := 0; col < pixelW; col++ {
+			topC := dst.RGBAAt(col, topY)
+			botC := color.RGBA{R: 0, G: 0, B: 0, A: 255}
+			if botY < pixelH {
+				botC = dst.RGBAAt(col, botY)
+			}
 
-			topColor := color.NRGBAModel.Convert(img.At(bounds.Min.X+srcX, bounds.Min.Y+srcTopY)).(color.NRGBA)
-			botColor := color.NRGBAModel.Convert(img.At(bounds.Min.X+srcX, bounds.Min.Y+srcBotY)).(color.NRGBA)
-
-			// \x1b[38;2;R;G;Bm = foreground (top pixel), \x1b[48;2;R;G;Bm = background (bottom pixel), ▀ = half block
+			// \x1b[38;2;R;G;Bm = foreground (top pixel ▀), \x1b[48;2;R;G;Bm = background (bottom pixel)
 			fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm▀",
-				topColor.R, topColor.G, topColor.B,
-				botColor.R, botColor.G, botColor.B,
+				topC.R, topC.G, topC.B,
+				botC.R, botC.G, botC.B,
 			)
 		}
 		b.WriteString("\x1b[0m\n")

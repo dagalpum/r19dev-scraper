@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -64,6 +65,8 @@ type Client struct {
 	httpClient *http.Client
 	userAgent  string
 	language   string // "en" or "ja"
+	mu         sync.Mutex
+	lastReq    time.Time
 }
 
 // NewClient creates a new R18.dev scraper client with language support.
@@ -71,9 +74,16 @@ func NewClient(timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
+	transport := &http.Transport{
+		MaxIdleConns:        50,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
+	}
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 		userAgent: DefaultUA,
 		language:  "en", // Default to English metadata
@@ -89,6 +99,17 @@ func (c *Client) SetLanguage(lang string) {
 	}
 }
 
+func (c *Client) throttle() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	minInterval := 250 * time.Millisecond
+	elapsed := time.Since(c.lastReq)
+	if elapsed < minInterval {
+		time.Sleep(minInterval - elapsed)
+	}
+	c.lastReq = time.Now()
+}
+
 // Scrape fetches metadata for a given JAV ID from R18.dev in preferred language (default English).
 func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	combinedID := NormalizeToCombinedID(id)
@@ -97,23 +118,48 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	}
 
 	apiURL := fmt.Sprintf(R18DevAPIBase, combinedID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
+	var resp *http.Response
+	var err error
 
-	req.Header.Set("User-Agent", c.userAgent)
-	req.Header.Set("Accept", "application/json, text/plain, */*")
-	req.Header.Set("Referer", "https://r18.dev/")
-	if c.language == "ja" {
-		req.Header.Set("Accept-Language", "ja,en-US;q=0.8,en;q=0.6")
-	} else {
-		req.Header.Set("Accept-Language", "en-US,en;q=0.9,ja;q=0.8")
-	}
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		c.throttle()
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request failed: %w", err)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+		if reqErr != nil {
+			return nil, reqErr
+		}
+
+		req.Header.Set("User-Agent", c.userAgent)
+		req.Header.Set("Accept", "application/json, text/plain, */*")
+		req.Header.Set("Referer", "https://r18.dev/")
+		if c.language == "ja" {
+			req.Header.Set("Accept-Language", "ja,en-US;q=0.8,en;q=0.6")
+		} else {
+			req.Header.Set("Accept-Language", "en-US,en;q=0.9,ja;q=0.8")
+		}
+
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("http request failed: %w", err)
+		}
+
+		// Handle Cloudflare / API rate limit with backoff retry
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			if attempt < maxRetries-1 {
+				backoff := time.Duration(600*(1<<attempt)) * time.Millisecond
+				select {
+				case <-time.After(backoff):
+					continue
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return nil, fmt.Errorf("R18.dev rate limit reached (HTTP 429). Retrying in a moment...")
+		}
+
+		break
 	}
 	defer resp.Body.Close()
 

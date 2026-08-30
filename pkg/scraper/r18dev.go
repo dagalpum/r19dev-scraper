@@ -59,14 +59,21 @@ type Client struct {
 	userAgent  string
 }
 
-// NewClient creates a new R18.dev scraper client.
+// NewClient creates a new R18.dev scraper client with connection pooling.
 func NewClient(timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
+	transport := &http.Transport{
+		MaxIdleConns:        50,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableKeepAlives:   false,
+	}
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 		},
 		userAgent: DefaultUA,
 	}

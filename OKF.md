@@ -106,9 +106,15 @@ Built on the **Elm Architecture** (Model - View - Update):
 2. **Async Commands (`tea.Cmd`)**:
    - Directory scanning and API fetching are dispatched as asynchronous tea commands (`scanDoneMsg`, `scrapeDoneMsg`), ensuring the UI never stutters or drops frames during network or disk IO.
 
-3. **Layout Engine**:
+3. **Layout & Table Engine**:
    - Dynamically calculates viewport dimensions on `tea.WindowSizeMsg`.
-   - Responsive split ratio: 58% table view, remaining width dedicated to metadata inspection panel.
+   - Responsive split ratio: 58% table view with dynamic filename column scaling, remaining width dedicated to metadata inspection panel.
+   - Cached statistics (`matchedCount`, `unmatchedCount`) eliminating frame-by-frame $O(N)$ recomputation.
+
+4. **Network & Concurrency Optimizations**:
+   - **Debounced Navigation**: 250ms debounce timer preventing duplicate HTTP requests during rapid keyboard scrolling.
+   - **HTTP Connection Pooling**: Reuses TCP/TLS sockets via `http.Transport` with Keep-Alive.
+   - **Streaming Batch Scraper (`s` key)**: 3-worker concurrency pool streaming live progress into the TUI event loop without blocking.
 
 ---
 

@@ -86,8 +86,10 @@ make test
    Instead of standard `\b` (which breaks on underscores in filenames like `kavr00428_1_8k`), the matcher uses `(?:^|[^a-zA-Z0-9])` boundary assertions.
 2. **Directory Sibling Multipart Confirmation**:
    Single-letter suffixes like `-A` or `-B` are ambiguous. The engine validates whether sibling files with matching IDs exist in the same folder before marking them as multi-part.
-3. **Reactive UI State Management**:
-   The TUI uses asynchronous `tea.Cmd` tasks so the UI never blocks while crawling network disks or waiting for R18.dev API responses.
+3. **Reactive UI State & Navigation Debounce**:
+   The TUI uses asynchronous `tea.Cmd` tasks and a 250ms debounce timer during keyboard scrolling so the UI never blocks while crawling network disks or waiting for R18.dev API responses.
+4. **HTTP Connection Pooling & Streaming Batch Worker Pool**:
+   Custom `http.Transport` reuses TLS sockets, and pressing `s` launches 3 parallel workers with live progress streaming.
 
 ---
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -19,17 +20,26 @@ type scanDoneMsg struct {
 	err    error
 }
 
-type matchDoneMsg struct {
-	matches []matcher.MatchResult
-}
-
 type scrapeDoneMsg struct {
 	id    string
 	movie *scraper.Movie
 	err   error
 }
 
-type statusClearMsg struct{}
+type debounceScrapeMsg struct {
+	seq int
+	id  string
+}
+
+type batchItemMsg struct {
+	id    string
+	movie *scraper.Movie
+	err   error
+}
+
+type batchCompleteMsg struct {
+	total int
+}
 
 // Model represents the main TUI application state.
 type Model struct {
@@ -43,13 +53,22 @@ type Model struct {
 	metadataCache map[string]*scraper.Movie
 	scrapeErrors  map[string]string
 
-	cursor        int
-	scrollOffset  int
-	width         int
-	height        int
+	matchedCount   int
+	unmatchedCount int
 
-	isScanning    bool
-	isScraping    bool
+	cursor       int
+	cursorSeq    int
+	scrollOffset int
+	width        int
+	height       int
+
+	isScanning      bool
+	isScraping      bool
+	isBatchScraping bool
+	batchTotal      int
+	batchDone       int
+	batchChan       chan batchItemMsg
+
 	statusMessage string
 	keys          KeyMap
 	spinner       spinner.Model
@@ -107,6 +126,33 @@ func (m Model) scrapeMovieCmd(id string) tea.Cmd {
 	}
 }
 
+func debounceCmd(seq int, id string) tea.Cmd {
+	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg {
+		return debounceScrapeMsg{seq: seq, id: id}
+	})
+}
+
+func listenBatchProgress(ch chan batchItemMsg) tea.Cmd {
+	return func() tea.Msg {
+		item, ok := <-ch
+		if !ok {
+			return batchCompleteMsg{}
+		}
+		return item
+	}
+}
+
+func (m *Model) recomputeStats() {
+	matched := 0
+	for _, match := range m.matches {
+		if match.ID != "" {
+			matched++
+		}
+	}
+	m.matchedCount = matched
+	m.unmatchedCount = len(m.matches) - matched
+}
+
 // Update handles incoming messages and user input.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -117,7 +163,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case spinner.TickMsg:
-		if m.isScanning || m.isScraping {
+		if m.isScanning || m.isScraping || m.isBatchScraping {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			cmds = append(cmds, cmd)
@@ -131,11 +177,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.files = msg.result.Files
 		m.matches = m.matcher.Match(m.files)
-		m.statusMessage = fmt.Sprintf("✅ Scan complete: %d files found (%d matched)", len(m.files), len(m.matches))
+		m.recomputeStats()
+		m.statusMessage = fmt.Sprintf("✅ Scan complete: %d files (%d matched)", len(m.files), m.matchedCount)
 
 		// Auto-fetch metadata for the first item if available
 		if len(m.matches) > 0 && m.matches[0].ID != "" {
-			cmds = append(cmds, m.scrapeMovieCmd(m.matches[0].ID))
+			m.cursorSeq++
+			cmds = append(cmds, debounceCmd(m.cursorSeq, m.matches[0].ID))
+		}
+
+	case debounceScrapeMsg:
+		if msg.seq == m.cursorSeq && msg.id != "" {
+			if _, cached := m.metadataCache[msg.id]; !cached {
+				m.isScraping = true
+				cmds = append(cmds, m.scrapeMovieCmd(msg.id))
+			}
 		}
 
 	case scrapeDoneMsg:
@@ -149,6 +205,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = fmt.Sprintf("🎉 Loaded metadata for %s", msg.id)
 		}
 
+	case batchItemMsg:
+		m.batchDone++
+		if msg.err != nil {
+			m.scrapeErrors[msg.id] = msg.err.Error()
+		} else {
+			m.metadataCache[msg.id] = msg.movie
+			delete(m.scrapeErrors, msg.id)
+		}
+		m.statusMessage = fmt.Sprintf("⚡ Batch scraping: %d/%d completed...", m.batchDone, m.batchTotal)
+		// Continue listening for next batch progress item
+		if m.batchChan != nil {
+			cmds = append(cmds, listenBatchProgress(m.batchChan))
+		}
+
+	case batchCompleteMsg:
+		m.isBatchScraping = false
+		m.batchChan = nil
+		m.statusMessage = fmt.Sprintf("🎉 Batch scrape completed (%d/%d items processed)!", m.batchDone, m.batchTotal)
+
 	case tea.KeyMsg:
 		// Modal active
 		if m.editModal.Active {
@@ -158,7 +233,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if newID != "" && m.editModal.FileIndex < len(m.matches) {
 					m.matches[m.editModal.FileIndex].ID = strings.ToUpper(newID)
 					m.matches[m.editModal.FileIndex].MatchedBy = "manual"
+					m.recomputeStats()
 					m.statusMessage = fmt.Sprintf("✏️ Updated ID to %s", m.matches[m.editModal.FileIndex].ID)
+					m.isScraping = true
 					cmds = append(cmds, m.scrapeMovieCmd(m.matches[m.editModal.FileIndex].ID))
 				}
 				m.editModal.Close()
@@ -182,24 +259,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 				m.adjustScroll()
-				if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
-					if _, ok := m.metadataCache[curMatch.ID]; !ok {
-						m.isScraping = true
-						cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
-					}
-				}
+				cmds = append(cmds, m.triggerCursorScrape())
 			}
 
 		case "down", "j":
 			if m.cursor < len(m.matches)-1 {
 				m.cursor++
 				m.adjustScroll()
-				if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
-					if _, ok := m.metadataCache[curMatch.ID]; !ok {
-						m.isScraping = true
-						cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
-					}
-				}
+				cmds = append(cmds, m.triggerCursorScrape())
 			}
 
 		case "pgup", "b":
@@ -208,6 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 			}
 			m.adjustScroll()
+			cmds = append(cmds, m.triggerCursorScrape())
 
 		case "pgdown", "f":
 			m.cursor += 10
@@ -215,15 +283,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = len(m.matches) - 1
 			}
 			m.adjustScroll()
+			cmds = append(cmds, m.triggerCursorScrape())
 
 		case "g", "home":
 			m.cursor = 0
 			m.adjustScroll()
+			cmds = append(cmds, m.triggerCursorScrape())
 
 		case "G", "end":
 			if len(m.matches) > 0 {
 				m.cursor = len(m.matches) - 1
 				m.adjustScroll()
+				cmds = append(cmds, m.triggerCursorScrape())
 			}
 
 		case "e":
@@ -238,6 +309,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
 			}
 
+		case "s":
+			if m.isBatchScraping {
+				m.statusMessage = "⚠️ Batch scrape is already in progress..."
+				return m, nil
+			}
+			var queue []string
+			for _, match := range m.matches {
+				if match.ID != "" {
+					if _, cached := m.metadataCache[match.ID]; !cached {
+						queue = append(queue, match.ID)
+					}
+				}
+			}
+			if len(queue) == 0 {
+				m.statusMessage = "✨ All matched items are already scraped!"
+				return m, nil
+			}
+
+			m.isBatchScraping = true
+			m.batchTotal = len(queue)
+			m.batchDone = 0
+			m.batchChan = make(chan batchItemMsg, len(queue))
+			m.statusMessage = fmt.Sprintf("🚀 Starting batch scrape for %d items (3 workers)...", len(queue))
+
+			// Launch background pool
+			go m.runBatchScrapeWorkerPool(queue, m.batchChan)
+			cmds = append(cmds, listenBatchProgress(m.batchChan))
+
 		case "r":
 			m.isScanning = true
 			m.statusMessage = "🔄 Rescanning directory..."
@@ -246,6 +345,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) triggerCursorScrape() tea.Cmd {
+	m.cursorSeq++
+	curMatch := m.currentMatch()
+	if curMatch == nil || curMatch.ID == "" {
+		return nil
+	}
+	// If already in cache, no need to trigger debounce network request
+	if _, cached := m.metadataCache[curMatch.ID]; cached {
+		return nil
+	}
+	return debounceCmd(m.cursorSeq, curMatch.ID)
+}
+
+func (m Model) runBatchScrapeWorkerPool(queue []string, out chan<- batchItemMsg) {
+	numWorkers := 3
+	if len(queue) < numWorkers {
+		numWorkers = len(queue)
+	}
+
+	in := make(chan string, len(queue))
+	for _, id := range queue {
+		in <- id
+	}
+	close(in)
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range in {
+				ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+				movie, err := m.scraperClient.Scrape(ctx, id)
+				cancel()
+				out <- batchItemMsg{id: id, movie: movie, err: err}
+				// Polite rate-limit delay
+				time.Sleep(150 * time.Millisecond)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(out)
 }
 
 func (m *Model) adjustScroll() {

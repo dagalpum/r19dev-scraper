@@ -22,7 +22,7 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) == 0 {
-		runTUI(".")
+		runTUI(".", "en", tui.ProtocolAuto)
 		return
 	}
 
@@ -30,10 +30,20 @@ func main() {
 	switch cmd {
 	case "tui":
 		target := "."
-		if len(args) > 1 {
-			target = args[1]
+		lang := "en"
+		proto := tui.ProtocolAuto
+		for i := 1; i < len(args); i++ {
+			if args[i] == "--lang" && i+1 < len(args) {
+				lang = args[i+1]
+				i++
+			} else if (args[i] == "--proto" || args[i] == "-p") && i+1 < len(args) {
+				proto = tui.GraphicProtocol(strings.ToLower(args[i+1]))
+				i++
+			} else {
+				target = args[i]
+			}
 		}
-		runTUI(target)
+		runTUI(target, lang, proto)
 
 	case "scan":
 		target := "."
@@ -49,11 +59,18 @@ func main() {
 
 	case "scrape":
 		if len(args) < 2 {
-			fmt.Println("Usage: r19dev scrape <JAV-ID>")
+			fmt.Println("Usage: r19dev scrape <JAV-ID> [--lang en|ja]")
 			os.Exit(1)
 		}
 		id := args[1]
-		runScrape(id)
+		lang := "en"
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--lang" && i+1 < len(args) {
+				lang = args[i+1]
+				i++
+			}
+		}
+		runScrape(id, lang)
 
 	case "-v", "--version", "version":
 		fmt.Printf("r19dev-scraper version %s\n", version)
@@ -62,23 +79,22 @@ func main() {
 		printHelp()
 
 	default:
-		// If argument is a directory, launch TUI on that directory
 		if stat, err := os.Stat(args[0]); err == nil && stat.IsDir() {
-			runTUI(args[0])
+			runTUI(args[0], "en", tui.ProtocolAuto)
 			return
 		}
 		printHelp()
 	}
 }
 
-func runTUI(targetDir string) {
+func runTUI(targetDir, lang string, proto tui.GraphicProtocol) {
 	absPath, err := filepath.Abs(targetDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Invalid path: %v\n", err)
 		os.Exit(1)
 	}
 
-	model, err := tui.New(absPath)
+	model, err := tui.New(absPath, lang, proto)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize TUI: %v\n", err)
 		os.Exit(1)
@@ -132,12 +148,13 @@ func runScan(targetDir string, jsonOutput bool) {
 	}
 }
 
-func runScrape(id string) {
+func runScrape(id, lang string) {
 	client := scraper.NewClient(15 * time.Second)
+	client.SetLanguage(lang)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	fmt.Printf("🔍 Fetching metadata for '%s' from R18.dev...\n", id)
+	fmt.Printf("🔍 Fetching English metadata for '%s' from R18.dev...\n", id)
 	movie, err := client.Scrape(ctx, id)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
@@ -153,10 +170,14 @@ func printHelp() {
 	fmt.Println(`🎬 R19DEV Scraper - JAV Scanner, Matcher & R18.dev Scraper
 
 Usage:
-  r19dev [path]               Launch Interactive TUI on specified directory (default: .)
-  r19dev tui [path]           Launch Interactive TUI
+  r19dev [path]               Launch Interactive TUI (default: .)
+  r19dev tui [path] [flags]   Launch Interactive TUI
+                              Flags:
+                                --lang <en|ja>          Language preference (default: en)
+                                --proto <auto|kitty|iterm2|sixel|halfblock>  Graphics protocol
+
   r19dev scan [path] [--json] Run directory scan & ID matching
-  r19dev scrape <JAV-ID>      Fetch metadata directly from R18.dev for a JAV ID
+  r19dev scrape <JAV-ID>      Fetch metadata directly from R18.dev
   r19dev --version            Show version
   r19dev --help               Show this help message`)
 }

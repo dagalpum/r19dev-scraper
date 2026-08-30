@@ -43,6 +43,10 @@ var (
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(mutedColor)
 
+	statProto = statBadge.
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#89B4FA"))
+
 	// Panels & Boxes
 	panelStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

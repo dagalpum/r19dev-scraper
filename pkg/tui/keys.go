@@ -4,20 +4,22 @@ import "github.com/charmbracelet/bubbles/key"
 
 // KeyMap defines keybindings for the TUI application.
 type KeyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	PageUp    key.Binding
-	PageDown  key.Binding
-	Top       key.Binding
-	Bottom    key.Binding
-	Edit      key.Binding
-	Scrape    key.Binding
-	ScrapeAll key.Binding
-	Rescan    key.Binding
-	Help      key.Binding
-	Quit      key.Binding
-	Enter     key.Binding
-	Esc       key.Binding
+	Up             key.Binding
+	Down           key.Binding
+	PageUp         key.Binding
+	PageDown       key.Binding
+	Top            key.Binding
+	Bottom         key.Binding
+	Edit           key.Binding
+	Scrape         key.Binding
+	ToggleCover    key.Binding
+	ToggleProtocol key.Binding
+	ScrapeAll      key.Binding
+	Rescan         key.Binding
+	Help           key.Binding
+	Quit           key.Binding
+	Enter          key.Binding
+	Esc            key.Binding
 }
 
 // DefaultKeyMap returns the default keybindings.
@@ -54,6 +56,14 @@ func DefaultKeyMap() KeyMap {
 		Scrape: key.NewBinding(
 			key.WithKeys("enter", "space"),
 			key.WithHelp("enter", "scrape detail"),
+		),
+		ToggleCover: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "toggle cover"),
+		),
+		ToggleProtocol: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "switch protocol"),
 		),
 		ScrapeAll: key.NewBinding(
 			key.WithKeys("s"),

@@ -15,41 +15,47 @@ const (
 	DefaultUA     = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
 
-// R18RawResponse maps the JSON payload from R18.dev.
+// R18RawResponse maps the complete modern JSON payload from R18.dev API.
 type R18RawResponse struct {
-	Status      int    `json:"status"`
-	DVDID       string `json:"dvd_id"`
-	ContentID   string `json:"content_id"`
-	Title       string `json:"title"`
-	TitleJA     string `json:"title_ja"`
-	ReleaseDate string `json:"release_date"`
-	RuntimeMins int    `json:"runtime_mins"`
-	Maker       struct {
-		Name string `json:"name"`
-	} `json:"maker"`
-	Label struct {
-		Name string `json:"name"`
-	} `json:"label"`
-	Series struct {
-		Name string `json:"name"`
-	} `json:"series"`
+	Status         int    `json:"status"`
+	DVDID          string `json:"dvd_id"`
+	ContentID      string `json:"content_id"`
+	TitleEN        string `json:"title_en"`
+	TitleJA        string `json:"title_ja"`
+	ReleaseDate    string `json:"release_date"`
+	RuntimeMins    int    `json:"runtime_mins"`
+	MakerNameEN    string `json:"maker_name_en"`
+	MakerNameJA    string `json:"maker_name_ja"`
+	LabelNameEN    string `json:"label_name_en"`
+	LabelNameJA    string `json:"label_name_ja"`
+	JacketFullURL  string `json:"jacket_full_url"`
+	JacketThumbURL string `json:"jacket_thumb_url"`
+	SampleURL      string `json:"sample_url"`
+
 	Directors []struct {
-		Name string `json:"name"`
-	} `json:"directors"`
-	Actresses []struct {
+		ID         int    `json:"id"`
 		NameRomaji string `json:"name_romaji"`
-		NameJA     string `json:"name_ja"`
+		NameKanji  string `json:"name_kanji"`
+	} `json:"directors"`
+
+	Actresses []struct {
+		ID         int    `json:"id"`
+		NameRomaji string `json:"name_romaji"`
+		NameKanji  string `json:"name_kanji"`
 		ImageURL   string `json:"image_url"`
 	} `json:"actresses"`
+
 	Categories []struct {
-		Name   string `json:"name"`
+		ID     int    `json:"id"`
+		NameEN string `json:"name_en"`
 		NameJA string `json:"name_ja"`
 	} `json:"categories"`
-	Images struct {
-		JacketFull  string   `json:"jacket_full"`
-		JacketFront string   `json:"jacket_front"`
-		Gallery     []string `json:"gallery"`
-	} `json:"images"`
+
+	Gallery []struct {
+		ImageFull  string `json:"image_full"`
+		ImageThumb string `json:"image_thumb"`
+	} `json:"gallery"`
+
 	URL string `json:"url"`
 }
 
@@ -57,29 +63,33 @@ type R18RawResponse struct {
 type Client struct {
 	httpClient *http.Client
 	userAgent  string
+	language   string // "en" or "ja"
 }
 
-// NewClient creates a new R18.dev scraper client with connection pooling.
+// NewClient creates a new R18.dev scraper client with language support.
 func NewClient(timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	transport := &http.Transport{
-		MaxIdleConns:        50,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
-		DisableKeepAlives:   false,
-	}
 	return &Client{
 		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
+			Timeout: timeout,
 		},
 		userAgent: DefaultUA,
+		language:  "en", // Default to English metadata
 	}
 }
 
-// Scrape fetches metadata for a given JAV ID from R18.dev.
+// SetLanguage sets the metadata language preference ("en" or "ja").
+func (c *Client) SetLanguage(lang string) {
+	if strings.ToLower(lang) == "ja" {
+		c.language = "ja"
+	} else {
+		c.language = "en"
+	}
+}
+
+// Scrape fetches metadata for a given JAV ID from R18.dev in preferred language (default English).
 func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	combinedID := NormalizeToCombinedID(id)
 	if combinedID == "" {
@@ -95,6 +105,11 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	req.Header.Set("User-Agent", c.userAgent)
 	req.Header.Set("Accept", "application/json, text/plain, */*")
 	req.Header.Set("Referer", "https://r18.dev/")
+	if c.language == "ja" {
+		req.Header.Set("Accept-Language", "ja,en-US;q=0.8,en;q=0.6")
+	} else {
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9,ja;q=0.8")
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -119,21 +134,58 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
+	// Resolve title based on language preference
+	title := strings.TrimSpace(raw.TitleEN)
+	if c.language == "ja" || title == "" {
+		if raw.TitleJA != "" {
+			title = strings.TrimSpace(raw.TitleJA)
+		}
+	}
+
+	// Resolve Maker / Studio
+	maker := strings.TrimSpace(raw.MakerNameEN)
+	if c.language == "ja" || maker == "" {
+		if raw.MakerNameJA != "" {
+			maker = strings.TrimSpace(raw.MakerNameJA)
+		}
+	}
+
+	// Resolve Label
+	label := strings.TrimSpace(raw.LabelNameEN)
+	if c.language == "ja" || label == "" {
+		if raw.LabelNameJA != "" {
+			label = strings.TrimSpace(raw.LabelNameJA)
+		}
+	}
+
+	// Resolve Director
+	director := ""
+	if len(raw.Directors) > 0 {
+		d := raw.Directors[0]
+		if c.language == "ja" && d.NameKanji != "" {
+			director = d.NameKanji
+		} else if d.NameRomaji != "" {
+			director = d.NameRomaji
+		} else {
+			director = d.NameKanji
+		}
+	}
+
 	movie := &Movie{
-		ID:                raw.DVDID,
-		CombinedID:        raw.ContentID,
-		Title:             strings.TrimSpace(raw.Title),
-		OriginalTitle:     strings.TrimSpace(raw.TitleJA),
-		Maker:             strings.TrimSpace(raw.Maker.Name),
-		Label:             strings.TrimSpace(raw.Label.Name),
-		Series:            strings.TrimSpace(raw.Series.Name),
-		ReleaseDate:       raw.ReleaseDate,
-		RuntimeMinutes:    raw.RuntimeMins,
-		CoverURL:          raw.Images.JacketFull,
-		PosterURL:         raw.Images.JacketFront,
-		SampleScreenshots: raw.Images.Gallery,
-		DetailURL:         raw.URL,
-		ScrapedAt:         time.Now(),
+		ID:             raw.DVDID,
+		CombinedID:     raw.ContentID,
+		Title:          title,
+		OriginalTitle:  strings.TrimSpace(raw.TitleJA),
+		Maker:          maker,
+		Label:          label,
+		Director:       director,
+		ReleaseDate:    raw.ReleaseDate,
+		RuntimeMinutes: raw.RuntimeMins,
+		CoverURL:       raw.JacketFullURL,
+		PosterURL:      raw.JacketThumbURL,
+		TrailerURL:     raw.SampleURL,
+		DetailURL:      raw.URL,
+		ScrapedAt:      time.Now(),
 	}
 
 	if movie.ID == "" {
@@ -142,29 +194,44 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	if movie.CombinedID == "" {
 		movie.CombinedID = combinedID
 	}
-	if len(raw.Directors) > 0 {
-		movie.Director = raw.Directors[0].Name
-	}
 
+	// Populate Actresses (Romaji in English mode, Kanji in Japanese mode)
 	for _, act := range raw.Actresses {
 		name := act.NameRomaji
+		if c.language == "ja" && act.NameKanji != "" {
+			name = act.NameKanji
+		}
 		if name == "" {
-			name = act.NameJA
+			name = act.NameKanji
+		}
+		thumb := act.ImageURL
+		if thumb != "" && !strings.HasPrefix(thumb, "http") {
+			thumb = "https://pics.dmm.co.jp/mono/actjpgs/" + thumb
 		}
 		movie.Actresses = append(movie.Actresses, Actress{
 			Name:     name,
-			JaName:   act.NameJA,
-			ImageURL: act.ImageURL,
+			JaName:   act.NameKanji,
+			ImageURL: thumb,
 		})
 	}
 
+	// Populate Genres (English by default, e.g. "Female Teacher", "Big Tits", "Hi-Def")
 	for _, cat := range raw.Categories {
-		name := cat.Name
-		if name == "" {
-			name = cat.NameJA
+		name := strings.TrimSpace(cat.NameEN)
+		if c.language == "ja" || name == "" {
+			if cat.NameJA != "" {
+				name = strings.TrimSpace(cat.NameJA)
+			}
 		}
 		if name != "" {
 			movie.Genres = append(movie.Genres, name)
+		}
+	}
+
+	// Populate Sample Gallery Screenshots
+	for _, item := range raw.Gallery {
+		if item.ImageFull != "" {
+			movie.SampleScreenshots = append(movie.SampleScreenshots, item.ImageFull)
 		}
 	}
 

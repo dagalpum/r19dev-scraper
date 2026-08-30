@@ -151,6 +151,28 @@ func (c *Cache) GetImage(id string) ([]byte, bool) {
 	return nil, false
 }
 
+// GetImagePath returns the absolute file path to a cached image if it exists on disk.
+func (c *Cache) GetImagePath(id string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	combinedID := scraper.NormalizeToCombinedID(id)
+	if combinedID == "" {
+		return "", false
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for _, ext := range []string{".jpg", ".png", ".jpeg"} {
+		filePath := filepath.Join(c.imagesDir, combinedID+"_poster"+ext)
+		if stat, err := os.Stat(filePath); err == nil && stat.Size() > 0 {
+			return filePath, true
+		}
+	}
+	return "", false
+}
+
 // SetImage saves raw image bytes (JPEG/PNG) to disk cache.
 func (c *Cache) SetImage(id string, data []byte) error {
 	if c == nil || len(data) == 0 {

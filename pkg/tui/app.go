@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -42,36 +44,37 @@ type coverDoneMsg struct {
 
 // Model represents the main TUI application state.
 type Model struct {
-	targetDir      string
-	language       string
-	protocol       GraphicProtocol
-	scanner        *scanner.Scanner
-	matcher        *matcher.Matcher
-	scraperClient  *scraper.Client
+	targetDir         string
+	language          string
+	protocol          GraphicProtocol
+	scanner           *scanner.Scanner
+	matcher           *matcher.Matcher
+	scraperClient     *scraper.Client
 
-	files          []scanner.FileInfo
-	matches        []matcher.MatchResult
-	metadataCache  map[string]*scraper.Movie
-	coverCache     map[string]string // ID -> formatted image string
-	scrapeErrors   map[string]string
+	files             []scanner.FileInfo
+	matches           []matcher.MatchResult
+	metadataCache     map[string]*scraper.Movie
+	coverCache        map[string]string // ID -> formatted image string
+	scrapeErrors      map[string]string
 
-	matchedCount   int
-	unmatchedCount int
+	matchedCount      int
+	unmatchedCount    int
 
-	cursor         int
-	scrollOffset   int
-	width          int
-	height         int
+	cursor            int
+	scrollOffset      int
+	width             int
+	height            int
 
-	isScanning     bool
-	isScraping     bool
-	isCoverLoading bool
-	showCover      bool
-	scanChan       chan []scanner.FileInfo
-	statusMessage  string
-	keys           KeyMap
-	spinner        spinner.Model
-	editModal      EditModal
+	isScanning        bool
+	isScraping        bool
+	isCoverLoading    bool
+	showCover         bool
+	isFullscreenCover bool
+	scanChan          chan []scanner.FileInfo
+	statusMessage     string
+	keys              KeyMap
+	spinner           spinner.Model
+	editModal         EditModal
 }
 
 // New creates a new TUI model for the given target directory, language, and graphics protocol preference.
@@ -288,6 +291,54 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+		// Fullscreen Cover Mode
+		if m.isFullscreenCover {
+			switch msg.String() {
+			case "v", "esc", "enter", "backspace":
+				m.isFullscreenCover = false
+				return m, nil
+
+			case "o":
+				if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+					if imgPath, found := cache.Default().GetImagePath(curMatch.ID); found && imgPath != "" {
+						_ = openFileInDefaultApp(imgPath)
+						m.statusMessage = fmt.Sprintf("🖼️ Opened %s image in macOS Preview", curMatch.ID)
+					}
+				}
+				return m, nil
+
+			case "left", "h", "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+					m.adjustScroll()
+					if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+						if _, ok := m.metadataCache[curMatch.ID]; !ok {
+							cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
+						}
+					}
+				}
+				return m, tea.Batch(cmds...)
+
+			case "right", "l", "down", "j":
+				if m.cursor < len(m.matches)-1 {
+					m.cursor++
+					m.adjustScroll()
+					if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+						if _, ok := m.metadataCache[curMatch.ID]; !ok {
+							cmds = append(cmds, m.scrapeMovieCmd(curMatch.ID))
+						}
+					}
+				}
+				return m, tea.Batch(cmds...)
+
+			case "q", "ctrl+c":
+				return m, tea.Quit
+
+			default:
+				return m, nil
+			}
+		}
+
 		// Normal navigation
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -339,6 +390,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.matches) > 0 {
 				m.cursor = len(m.matches) - 1
 				m.adjustScroll()
+			}
+
+		case "v":
+			m.isFullscreenCover = true
+
+		case "o":
+			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+				if imgPath, found := cache.Default().GetImagePath(curMatch.ID); found && imgPath != "" {
+					_ = openFileInDefaultApp(imgPath)
+					m.statusMessage = fmt.Sprintf("🖼️ Opened %s image in macOS Preview", curMatch.ID)
+				} else if mov, ok := m.metadataCache[curMatch.ID]; ok {
+					targetURL := mov.CoverURL
+					if targetURL == "" {
+						targetURL = mov.PosterURL
+					}
+					if targetURL != "" {
+						go func() {
+							_, _ = FetchAndRenderCover(curMatch.ID, targetURL, m.protocol, 40, 20)
+							if p, ok := cache.Default().GetImagePath(curMatch.ID); ok {
+								_ = openFileInDefaultApp(p)
+							}
+						}()
+						m.statusMessage = fmt.Sprintf("📥 Downloading and opening %s in macOS Preview...", curMatch.ID)
+					}
+				} else {
+					m.statusMessage = "⚠️ Scrape metadata first (press Enter) to download high-res cover"
+				}
 			}
 
 		case "e":
@@ -412,6 +490,19 @@ func (m Model) getCoverTargetDims() (int, int) {
 	}
 
 	return targetW, targetH
+}
+
+func openFileInDefaultApp(filePath string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", filePath)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", filePath)
+	default: // linux, bsd
+		cmd = exec.Command("xdg-open", filePath)
+	}
+	return cmd.Start()
 }
 
 func (m *Model) adjustScroll() {

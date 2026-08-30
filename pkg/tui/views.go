@@ -15,6 +15,10 @@ func (m Model) View() string {
 		return "Loading interface..."
 	}
 
+	if m.isFullscreenCover {
+		return m.renderFullscreenCover()
+	}
+
 	header := m.renderHeader()
 	body := m.renderBody()
 	footer := m.renderFooter()
@@ -39,6 +43,73 @@ func (m Model) View() string {
 	}
 
 	return baseView
+}
+
+func (m Model) renderFullscreenCover() string {
+	cur := m.currentMatch()
+	if cur == nil {
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, "No movie selected. Press 'v' or 'Esc' to return.")
+	}
+
+	titleText := cur.ID
+	movie, hasMeta := m.metadataCache[cur.ID]
+	if hasMeta && movie != nil && movie.Title != "" {
+		titleText = fmt.Sprintf("%s - %s", cur.ID, movie.Title)
+		if len(movie.Actresses) > 0 {
+			var names []string
+			for _, a := range movie.Actresses {
+				names = append(names, a.Name)
+			}
+			titleText += fmt.Sprintf(" (%s)", strings.Join(names, ", "))
+		}
+	}
+
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(accentColor).
+		Background(lipgloss.Color("#1E1E2E")).
+		Padding(0, 1).
+		Width(m.width).
+		Render("🖼️ FULLSCREEN COVER: " + truncateDisplay(titleText, m.width-25))
+
+	// Calculate maximum possible resolution for full terminal screen
+	fullW := max(20, m.width-4)
+	fullH := max(10, m.height-5)
+	var coverANSI string
+
+	if hasMeta && movie != nil {
+		targetURL := movie.CoverURL
+		if targetURL == "" {
+			targetURL = movie.PosterURL
+		}
+		// If cached locally, render instantly in ultra high resolution
+		coverANSI, _ = FetchAndRenderCover(cur.ID, targetURL, m.protocol, fullW, fullH)
+	} else {
+		coverANSI = lipgloss.NewStyle().Foreground(mutedColor).Render("Press Enter on table to scrape metadata & cover first")
+	}
+
+	imageBox := lipgloss.Place(
+		m.width,
+		m.height-3,
+		lipgloss.Center,
+		lipgloss.Center,
+		coverANSI,
+	)
+
+	footer := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		footerKeyStyle.Render("v / Esc"), footerDescStyle.Render("Back"),
+		footerKeyStyle.Render("o"), footerDescStyle.Render("macOS Preview"),
+		footerKeyStyle.Render("←/→ or ↑/↓"), footerDescStyle.Render("Prev/Next"),
+		footerKeyStyle.Render("q"), footerDescStyle.Render("Quit"),
+	)
+
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		imageBox,
+		footer,
+	)
 }
 
 func (m Model) renderHeader() string {
@@ -79,7 +150,7 @@ func (m Model) renderBody() string {
 		totalInnerWidth = 40
 	}
 
-	tableInnerWidth := int(float64(totalInnerWidth) * 0.52)
+	tableInnerWidth := int(float64(totalInnerWidth) * 0.50)
 	if tableInnerWidth < 30 {
 		tableInnerWidth = 30
 	}
@@ -111,7 +182,7 @@ func (m Model) renderBody() string {
 }
 
 func (m Model) renderTable(innerWidth, innerHeight int) string {
-	if m.isScanning {
+	if m.isScanning && len(m.matches) == 0 {
 		return lipgloss.Place(innerWidth, innerHeight, lipgloss.Center, lipgloss.Center,
 			lipgloss.JoinVertical(lipgloss.Center, m.spinner.View(), "", "Scanning directory for videos..."))
 	}
@@ -260,6 +331,8 @@ func (m Model) renderFooter() string {
 		lipgloss.Left,
 		footerKeyStyle.Render("↑/↓"), footerDescStyle.Render("Navigate"),
 		footerKeyStyle.Render("Enter"), footerDescStyle.Render("Scrape"),
+		footerKeyStyle.Render("v"), footerDescStyle.Render("Fullscreen"),
+		footerKeyStyle.Render("o"), footerDescStyle.Render("Preview"),
 		footerKeyStyle.Render("s"), footerDescStyle.Render("Scrape All"),
 		footerKeyStyle.Render("c"), footerDescStyle.Render("Cover"),
 		footerKeyStyle.Render("e"), footerDescStyle.Render("Edit ID"),

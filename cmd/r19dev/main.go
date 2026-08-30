@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagalp/r19dev-scraper/pkg/cache"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
@@ -71,6 +72,13 @@ func main() {
 			}
 		}
 		runScrape(id, lang)
+
+	case "cache-clear", "clear-cache":
+		if err := cache.Default().Clear(); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to clear cache: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("🧹 Cache cleared successfully (%s)\n", cache.Default().RootDir())
 
 	case "-v", "--version", "version":
 		fmt.Printf("r19dev-scraper version %s\n", version)
@@ -151,10 +159,11 @@ func runScan(targetDir string, jsonOutput bool) {
 func runScrape(id, lang string) {
 	client := scraper.NewClient(15 * time.Second)
 	client.SetLanguage(lang)
+	client.SetCache(cache.Default())
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	fmt.Printf("🔍 Fetching English metadata for '%s' from R18.dev...\n", id)
+	fmt.Printf("🔍 Fetching metadata for '%s' (with local disk cache)...\n", id)
 	movie, err := client.Scrape(ctx, id)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
@@ -174,10 +183,11 @@ Usage:
   r19dev tui [path] [flags]   Launch Interactive TUI
                               Flags:
                                 --lang <en|ja>          Language preference (default: en)
-                                --proto <auto|kitty|iterm2|sixel|halfblock>  Graphics protocol
+                                --proto <auto|halfblock>  Graphics protocol
 
   r19dev scan [path] [--json] Run directory scan & ID matching
   r19dev scrape <JAV-ID>      Fetch metadata directly from R18.dev
+  r19dev clear-cache          Clear local metadata and image cache
   r19dev --version            Show version
   r19dev --help               Show this help message`)
 }

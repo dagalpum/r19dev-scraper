@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dagalp/r19dev-scraper/pkg/cache"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
@@ -88,6 +89,7 @@ func New(targetDir, lang string, proto GraphicProtocol) (*Model, error) {
 	}
 	scClient := scraper.NewClient(15 * time.Second)
 	scClient.SetLanguage(lang)
+	scClient.SetCache(cache.Default())
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -170,7 +172,7 @@ func (m Model) scrapeMovieCmd(id string) tea.Cmd {
 
 func (m Model) fetchCoverCmd(id, coverURL string, targetW, targetH int) tea.Cmd {
 	return func() tea.Msg {
-		ansi, err := FetchAndRenderCover(coverURL, m.protocol, targetW, targetH)
+		ansi, err := FetchAndRenderCover(id, coverURL, m.protocol, targetW, targetH)
 		return coverDoneMsg{id: id, ansi: ansi, err: err}
 	}
 }

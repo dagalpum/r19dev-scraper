@@ -11,14 +11,25 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dagalp/r19dev-scraper/pkg/cache"
 )
 
-// FetchAndRenderCover downloads an image from coverURL and converts it using the specified graphics protocol.
-func FetchAndRenderCover(coverURL string, proto GraphicProtocol, targetWidth, targetHeight int) (string, error) {
+// FetchAndRenderCover downloads or loads from disk cache, and converts to ANSI Truecolor half-block.
+func FetchAndRenderCover(id, coverURL string, proto GraphicProtocol, targetWidth, targetHeight int) (string, error) {
+	// 1. Check local persistent disk cache first
+	if localBytes, found := cache.Default().GetImage(id); found && len(localBytes) > 0 {
+		img, _, err := image.Decode(bytes.NewReader(localBytes))
+		if err == nil {
+			return EncodeImageToProtocol(img, localBytes, proto, targetWidth, targetHeight)
+		}
+	}
+
 	if coverURL == "" {
 		return "", fmt.Errorf("empty cover URL")
 	}
 
+	// 2. Fetch from remote HTTP
 	client := &http.Client{Timeout: 8 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, coverURL, nil)
 	if err != nil {
@@ -42,6 +53,9 @@ func FetchAndRenderCover(coverURL string, proto GraphicProtocol, targetWidth, ta
 		return "", err
 	}
 
+	// 3. Persist original image to disk cache for future instant loads
+	_ = cache.Default().SetImage(id, rawBytes)
+
 	img, _, err := image.Decode(bytes.NewReader(rawBytes))
 	if err != nil {
 		return "", fmt.Errorf("image decode error: %w", err)
@@ -58,10 +72,10 @@ func ImageToANSI(img image.Image, targetWidth, targetHeight int) string {
 	srcHeight := bounds.Dy()
 
 	if targetWidth <= 0 {
-		targetWidth = 26
+		targetWidth = 22
 	}
 	if targetHeight <= 0 {
-		targetHeight = 13
+		targetHeight = 8
 	}
 
 	pixelHeight := targetHeight * 2

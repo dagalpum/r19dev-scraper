@@ -60,11 +60,18 @@ type R18RawResponse struct {
 	URL string `json:"url"`
 }
 
+// MovieCache defines persistent caching behavior for movie records.
+type MovieCache interface {
+	GetMovie(id string) (*Movie, bool)
+	SetMovie(movie *Movie) error
+}
+
 // Client interacts with the R18.dev JSON API.
 type Client struct {
 	httpClient *http.Client
 	userAgent  string
 	language   string // "en" or "ja"
+	cache      MovieCache
 	mu         sync.Mutex
 	lastReq    time.Time
 }
@@ -88,6 +95,11 @@ func NewClient(timeout time.Duration) *Client {
 		userAgent: DefaultUA,
 		language:  "en", // Default to English metadata
 	}
+}
+
+// SetCache attaches a persistent disk cache to the client.
+func (c *Client) SetCache(cache MovieCache) {
+	c.cache = cache
 }
 
 // SetLanguage sets the metadata language preference ("en" or "ja").
@@ -115,6 +127,13 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	combinedID := NormalizeToCombinedID(id)
 	if combinedID == "" {
 		return nil, fmt.Errorf("invalid ID: %s", id)
+	}
+
+	// 1. Check local persistent disk cache first (<1ms)
+	if c.cache != nil {
+		if cached, found := c.cache.GetMovie(combinedID); found && cached != nil {
+			return cached, nil
+		}
 	}
 
 	apiURL := fmt.Sprintf(R18DevAPIBase, combinedID)
@@ -279,6 +298,11 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 		if item.ImageFull != "" {
 			movie.SampleScreenshots = append(movie.SampleScreenshots, item.ImageFull)
 		}
+	}
+
+	// Persist to local disk cache for instant future loads
+	if c.cache != nil {
+		_ = c.cache.SetMovie(movie)
 	}
 
 	return movie, nil

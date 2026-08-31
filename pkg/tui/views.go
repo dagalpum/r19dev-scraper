@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dagalp/r19dev-scraper/pkg/cache"
+	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -327,14 +328,47 @@ func (m Model) renderDetail(innerWidth, innerHeight int) string {
 
 		if len(movie.Actresses) > 0 {
 			var actNames []string
-			for _, act := range movie.Actresses {
-				actNames = append(actNames, act.Name)
+			d, _ := db.Default()
+			isMainFollowed := false
+			if d != nil {
+				isMainFollowed, _ = d.IsActressFollowed(movie.Actresses[0].Name)
 			}
-			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Cast:"), lipgloss.NewStyle().Foreground(lipgloss.Color("#F38BA8")).Render(truncateDisplay(strings.Join(actNames, ", "), innerWidth-9))))
+			for i, act := range movie.Actresses {
+				name := act.Name
+				if i == 0 && isMainFollowed {
+					name += " ⭐"
+				}
+				actNames = append(actNames, name)
+			}
+			castLabel := "Cast:"
+			if isMainFollowed {
+				castLabel = "Cast (⭐):"
+			}
+			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render(castLabel), lipgloss.NewStyle().Foreground(lipgloss.Color("#F38BA8")).Render(truncateDisplay(strings.Join(actNames, ", "), innerWidth-11))))
 		}
 
 		if len(movie.Genres) > 0 {
 			lines = append(lines, fmt.Sprintf("%s %s", labelStyle.Render("Genres:"), valueStyle.Render(truncateDisplay(strings.Join(movie.Genres, ", "), innerWidth-11))))
+		}
+
+		// User Status: Watched, Rating, Favorite
+		d, _ := db.Default()
+		if d != nil {
+			if uState, _ := d.GetUserState(cur.ID); uState != nil {
+				var statusBadges []string
+				if uState.IsWatched {
+					statusBadges = append(statusBadges, "👁️ Watched")
+				} else {
+					statusBadges = append(statusBadges, "👓 Unwatched")
+				}
+				if uState.UserRating > 0 {
+					statusBadges = append(statusBadges, strings.Repeat("⭐", uState.UserRating))
+				}
+				if uState.IsFavorite {
+					statusBadges = append(statusBadges, "❤️ Fav")
+				}
+				lines = append(lines, "", fmt.Sprintf("%s %s", labelStyle.Render("Status:"), lipgloss.NewStyle().Bold(true).Foreground(secondaryColor).Render(strings.Join(statusBadges, " | "))))
+			}
 		}
 	} else if errStr, hasErr := m.scrapeErrors[cur.ID]; hasErr {
 		lines = append(lines, lipgloss.NewStyle().Foreground(errorColor).Render("❌ Not Found on R18.dev"))
@@ -362,14 +396,15 @@ func (m Model) renderFooter() string {
 
 	hints := lipgloss.JoinHorizontal(
 		lipgloss.Left,
-		footerKeyStyle.Render("↑/↓"), footerDescStyle.Render("Navigate"),
+		footerKeyStyle.Render("↑/↓"), footerDescStyle.Render("Nav"),
 		footerKeyStyle.Render("Enter"), footerDescStyle.Render("Scrape"),
-		footerKeyStyle.Render("v"), footerDescStyle.Render("Fullscreen"),
-		footerKeyStyle.Render("o"), footerDescStyle.Render("Preview"),
-		footerKeyStyle.Render("s"), footerDescStyle.Render("Scrape All"),
-		footerKeyStyle.Render("c"), footerDescStyle.Render("Cover"),
-		footerKeyStyle.Render("e"), footerDescStyle.Render("Edit ID"),
-		footerKeyStyle.Render("r"), footerDescStyle.Render("Rescan"),
+		footerKeyStyle.Render("v"), footerDescStyle.Render("Cover"),
+		footerKeyStyle.Render("a"), footerDescStyle.Render("Follow"),
+		footerKeyStyle.Render("t"), footerDescStyle.Render("Watched"),
+		footerKeyStyle.Render("1-5"), footerDescStyle.Render("Rate"),
+		footerKeyStyle.Render("f"), footerDescStyle.Render("Fav"),
+		footerKeyStyle.Render("w"), footerDescStyle.Render("Organize"),
+		footerKeyStyle.Render("e"), footerDescStyle.Render("Edit"),
 		footerKeyStyle.Render("q"), footerDescStyle.Render("Quit"),
 	)
 

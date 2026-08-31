@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -12,7 +13,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dagalp/r19dev-scraper/pkg/cache"
+	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
+	"github.com/dagalp/r19dev-scraper/pkg/organizer"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
 )
@@ -246,6 +249,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			delete(m.scrapeErrors, msg.id)
 			m.statusMessage = fmt.Sprintf("🎉 Loaded metadata for %s", msg.id)
 
+			// Persist to SQLite DB
+			if d, dErr := db.Default(); dErr == nil && d != nil {
+				_ = d.SaveMovie(msg.movie)
+			}
+
 			// Fetch high-res cover preview if available and not cached yet
 			targetURL := msg.movie.CoverURL
 			if targetURL == "" {
@@ -377,7 +385,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.adjustScroll()
 
-		case "pgdown", "f":
+		case "pgdown", "ctrl+f", "d":
 			m.cursor += 10
 			if m.cursor >= len(m.matches) {
 				m.cursor = len(m.matches) - 1
@@ -396,6 +404,85 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "v":
 			m.isFullscreenCover = true
+
+		case "a":
+			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+				if mov, ok := m.metadataCache[curMatch.ID]; ok && len(mov.Actresses) > 0 {
+					act := mov.Actresses[0]
+					d, _ := db.Default()
+					if d != nil {
+						followed, _ := d.IsActressFollowed(act.Name)
+						if followed {
+							_ = d.UnfollowActress(act.Name)
+							m.statusMessage = fmt.Sprintf("🗑️ Unfollowed %s", act.Name)
+						} else {
+							_ = d.FollowActress(act.Name, act.JaName, act.ImageURL)
+							m.statusMessage = fmt.Sprintf("⭐ Followed %s (%s)", act.Name, act.JaName)
+						}
+					}
+				} else {
+					m.statusMessage = "⚠️ Scrape metadata first (press Enter) to follow actress"
+				}
+			}
+
+		case "t":
+			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+				d, _ := db.Default()
+				if d != nil {
+					isWatched, _ := d.ToggleWatched(curMatch.ID)
+					if isWatched {
+						m.statusMessage = fmt.Sprintf("👁️ Marked %s as Watched", curMatch.ID)
+					} else {
+						m.statusMessage = fmt.Sprintf("👓 Marked %s as Unwatched", curMatch.ID)
+					}
+				}
+			}
+
+		case "1", "2", "3", "4", "5":
+			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+				rating := int(msg.String()[0] - '0')
+				d, _ := db.Default()
+				if d != nil {
+					_ = d.SetRating(curMatch.ID, rating)
+					m.statusMessage = fmt.Sprintf("⭐ Rated %s: %s (%d/5)", curMatch.ID, strings.Repeat("⭐", rating), rating)
+				}
+			}
+
+		case "f":
+			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+				d, _ := db.Default()
+				if d != nil {
+					isFav, _ := d.ToggleFavorite(curMatch.ID)
+					if isFav {
+						m.statusMessage = fmt.Sprintf("❤️ Added %s to Favorites", curMatch.ID)
+					} else {
+						m.statusMessage = fmt.Sprintf("🤍 Removed %s from Favorites", curMatch.ID)
+					}
+				}
+			}
+
+		case "w":
+			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {
+				if mov, ok := m.metadataCache[curMatch.ID]; ok && mov != nil {
+					d, _ := db.Default()
+					var userState *db.UserState
+					if d != nil {
+						userState, _ = d.GetUserState(curMatch.ID)
+					}
+					destRoot := filepath.Dir(m.targetDir)
+					if destRoot == "" || destRoot == "." {
+						destRoot = m.targetDir
+					}
+					res, err := organizer.OrganizeMatch(context.Background(), curMatch, mov, userState, destRoot, false)
+					if err != nil {
+						m.statusMessage = fmt.Sprintf("❌ Organize error: %v", err)
+					} else {
+						m.statusMessage = fmt.Sprintf("✅ Organized %s into %s", curMatch.ID, filepath.Base(res.TargetFolder))
+					}
+				} else {
+					m.statusMessage = "⚠️ Scrape metadata first (press Enter) before organizing"
+				}
+			}
 
 		case "o":
 			if curMatch := m.currentMatch(); curMatch != nil && curMatch.ID != "" {

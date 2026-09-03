@@ -60,16 +60,41 @@ func TestOrganizeMatch(t *testing.T) {
 		UserRating: 5,
 	}
 
-	// 1. Test Dry-Run
+	// 1. Test Dry-Run (English Actress name priority)
 	dryPlan, err := OrganizeMatch(context.Background(), match, movie, userState, destRoot, true)
 	if err != nil {
 		t.Fatalf("Dry run failed: %v", err)
 	}
-	if !strings.Contains(dryPlan.TargetFolder, "瀬戸環奈 (Kanna Seto)") {
-		t.Errorf("Actress folder mismatch: %s", dryPlan.TargetFolder)
+	if !strings.Contains(dryPlan.TargetFolder, "Kanna Seto") {
+		t.Errorf("Actress folder mismatch (expected English Kanna Seto): %s", dryPlan.TargetFolder)
+	}
+	if strings.Contains(dryPlan.TargetFolder, "瀬戸環奈") {
+		t.Errorf("Actress folder should not contain Japanese when English is present: %s", dryPlan.TargetFolder)
 	}
 	if !strings.HasSuffix(dryPlan.TargetVideo, "SNOS-038.mp4") {
 		t.Errorf("Target video filename mismatch: %s", dryPlan.TargetVideo)
+	}
+
+	// 1b. Test Japanese Fallback when English Name is empty
+	movieJaOnly := *movie
+	movieJaOnly.Actresses = []scraper.Actress{{Name: "", JaName: "葵つかさ"}}
+	planJa, err := PlanOrganize(match, &movieJaOnly, destRoot)
+	if err != nil {
+		t.Fatalf("Plan failed for JaOnly: %v", err)
+	}
+	if !strings.Contains(planJa.TargetFolder, "葵つかさ") {
+		t.Errorf("Expected Japanese fallback 葵つかさ: %s", planJa.TargetFolder)
+	}
+
+	// 1c. Test Unknown Actress fallback
+	movieNoActress := *movie
+	movieNoActress.Actresses = nil
+	planUnknown, err := PlanOrganize(match, &movieNoActress, destRoot)
+	if err != nil {
+		t.Fatalf("Plan failed for Unknown Actress: %v", err)
+	}
+	if !strings.Contains(planUnknown.TargetFolder, "Unknown Actress") {
+		t.Errorf("Expected Unknown Actress: %s", planUnknown.TargetFolder)
 	}
 
 	// Verify source video still exists after dry run

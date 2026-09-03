@@ -88,6 +88,7 @@
     // Actresses
     inputActressName: document.getElementById('input-actress-name'),
     btnAddActress: document.getElementById('btn-add-actress'),
+    btnRefreshActresses: document.getElementById('btn-refresh-actresses'),
     actressesContainer: document.getElementById('actresses-container'),
     actressesEmpty: document.getElementById('actresses-empty'),
 
@@ -566,7 +567,7 @@
   }
 
   function setupActressHub() {
-    elements.btnAddActress.addEventListener('click', async () => {
+    elements.btnAddActress?.addEventListener('click', async () => {
       const name = elements.inputActressName.value.trim();
       if (!name) return;
       try {
@@ -581,6 +582,12 @@
       } catch (err) {
         showToast('Error following actress: ' + err.message, 'danger');
       }
+    });
+
+    elements.btnRefreshActresses?.addEventListener('click', async () => {
+      showToast('Refreshing all actress releases... 🔄', 'info');
+      await loadActressesData();
+      showToast('All actress releases updated! ✅', 'success');
     });
   }
 
@@ -1465,13 +1472,14 @@
         releasesHtml = `
           <div class="movies-grid grid-auto" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
             ${releases.map(rel => {
-              const statusPill = rel.is_downloaded
-                ? '<span class="pill pill-downloaded">🟢 Downloaded</span>'
-                : '<span class="pill pill-missing">🔴 Missing / New</span>';
+              const isMissing = !rel.is_downloaded;
+              const statusPill = isMissing
+                ? '<span class="pill pill-missing">🔴 Missing / New</span>'
+                : '<span class="pill pill-downloaded">🟢 Downloaded</span>';
               const watched = rel.is_watched ? ' • 👁️ Watched' : '';
               return `
-                <div class="movie-card" style="padding: 0.8rem; cursor: pointer;" tabindex="0" role="article" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openMovie('${escapeHtml(rel.movie_id)}');}">
-                  <img src="${rel.cover_url || '/placeholder.png'}" alt="Cover for ${escapeHtml(rel.movie_id)}" style="width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 0.6rem;" />
+                <div class="movie-card ${isMissing ? 'movie-card-missing' : ''}" style="padding: 0.8rem; cursor: pointer;" tabindex="0" role="article" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openMovie('${escapeHtml(rel.movie_id)}');}">
+                  <img src="${rel.cover_url || '/placeholder.png'}" class="${isMissing ? 'cover-missing' : ''}" alt="Cover for ${escapeHtml(rel.movie_id)}" style="width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 0.6rem;" />
                   <div style="font-weight: 700; color: #fff; font-size: 0.9rem;">${escapeHtml(rel.movie_id)}</div>
                   <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(rel.title)}</div>
                   <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
@@ -1496,12 +1504,21 @@
               <div class="ja-name">${escapeHtml(a.ja_name || '')}</div>
             </div>
           </div>
-          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
             <div class="actress-stats-pills">
               <span class="pill pill-downloaded">🟢 ${entry.downloaded} Downloaded</span>
               <span class="pill pill-missing">🔴 ${entry.missing} Missing</span>
               <span class="pill pill-watched">👁️ ${entry.watched} Watched</span>
             </div>
+            <a href="https://r18.dev/search/?search=${encodeURIComponent(a.name)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View ${escapeHtml(a.name)} on R18.dev" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;">
+              <span>🌐</span> R18.dev ↗
+            </a>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.trackTitleToActress('${escapeHtml(a.name)}')" title="Track a missing or new JAV-ID for ${escapeHtml(a.name)}">
+              <span class="icon">+</span> Track Title
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.refreshSingleActress('${escapeHtml(a.name)}', this)" title="Refresh releases for ${escapeHtml(a.name)}">
+              <span class="icon">🔄</span> Refresh
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.unfollowActress('${escapeHtml(a.name)}')">
               🗑️ Unfollow
             </button>
@@ -1817,6 +1834,38 @@
       .replace(/'/g, '&#039;');
   }
 
+  async function trackTitleToActress(actressName) {
+    const id = prompt(`Enter JAV ID to track for ${actressName} (e.g. SNOS-373):`);
+    if (!id || !id.trim()) return;
+    const cleanId = id.trim().toUpperCase();
+    showToast(`Fetching metadata for ${cleanId} from R18.dev... ⚡`, 'info');
+    try {
+      const res = await fetch(`/api/scrape/${encodeURIComponent(cleanId)}`);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to fetch metadata');
+      }
+      const data = await res.json();
+      showToast(`Tracked ${cleanId}: ${data.title ? data.title.slice(0, 35) + '...' : ''} 🎉`, 'success');
+      await loadActressesData();
+    } catch (err) {
+      showToast(`Error tracking ${cleanId}: ${err.message}`, 'danger');
+    }
+  }
+
+  async function refreshSingleActress(name, btn) {
+    if (btn) btn.classList.add('loading-spin');
+    showToast(`Checking releases for ${name}... 🔄`, 'info');
+    try {
+      await loadActressesData();
+      showToast(`Releases for ${name} up to date! ✅`, 'success');
+    } catch (err) {
+      showToast(`Error updating releases: ${err.message}`, 'danger');
+    } finally {
+      if (btn) btn.classList.remove('loading-spin');
+    }
+  }
+
   // Expose global app object for inline handlers
   window.app = {
     openMovie: openMovieById,
@@ -1827,6 +1876,8 @@
     setRating,
     toggleFollowActress,
     unfollowActress,
+    trackTitleToActress,
+    refreshSingleActress,
     organizeSingle,
     openFolder
   };

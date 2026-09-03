@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -192,10 +193,11 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
-		"target_dir":  target,
-		"matches":     matches,
-		"metadata":    metadataMap,
-		"user_states": userStatesMap,
+		"target_dir":       target,
+		"matches":          matches,
+		"metadata":         metadataMap,
+		"user_states":      userStatesMap,
+		"organized_status": detectOrganizedStatus(target, matches, s.db),
 	}
 
 	writeJSON(w, resp)
@@ -419,6 +421,9 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 			results = append(results, *res)
 			if res.Success {
 				successCount++
+				if !req.DryRun && s.db != nil {
+					_ = s.db.SetOrganized(match.ID, res.TargetFolder, res.TargetVideo)
+				}
 			}
 		}
 	}
@@ -498,12 +503,13 @@ func (s *Server) handleScanStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	doneData, _ := json.Marshal(map[string]any{
-		"phase":       "done",
-		"target_dir":  target,
-		"total":       len(allFiles),
-		"matches":     finalMatches,
-		"metadata":    metadataMap,
-		"user_states": userStatesMap,
+		"phase":            "done",
+		"target_dir":       target,
+		"total":            len(allFiles),
+		"matches":          finalMatches,
+		"metadata":         metadataMap,
+		"user_states":      userStatesMap,
+		"organized_status": detectOrganizedStatus(target, finalMatches, s.db),
 	})
 	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
 	flusher.Flush()
@@ -600,6 +606,9 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 		success := err == nil && res != nil && res.Success
 		if success {
 			successCount++
+			if !dryRun && s.db != nil {
+				_ = s.db.SetOrganized(match.ID, res.TargetFolder, res.TargetVideo)
+			}
 		}
 
 		itemData, _ := json.Marshal(map[string]any{
@@ -677,6 +686,51 @@ func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": message})
+}
+
+// detectOrganizedStatus checks which movies have already been organized into NAS Jellyfin structure.
+func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, database *db.DB) map[string]bool {
+	organizedMap := make(map[string]bool)
+	if database != nil {
+		if orgs, err := database.GetOrganizedMap(); err == nil && orgs != nil {
+			organizedMap = orgs
+		}
+	}
+
+	checkDest := filepath.Join(targetDir, "JAV_Library")
+	for _, m := range matches {
+		if m.ID == "" || organizedMap[m.ID] {
+			continue
+		}
+		// If video file itself is already inside a folder with .nfo, it's organized
+		dir := filepath.Dir(m.File.Path)
+		nfoPath := filepath.Join(dir, m.ID+".nfo")
+		if _, err := os.Stat(nfoPath); err == nil {
+			organizedMap[m.ID] = true
+			if database != nil {
+				_ = database.SetOrganized(m.ID, dir, m.File.Path)
+			}
+			continue
+		}
+		// If JAV_Library has this ID
+		if entries, err := os.ReadDir(checkDest); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					subPath := filepath.Join(checkDest, entry.Name())
+					if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
+						for _, sub := range subEntries {
+							if strings.Contains(strings.ToUpper(sub.Name()), m.ID) {
+								organizedMap[m.ID] = true
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return organizedMap
 }
 
 // OpenBrowser opens the given URL in the user's default web browser.

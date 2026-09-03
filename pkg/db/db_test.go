@@ -93,4 +93,17 @@ func TestDBOperations(t *testing.T) {
 	if err != nil || !inLib {
 		t.Errorf("HasMovieInLibrary expected true, got %v", inLib)
 	}
+
+	// 5. Test Organized
+	if err := d.SetOrganized("SNOS-038", "/nas/target/SNOS-038", "/nas/target/SNOS-038/SNOS-038.mp4"); err != nil {
+		t.Fatalf("SetOrganized failed: %v", err)
+	}
+	orgMap, err := d.GetOrganizedMap()
+	if err != nil || !orgMap["SNOS-038"] {
+		t.Errorf("GetOrganizedMap expected SNOS-038 true, got %v", orgMap)
+	}
+	isOrg, err := d.IsOrganized("SNOS-038")
+	if err != nil || !isOrg {
+		t.Errorf("IsOrganized expected true, got %v", isOrg)
+	}
 }

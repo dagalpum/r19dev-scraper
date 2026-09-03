@@ -182,6 +182,13 @@ func (d *DB) initSchema() error {
 		scanned_at DATETIME
 	);
 
+	CREATE TABLE IF NOT EXISTS organized_movies (
+		movie_id TEXT PRIMARY KEY,
+		target_folder TEXT,
+		target_video TEXT,
+		organized_at DATETIME
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_movies_maker ON movies(maker);
 	CREATE INDEX IF NOT EXISTS idx_movies_release ON movies(release_date);
 	CREATE INDEX IF NOT EXISTS idx_library_movie_id ON library_files(movie_id);
@@ -523,6 +530,67 @@ func (d *DB) HasMovieInLibrary(movieID string) (bool, error) {
 
 	var count int
 	err := d.conn.QueryRow("SELECT COUNT(*) FROM library_files WHERE movie_id = ?", movieID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// SetOrganized records a movie as successfully organized to the target path.
+func (d *DB) SetOrganized(movieID, targetFolder, targetVideo string) error {
+	movieID = strings.ToUpper(strings.TrimSpace(movieID))
+	if movieID == "" {
+		return nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `
+	INSERT INTO organized_movies (movie_id, target_folder, target_video, organized_at)
+	VALUES (?, ?, ?, ?)
+	ON CONFLICT(movie_id) DO UPDATE SET
+		target_folder = excluded.target_folder,
+		target_video = excluded.target_video,
+		organized_at = excluded.organized_at;
+	`
+	_, err := d.conn.Exec(query, movieID, targetFolder, targetVideo, time.Now())
+	return err
+}
+
+// GetOrganizedMap returns a map of all movie IDs that have been organized.
+func (d *DB) GetOrganizedMap() (map[string]bool, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.conn.Query(`SELECT movie_id FROM organized_movies`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil && id != "" {
+			result[strings.ToUpper(id)] = true
+		}
+	}
+	return result, nil
+}
+
+// IsOrganized checks if a movie ID has been organized into Jellyfin NAS.
+func (d *DB) IsOrganized(movieID string) (bool, error) {
+	movieID = strings.ToUpper(strings.TrimSpace(movieID))
+	if movieID == "" {
+		return false, nil
+	}
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var count int
+	err := d.conn.QueryRow(`SELECT COUNT(*) FROM organized_movies WHERE movie_id = ?`, movieID).Scan(&count)
 	if err != nil {
 		return false, err
 	}

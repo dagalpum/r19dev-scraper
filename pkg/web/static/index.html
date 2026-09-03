@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/vendor/photoswipe.css">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -84,12 +85,14 @@
             <label for="filter-status" class="sr-only">Filter by status</label>
             <select id="filter-status" class="select-dropdown" aria-label="Filter by status">
               <option value="all">All Movies</option>
-              <option value="matched">Matched JAV ID</option>
-              <option value="unmatched">Unmatched Files</option>
-              <option value="scraped">Scraped Metadata</option>
-              <option value="watched">Watched (👁️)</option>
-              <option value="unwatched">Unwatched (👓)</option>
-              <option value="favorites">Favorites (❤️)</option>
+              <option value="scraped">🟢 Scraped (Metadata ready)</option>
+              <option value="unscraped">🟡 Pending Scrape (Needs metadata)</option>
+              <option value="organized">📂 Organized (In Jellyfin Library)</option>
+              <option value="unorganized">📥 Staging (Pending organize)</option>
+              <option value="watched">👁️ Watched</option>
+              <option value="unwatched">👓 Unwatched</option>
+              <option value="favorites">❤️ Favorites</option>
+              <option value="unmatched">⚪ Unmatched Files</option>
             </select>
 
             <label for="sort-by" class="sr-only">Sort by</label>
@@ -256,6 +259,7 @@
     <div id="toast-container" class="toast-container" role="region" aria-label="Notifications" aria-live="polite"></div>
   </div>
 
+  <script src="/vendor/lucide.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

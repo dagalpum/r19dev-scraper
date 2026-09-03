@@ -15,6 +15,8 @@
     groupedMovies: [],  // Grouped by JAV ID
     metadata: {},       // ID -> scraper.Movie
     userStates: {},     // ID -> db.UserState
+    organizedStatus: {}, // ID -> bool
+    currentGallery: [],  // PhotoSwipe items for open modal
     actresses: [],      // Followed actresses
     filter: 'all',
     sort: 'id-asc',
@@ -101,6 +103,10 @@
 
     // Initial Data Fetch
     fetchInitialData();
+
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
   }
 
   function setupTabSwitching() {
@@ -360,6 +366,7 @@
 
         if (data.metadata) Object.assign(state.metadata, data.metadata);
         if (data.user_states) Object.assign(state.userStates, data.user_states);
+        if (data.organized_status) Object.assign(state.organizedStatus, data.organized_status);
 
         state.groupedMovies = groupMatches(state.rawMatches);
 
@@ -432,6 +439,9 @@
         elements.orgProgressLabel.textContent = `Processing ${item.index} of ${item.total}: ${item.movie_id}...`;
 
         const status = item.success ? (dryRun ? '[PLAN]' : '[MOVED]') : '[FAIL]';
+        if (item.success && !dryRun && item.movie_id) {
+          state.organizedStatus[item.movie_id] = true;
+        }
         elements.organizerLog.textContent += `${status} ${item.movie_id} -> ${item.target_folder || ''}\n`;
         if (item.target_video) {
           elements.organizerLog.textContent += `   Video: ${item.target_video}\n`;
@@ -450,6 +460,8 @@
         elements.organizerLog.textContent += `\n✨ Complete! Successfully processed ${data.success_count}/${data.total} movies.\n`;
         elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
         showToast(`Organize complete: ${data.success_count} movies processed!`, 'success');
+
+        renderMoviesGrid();
 
         setTimeout(() => {
           elements.orgProgressBox.classList.add('hidden');
@@ -531,6 +543,12 @@
       list = list.filter(m => !m.id);
     } else if (state.filter === 'scraped') {
       list = list.filter(m => m.id && state.metadata[m.id]);
+    } else if (state.filter === 'unscraped') {
+      list = list.filter(m => m.id && !state.metadata[m.id]);
+    } else if (state.filter === 'organized') {
+      list = list.filter(m => m.id && state.organizedStatus[m.id]);
+    } else if (state.filter === 'unorganized') {
+      list = list.filter(m => m.id && !state.organizedStatus[m.id]);
     } else if (state.filter === 'watched') {
       list = list.filter(m => m.id && state.userStates[m.id]?.is_watched);
     } else if (state.filter === 'unwatched') {
@@ -560,6 +578,10 @@
       const card = createMovieCard(movie);
       elements.moviesGrid.appendChild(card);
     });
+
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
   }
 
   function createMovieCard(movie) {
@@ -572,35 +594,65 @@
     const id = movie.id || 'UNMATCHED';
     const meta = state.metadata[movie.id];
     const uState = state.userStates[movie.id] || {};
+    const isOrganized = Boolean(state.organizedStatus[movie.id]);
+    const isScraped = Boolean(meta);
     const sizeMB = Math.round((movie.totalSize || 0) / (1024 * 1024));
 
     const coverUrl = meta?.cover_url || meta?.poster_url || '/api/images/' + id;
     const title = meta?.title || movie.files[0]?.name || 'Unknown Title';
     const maker = meta?.maker || '';
-    const date = meta?.release_date || '';
 
     // Multi-part indicator
     let partBadge = '';
     if (movie.isMultiPart || movie.files.length > 1) {
       const partStr = movie.partNumbers.length > 0 ? `P${movie.partNumbers.join(', P')}` : `${movie.files.length} parts`;
-      partBadge = `<span class="badge-status badge-multipart" title="${movie.files.length} video files">${partStr}</span>`;
+      partBadge = `<span class="badge-status badge-multipart" title="${movie.files.length} video files"><i data-lucide="layers"></i> ${partStr}</span>`;
     }
 
-    // Badges & Actresses
+    // Scraped Badge
+    let scrapedBadge = '';
+    if (isScraped) {
+      scrapedBadge = `<span class="badge-status badge-scraped" title="Metadata scraped from R18.dev"><i data-lucide="check-circle-2"></i> Scraped</span>`;
+    } else if (movie.id) {
+      scrapedBadge = `<span class="badge-status badge-unscraped" title="Needs metadata scrape"><i data-lucide="sparkles"></i> Unscraped</span>`;
+    } else {
+      scrapedBadge = `<span class="badge-status badge-staging" title="No JAV ID matched"><i data-lucide="help-circle"></i> Unmatched</span>`;
+    }
+
+    // Organized Badge
+    let organizedBadge = '';
+    if (isOrganized) {
+      organizedBadge = `<span class="badge-status badge-organized" title="Organized in Jellyfin Library"><i data-lucide="folder-check"></i> Organized</span>`;
+    } else if (movie.id) {
+      organizedBadge = `<span class="badge-status badge-staging" title="Pending NAS organize"><i data-lucide="inbox"></i> Staging</span>`;
+    }
+
+    // Watched & Fav Badges
+    const watchedBadge = uState.is_watched ? '<span class="badge-status badge-watched" title="Watched"><i data-lucide="eye"></i> Watched</span>' : '';
+    const favBadge = uState.is_favorite ? '<span class="badge-status badge-fav" title="Favorited"><i data-lucide="heart"></i> Fav</span>' : '';
+    const ratingStr = uState.user_rating ? '⭐'.repeat(uState.user_rating) : '';
+
+    // Date Badge with clear labeling
+    let dateBadge = '';
+    if (meta?.release_date) {
+      dateBadge = `<span class="card-date-badge is-release" title="Official Release Date"><i data-lucide="calendar"></i> Rel: ${escapeHtml(meta.release_date)}</span>`;
+    } else if (movie.files[0]?.mod_time) {
+      dateBadge = `<span class="card-date-badge" title="File Creation / Modification Date"><i data-lucide="clock"></i> File: ${escapeHtml(movie.files[0].mod_time.slice(0, 10))}</span>`;
+    }
+
+    // Actresses
     const actressesHtml = (meta?.actresses || []).slice(0, 3).map(act => {
       const isFollowed = state.actresses.some(a => a.actress.name.toLowerCase() === act.name.toLowerCase());
       return `<span class="actress-chip ${isFollowed ? 'followed' : ''}">${isFollowed ? '⭐ ' : ''}${escapeHtml(act.name)}</span>`;
     }).join('');
-
-    const watchedBadge = uState.is_watched ? '<span class="badge-status" style="color: var(--success)" title="Watched">👁️ Watched</span>' : '';
-    const favBadge = uState.is_favorite ? '<span class="badge-status" style="color: var(--accent-pink)" title="Favorited">❤️</span>' : '';
-    const ratingStr = uState.user_rating ? '⭐'.repeat(uState.user_rating) : '';
 
     card.innerHTML = `
       <div class="card-cover-wrapper">
         <img class="card-cover-img" src="${coverUrl}" alt="Jacket cover for ${escapeHtml(id)}" onerror="this.src='/placeholder.png'" loading="lazy" />
         <div class="card-overlay-badge">${escapeHtml(id)}</div>
         <div class="card-overlay-status">
+          ${scrapedBadge}
+          ${organizedBadge}
           ${partBadge}
           ${watchedBadge}
           ${favBadge}
@@ -610,7 +662,8 @@
         <h3 class="card-title" title="${escapeHtml(title)}">${escapeHtml(title)}</h3>
         <div class="card-meta">
           <span>${escapeHtml(maker)}</span>
-          <span>${sizeMB} MB ${date ? '• ' + date : ''}</span>
+          <span>${sizeMB} MB</span>
+          ${dateBadge}
         </div>
         <div class="card-actresses">
           ${actressesHtml}
@@ -618,9 +671,18 @@
         <div class="card-footer">
           <div style="font-size: 0.85rem; color: var(--warning); min-height: 20px;">${ratingStr}</div>
           <div class="card-actions" onclick="event.stopPropagation()">
-            <button class="btn-icon-sm btn-scrape" title="Scrape metadata" aria-label="Scrape metadata for ${escapeHtml(id)}">⚡</button>
-            <button class="btn-icon-sm btn-fav ${uState.is_favorite ? 'active' : ''}" title="Toggle Favorite" aria-label="Favorite ${escapeHtml(id)}">❤️</button>
-            <button class="btn-icon-sm btn-watched" title="Toggle Watched" aria-label="Toggle watched status for ${escapeHtml(id)}">${uState.is_watched ? '👁️' : '👓'}</button>
+            <button class="btn-icon-sm btn-scrape" title="Scrape metadata from R18.dev" aria-label="Scrape metadata for ${escapeHtml(id)}">
+              <i data-lucide="sparkles"></i> Scrape
+            </button>
+            <button class="btn-icon-sm btn-fav ${uState.is_favorite ? 'active' : ''}" title="Toggle Favorite" aria-label="Favorite ${escapeHtml(id)}">
+              <i data-lucide="heart"></i>
+            </button>
+            <button class="btn-icon-sm btn-watched ${uState.is_watched ? 'active' : ''}" title="Toggle Watched" aria-label="Toggle watched status for ${escapeHtml(id)}">
+              <i data-lucide="eye"></i>
+            </button>
+            <button class="btn-icon-sm btn-organize-quick ${isOrganized ? 'active' : ''}" title="Organize for NAS Jellyfin" aria-label="Organize ${escapeHtml(id)}">
+              <i data-lucide="folder-output"></i>
+            </button>
           </div>
         </div>
       </div>
@@ -652,6 +714,11 @@
     card.querySelector('.btn-watched')?.addEventListener('click', async (e) => {
       e.stopPropagation();
       await toggleWatched(movie.id);
+    });
+
+    card.querySelector('.btn-organize-quick')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await organizeSingle(movie.id);
     });
 
     return card;
@@ -719,19 +786,43 @@
     }
 
     // Sample Screenshots with SAFE High-Res URL & Fallbacks
+    // Build PhotoSwipe 5 gallery dataset
+    const galleryItems = [];
+    if (coverUrl) {
+      galleryItems.push({
+        src: coverUrl,
+        fallbackSrc: coverUrl,
+        w: 1200,
+        h: 800,
+        alt: `Jacket Cover - ${id}`
+      });
+    }
+
+    // Sample Screenshots with SAFE High-Res URL & Fallbacks
     let screenshotsGrid = '';
     if (meta?.sample_screenshots && meta.sample_screenshots.length > 0) {
       screenshotsGrid = meta.sample_screenshots.map((url, idx) => {
         const highResUrl = getHighResScreenshotUrl(url);
+        const galleryIdx = galleryItems.length;
+        galleryItems.push({
+          src: highResUrl,
+          fallbackSrc: url,
+          w: 1280,
+          h: 720,
+          alt: `Screenshot #${idx + 1} - ${id}`
+        });
+
         return `
-          <div class="gallery-thumbnail" tabindex="0" role="button" aria-label="View Screenshot #${idx + 1}"
-               onclick="window.app.openLightbox('${highResUrl}', '${escapeHtml(url)}', 'Screenshot #${idx + 1}')"
-               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openLightbox('${highResUrl}', '${escapeHtml(url)}', 'Screenshot #${idx + 1}');}">
+          <div class="gallery-thumbnail" tabindex="0" role="button" aria-label="View Screenshot #${idx + 1} in gallery"
+               onclick="window.app.openGallery(${galleryIdx})"
+               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openGallery(${galleryIdx});}">
             <img src="${url}" alt="Screenshot #${idx + 1}" loading="lazy" onerror="this.src='/api/proxy-image?url=${encodeURIComponent(url)}'" />
           </div>
         `;
       }).join('');
     }
+
+    state.currentGallery = galleryItems;
 
     // FULL-WIDTH HERO COVER LAYOUT
     elements.modalContent.innerHTML = `
@@ -739,14 +830,14 @@
       <div class="modal-hero-banner" role="region" aria-label="Full-Width Cover Image">
         <div class="modal-hero-backdrop" style="background-image: url('${coverUrl}');"></div>
         <img class="modal-hero-cover-img" src="${coverUrl}" alt="Full High-Res Cover for ${escapeHtml(id)}"
-             onclick="window.app.openLightbox('${coverUrl}', '${coverUrl}', 'Jacket Cover - ${escapeHtml(id)}')"
+             onclick="window.app.openGallery(0)"
              onerror="this.src='/placeholder.png'" />
         <div class="modal-hero-overlay">
           <span class="badge-status" style="background: rgba(12,14,20,0.85); font-family: var(--font-mono); font-size: 0.95rem; font-weight: 800; color: #fff;">
             ${escapeHtml(id)}
           </span>
-          <button class="btn-zoom-cover" onclick="window.app.openLightbox('${coverUrl}', '${coverUrl}', 'Jacket Cover - ${escapeHtml(id)}')">
-            🔍 Zoom Full Cover
+          <button class="btn-zoom-cover" onclick="window.app.openGallery(0)">
+            <i data-lucide="maximize-2"></i> View Fullscreen Gallery (${galleryItems.length})
           </button>
         </div>
       </div>
@@ -826,6 +917,10 @@
         ` : ''}
       </div>
     `;
+
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
   }
 
   // Safe DMM high-res URL converter preventing double jpjp-
@@ -835,18 +930,51 @@
     return url.replace(/([a-z0-9]+)-([0-9]+)\.jpg$/, '$1jp-$2.jpg');
   }
 
+  // PhotoSwipe 5 Dynamic Loader & Controller
+  let pswpLightboxModule = null;
+  let pswpModule = null;
+
+  async function initPhotoSwipe() {
+    if (!pswpLightboxModule) {
+      const [lbMod, psMod] = await Promise.all([
+        import('/vendor/photoswipe-lightbox.esm.min.js'),
+        import('/vendor/photoswipe.esm.min.js')
+      ]);
+      pswpLightboxModule = lbMod.default;
+      pswpModule = psMod.default;
+    }
+  }
+
+  async function openGallery(index = 0) {
+    if (!state.currentGallery || state.currentGallery.length === 0) return;
+    try {
+      await initPhotoSwipe();
+      const lightbox = new pswpLightboxModule({
+        dataSource: state.currentGallery,
+        pswpModule: pswpModule,
+        showHideAnimationType: 'fade',
+        bgOpacity: 0.96,
+        padding: { top: 24, bottom: 24, left: 24, right: 24 },
+      });
+      lightbox.init();
+      lightbox.loadAndOpen(index);
+    } catch (err) {
+      console.error('PhotoSwipe open error:', err);
+      const item = state.currentGallery[index];
+      if (item) openLightbox(item.src, item.fallbackSrc, item.alt);
+    }
+  }
+
   function openLightbox(url, fallbackUrl, caption) {
     elements.lightboxImg.src = url;
     elements.lightboxImg.dataset.fallback = fallbackUrl || '';
     elements.lightboxCaption.textContent = caption || '';
     elements.lightbox.classList.remove('hidden');
 
-    // Fallback if high res fails to load
     elements.lightboxImg.onerror = function () {
       if (this.dataset.fallback && this.src !== this.dataset.fallback) {
         this.src = this.dataset.fallback;
       } else {
-        // Last resort: proxy via Go backend
         this.src = '/api/proxy-image?url=' + encodeURIComponent(fallbackUrl || url);
       }
     };
@@ -925,6 +1053,10 @@
 
       elements.actressesContainer.appendChild(section);
     });
+
+    if (window.lucide) {
+      window.lucide.createIcons();
+    }
   }
 
   // =========================================================================
@@ -1064,6 +1196,12 @@
         });
       }
       showToast(`✅ Successfully organized ${id} into ${dest}`, 'success');
+      state.organizedStatus[id] = true;
+      renderMoviesGrid();
+      if (state.selectedMovieId === id) {
+        const movie = state.groupedMovies.find(m => m.id === id);
+        if (movie) renderModalContent(movie, state.metadata[id]);
+      }
     } catch (err) {
       showToast(`Error: ${err.message}`, 'danger');
     }
@@ -1105,6 +1243,7 @@
 
   // Expose global app object for inline handlers
   window.app = {
+    openGallery,
     openLightbox,
     toggleWatched,
     toggleFavorite,

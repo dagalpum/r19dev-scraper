@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +110,8 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/organize", s.handleOrganize)
 	mux.HandleFunc("/api/organize/stream", s.handleOrganizeStream)
 	mux.HandleFunc("/api/open-folder", s.handleOpenFolder)
+	mux.HandleFunc("/api/history", s.handleHistory)
+	mux.HandleFunc("/api/history/detail", s.handleHistoryDetail)
 
 	// Static Files from Embedded FS
 	subFS, err := fs.Sub(staticFS, "static")
@@ -586,6 +589,9 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	var logBuf strings.Builder
+	logBuf.WriteString(fmt.Sprintf("🚀 Starting organize from %s -> %s (DryRun: %v)...\n\n", srcDir, destDir, dryRun))
+
 	startData, _ := json.Marshal(map[string]any{
 		"phase": "start",
 		"total": len(validMatches),
@@ -596,18 +602,21 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	successCount := 0
 	for i, match := range validMatches {
 		// Report step: checking metadata
+		stepMsg := fmt.Sprintf("กำลังตรวจสอบข้อมูล metadata ของ %s...", match.ID)
+		logBuf.WriteString(fmt.Sprintf("   → %s\n", stepMsg))
 		stepCheck, _ := json.Marshal(map[string]any{
 			"movie_id": match.ID,
 			"step":     "check_metadata",
 			"index":    i + 1,
 			"total":    len(validMatches),
-			"message":  fmt.Sprintf("กำลังตรวจสอบข้อมูล metadata ของ %s...", match.ID),
+			"message":  stepMsg,
 		})
 		fmt.Fprintf(w, "event: step\ndata: %s\n\n", stepCheck)
 		flusher.Flush()
 
 		movie, err := s.scraperClient.Scrape(ctx, match.ID)
 		if err != nil {
+			logBuf.WriteString(fmt.Sprintf("[FAIL] %s -> Error: %v\n", match.ID, err))
 			itemData, _ := json.Marshal(map[string]any{
 				"index":    i + 1,
 				"total":    len(validMatches),
@@ -628,6 +637,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 
 		// Progress reporter callback for granular steps inside OrganizeMatch
 		stepReporter := func(step string, current, total int, message string) {
+			logBuf.WriteString(fmt.Sprintf("   → %s\n", message))
 			stepJSON, _ := json.Marshal(map[string]any{
 				"movie_id":     match.ID,
 				"step":         step,
@@ -664,6 +674,21 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 			targetVideo = res.TargetVideo
 		}
 
+		status := "[MOVED]"
+		if dryRun {
+			status = "[PLAN]"
+		}
+		if !success {
+			status = "[FAIL]"
+		}
+		logBuf.WriteString(fmt.Sprintf("%s %s -> %s\n", status, match.ID, targetFolder))
+		if targetVideo != "" {
+			logBuf.WriteString(fmt.Sprintf("   Video: %s\n", targetVideo))
+		}
+		if errMsg != "" {
+			logBuf.WriteString(fmt.Sprintf("   ❌ ข้อผิดพลาด: %s\n", errMsg))
+		}
+
 		itemData, _ := json.Marshal(map[string]any{
 			"index":         i + 1,
 			"total":         len(validMatches),
@@ -680,11 +705,20 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
+	doneMsg := fmt.Sprintf("จัดระเบียบเสร็จสมบูรณ์ %d/%d ไฟล์", successCount, len(validMatches))
+	logBuf.WriteString(fmt.Sprintf("\n✨ Complete! Successfully processed %d/%d movies.\n", successCount, len(validMatches)))
+
+	// Save to SQLite operation_history
+	if s.db != nil && len(validMatches) > 0 {
+		failCount := len(validMatches) - successCount
+		_, _ = s.db.AddOperationHistory("organize", destDir, len(validMatches), successCount, failCount, dryRun, logBuf.String())
+	}
+
 	doneData, _ := json.Marshal(map[string]any{
 		"phase":         "done",
 		"total":         len(validMatches),
 		"success_count": successCount,
-		"message":       fmt.Sprintf("จัดระเบียบเสร็จสมบูรณ์ %d/%d ไฟล์", successCount, len(validMatches)),
+		"message":       doneMsg,
 	})
 	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
 	flusher.Flush()
@@ -1020,4 +1054,49 @@ func OpenBrowser(url string) error {
 		cmd = exec.Command("xdg-open", url)
 	}
 	return cmd.Start()
+}
+
+// --- Operation History Handlers ---
+
+func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSONError(w, "database not available", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		if err := s.db.ClearOperationHistory(); err != nil {
+			writeJSONError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"success": true, "message": "History cleared"})
+		return
+	}
+
+	limit := 50
+	records, err := s.db.GetOperationHistory(limit, false)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"history": records})
+}
+
+func (s *Server) handleHistoryDetail(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSONError(w, "database not available", http.StatusServiceUnavailable)
+		return
+	}
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		writeJSONError(w, "valid id parameter required", http.StatusBadRequest)
+		return
+	}
+
+	record, err := s.db.GetOperationDetail(id)
+	if err != nil || record == nil {
+		writeJSONError(w, "history record not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, record)
 }

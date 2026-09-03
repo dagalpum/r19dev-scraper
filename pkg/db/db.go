@@ -49,6 +49,19 @@ type LibraryFileRecord struct {
 	ScannedAt     time.Time `json:"scanned_at"`
 }
 
+// OperationRecord stores audit log and status of batch operations (e.g. organize, scrape).
+type OperationRecord struct {
+	ID           int64     `json:"id"`
+	Operation    string    `json:"operation"`   // 'organize', 'scrape'
+	TargetPath   string    `json:"target_path"` // source/destination or movie ID
+	TotalItems   int       `json:"total_items"`
+	SuccessCount int       `json:"success_count"`
+	FailCount    int       `json:"fail_count"`
+	DryRun       bool      `json:"dry_run"`
+	LogText      string    `json:"log_text,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 // DB wraps SQLite operations for R19DEV.
 type DB struct {
 	conn *sql.DB
@@ -189,9 +202,22 @@ func (d *DB) initSchema() error {
 		organized_at DATETIME
 	);
 
+	CREATE TABLE IF NOT EXISTS operation_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		operation TEXT NOT NULL,
+		target_path TEXT,
+		total_items INTEGER DEFAULT 0,
+		success_count INTEGER DEFAULT 0,
+		fail_count INTEGER DEFAULT 0,
+		dry_run BOOLEAN DEFAULT 0,
+		log_text TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_movies_maker ON movies(maker);
 	CREATE INDEX IF NOT EXISTS idx_movies_release ON movies(release_date);
 	CREATE INDEX IF NOT EXISTS idx_library_movie_id ON library_files(movie_id);
+	CREATE INDEX IF NOT EXISTS idx_operation_created ON operation_history(created_at DESC);
 	`
 	_, err := d.conn.Exec(schema)
 	return err
@@ -633,4 +659,100 @@ func (d *DB) GetOrganizedFolderMap() (map[string]string, error) {
 		}
 	}
 	return result, nil
+}
+
+// --- Operation History / Log Audit Operations ---
+
+// AddOperationHistory saves an operation run to SQLite and automatically prunes entries older than 30 days.
+func (d *DB) AddOperationHistory(op, target string, total, success, fail int, dryRun bool, logText string) (int64, error) {
+	if d == nil || d.conn == nil {
+		return 0, nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `
+	INSERT INTO operation_history (operation, target_path, total_items, success_count, fail_count, dry_run, log_text, created_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`
+	res, err := d.conn.Exec(query, op, target, total, success, fail, dryRun, logText, time.Now())
+	if err != nil {
+		return 0, err
+	}
+
+	// Auto-prune: Keep maximum 100 operations or records from the last 30 days to avoid clutter
+	_, _ = d.conn.Exec(`DELETE FROM operation_history WHERE created_at < datetime('now', '-30 days')`)
+	_, _ = d.conn.Exec(`DELETE FROM operation_history WHERE id NOT IN (SELECT id FROM operation_history ORDER BY id DESC LIMIT 100)`)
+
+	return res.LastInsertId()
+}
+
+// GetOperationHistory returns recent operation records. If withLogs is false, log_text is omitted for speed.
+func (d *DB) GetOperationHistory(limit int, withLogs bool) ([]OperationRecord, error) {
+	if d == nil || d.conn == nil {
+		return nil, nil
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var query string
+	if withLogs {
+		query = `SELECT id, operation, target_path, total_items, success_count, fail_count, dry_run, log_text, created_at 
+		         FROM operation_history ORDER BY id DESC LIMIT ?`
+	} else {
+		query = `SELECT id, operation, target_path, total_items, success_count, fail_count, dry_run, '', created_at 
+		         FROM operation_history ORDER BY id DESC LIMIT ?`
+	}
+
+	rows, err := d.conn.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []OperationRecord
+	for rows.Next() {
+		var rec OperationRecord
+		var createdAt time.Time
+		if err := rows.Scan(&rec.ID, &rec.Operation, &rec.TargetPath, &rec.TotalItems, &rec.SuccessCount, &rec.FailCount, &rec.DryRun, &rec.LogText, &createdAt); err == nil {
+			rec.CreatedAt = createdAt
+			records = append(records, rec)
+		}
+	}
+	return records, nil
+}
+
+// GetOperationDetail returns a single operation record with full log_text.
+func (d *DB) GetOperationDetail(id int64) (*OperationRecord, error) {
+	if d == nil || d.conn == nil {
+		return nil, nil
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var rec OperationRecord
+	var createdAt time.Time
+	query := `SELECT id, operation, target_path, total_items, success_count, fail_count, dry_run, log_text, created_at 
+	          FROM operation_history WHERE id = ?`
+	err := d.conn.QueryRow(query, id).Scan(&rec.ID, &rec.Operation, &rec.TargetPath, &rec.TotalItems, &rec.SuccessCount, &rec.FailCount, &rec.DryRun, &rec.LogText, &createdAt)
+	if err != nil {
+		return nil, err
+	}
+	rec.CreatedAt = createdAt
+	return &rec, nil
+}
+
+// ClearOperationHistory clears all recorded operation logs.
+func (d *DB) ClearOperationHistory() error {
+	if d == nil || d.conn == nil {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.conn.Exec(`DELETE FROM operation_history`)
+	return err
 }

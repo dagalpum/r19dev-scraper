@@ -106,4 +106,31 @@ func TestDBOperations(t *testing.T) {
 	if err != nil || !isOrg {
 		t.Errorf("IsOrganized expected true, got %v", isOrg)
 	}
+
+	// 6. Test Operation History
+	histID, err := d.AddOperationHistory("organize", "/nas/target", 10, 8, 2, false, "Organize finished.\n[MOVED] SNOS-038")
+	if err != nil || histID == 0 {
+		t.Fatalf("AddOperationHistory failed: %v", err)
+	}
+
+	histList, err := d.GetOperationHistory(10, false)
+	if err != nil || len(histList) == 0 {
+		t.Fatalf("GetOperationHistory failed: %v", err)
+	}
+	if histList[0].Operation != "organize" || histList[0].SuccessCount != 8 {
+		t.Errorf("OperationHistory mismatch: %+v", histList[0])
+	}
+
+	detail, err := d.GetOperationDetail(histID)
+	if err != nil || detail == nil || detail.LogText == "" {
+		t.Errorf("GetOperationDetail failed: %v, detail: %+v", err, detail)
+	}
+
+	if err := d.ClearOperationHistory(); err != nil {
+		t.Fatalf("ClearOperationHistory failed: %v", err)
+	}
+	emptyList, _ := d.GetOperationHistory(10, false)
+	if len(emptyList) != 0 {
+		t.Errorf("Expected 0 history records after clear, got %d", len(emptyList))
+	}
 }

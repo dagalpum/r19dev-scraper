@@ -296,6 +296,9 @@
                 <button id="btn-copy-log" class="btn-log-action" title="Copy Log to Clipboard" aria-label="Copy console log">
                   📋 Copy
                 </button>
+                <button id="btn-view-history" class="btn-log-action" title="View past operations history" aria-label="View history">
+                  📜 History
+                </button>
                 <button id="btn-clear-log" class="btn-log-action btn-clear-log" title="Clear console log" aria-label="Clear console log">
                   🗑️ Clear
                 </button>
@@ -320,6 +323,38 @@
 
         <div class="modal-body" id="modal-content">
           <!-- Dynamically populated via app.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- OPERATION HISTORY MODAL -->
+    <div id="modal-history" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-history-title">
+      <div class="modal-card modal-card-history">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon">📜</span>
+            <div>
+              <h2 id="modal-history-title" class="modal-title">Operation History &amp; Logs</h2>
+              <span class="modal-subtitle">บันทึกประวัติการจัดระเบียบย้อนหลังในฐานข้อมูล SQLite</span>
+            </div>
+          </div>
+          <div class="modal-header-actions">
+            <button id="btn-clear-history" class="btn-log-action btn-danger" title="Clear all history">🗑️ Clear All</button>
+            <button id="btn-close-history" class="btn-modal-close" title="Close (Esc)">×</button>
+          </div>
+        </div>
+        <div class="modal-body-history">
+          <div class="history-sidebar" id="history-list-container">
+            <!-- Dynamic history run items -->
+            <div class="history-empty" id="history-empty">No past operations recorded yet.</div>
+          </div>
+          <div class="history-detail-panel">
+            <div class="history-detail-header" id="history-detail-header">
+              <span id="history-detail-title">Select an operation to view details</span>
+              <button id="btn-copy-history-log" class="btn-log-action hidden" title="Copy Log">📋 Copy Log</button>
+            </div>
+            <pre class="console-log history-console-log" id="history-log-view">Select an operation from the left to view its complete audit log.</pre>
+          </div>
         </div>
       </div>
     </div>

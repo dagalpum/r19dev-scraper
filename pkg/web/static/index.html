@@ -72,105 +72,108 @@
           </div>
         </div>
 
-        <!-- Control Bar -->
-        <div class="control-bar" role="toolbar" aria-label="Library Controls">
-          <div class="search-box">
-            <label for="search-input" class="sr-only">Search library</label>
-            <span class="search-icon" aria-hidden="true">🔍</span>
-            <input type="text" id="search-input" placeholder="Search by JAV ID, title, actress, studio..." autocomplete="off">
-            <button id="search-clear" class="btn-clear hidden" aria-label="Clear search">×</button>
+        <!-- Unified Compact Command Panel -->
+        <div class="library-command-panel" role="toolbar" aria-label="Library Command Controls">
+          <!-- Row 1: Search, Sort, Density, Actions -->
+          <div class="command-row-primary">
+            <div class="search-box">
+              <label for="search-input" class="sr-only">Search library</label>
+              <span class="search-icon" aria-hidden="true">🔍</span>
+              <input type="text" id="search-input" placeholder="Search by JAV ID, title, actress, studio..." autocomplete="off">
+              <button id="search-clear" class="btn-clear hidden" aria-label="Clear search">×</button>
+            </div>
+
+            <div class="sort-box">
+              <label for="sort-by" class="sr-only">Sort by</label>
+              <select id="sort-by" class="select-dropdown" aria-label="Sort by">
+                <option value="date-desc" selected>📅 Release Date (Newest)</option>
+                <option value="id-asc">🔤 JAV ID (A-Z)</option>
+                <option value="id-desc">🔤 JAV ID (Z-A)</option>
+                <option value="name-asc">📄 Filename (A-Z)</option>
+                <option value="size-desc">💾 File Size (Large-Small)</option>
+              </select>
+            </div>
+
+            <!-- Cards Per Row Density Selector -->
+            <div class="density-group" role="group" aria-label="Cards per row view density">
+              <span class="density-label" id="density-label">Cards:</span>
+              <button class="btn-density" data-cols="1" title="1 card per row (Showcase cover)" aria-label="1 card per row">1</button>
+              <button class="btn-density" data-cols="2" title="2 cards per row (Large cover)" aria-label="2 cards per row">2</button>
+              <button class="btn-density" data-cols="3" title="3 cards per row" aria-label="3 cards per row">3</button>
+              <button class="btn-density" data-cols="4" title="4 cards per row" aria-label="4 cards per row">4</button>
+              <button class="btn-density" data-cols="5" title="5 cards per row" aria-label="5 cards per row">5</button>
+              <button class="btn-density active" data-cols="auto" title="Auto responsive" aria-label="Auto responsive">Auto</button>
+            </div>
+
+            <div class="action-buttons">
+              <button id="btn-scrape-all" class="btn btn-primary btn-sm" aria-label="Scrape all matched movies">
+                <span class="icon" aria-hidden="true">⚡</span> Scrape All
+              </button>
+              <button id="btn-organize-all" class="btn btn-accent btn-sm" aria-label="Batch organize to NAS">
+                <span class="icon" aria-hidden="true">📂</span> Batch Organize
+              </button>
+            </div>
           </div>
 
-            <label for="sort-by" class="sr-only">Sort by</label>
-            <select id="sort-by" class="select-dropdown" aria-label="Sort by">
-              <option value="id-asc">JAV ID (A-Z)</option>
-              <option value="id-desc">JAV ID (Z-A)</option>
-              <option value="name-asc">Filename (A-Z)</option>
-              <option value="size-desc">File Size (Large-Small)</option>
-              <option value="date-desc">Release Date (Newest)</option>
-            </select>
+          <!-- Row 2: Multi-Faceted Filters & Inline Stats Badges -->
+          <div class="command-row-secondary">
+            <div class="filters-wrap">
+              <div class="filter-item">
+                <label for="filter-actress" class="filter-label">🎭 Actress</label>
+                <select id="filter-actress" class="select-dropdown select-filter">
+                  <option value="">All Actresses</option>
+                </select>
+              </div>
+
+              <div class="filter-item">
+                <label for="filter-organized" class="filter-label">📁 Library</label>
+                <select id="filter-organized" class="select-dropdown select-filter">
+                  <option value="all">All Library</option>
+                  <option value="organized">📂 In Jellyfin</option>
+                  <option value="staging">📥 Staging</option>
+                </select>
+              </div>
+
+              <div class="filter-item">
+                <label for="filter-scraped" class="filter-label">⚡ Metadata</label>
+                <select id="filter-scraped" class="select-dropdown select-filter">
+                  <option value="all">All Scrape Status</option>
+                  <option value="scraped">🟢 Scraped</option>
+                  <option value="unscraped">🟡 Pending</option>
+                  <option value="unmatched">⚪ Unmatched</option>
+                </select>
+              </div>
+
+              <div class="filter-item">
+                <label for="filter-genre" class="filter-label">🏷️ Genre</label>
+                <select id="filter-genre" class="select-dropdown select-filter">
+                  <option value="">All Genres</option>
+                </select>
+              </div>
+
+              <div class="filter-item">
+                <label for="filter-watch" class="filter-label">👁️ Watched</label>
+                <select id="filter-watch" class="select-dropdown select-filter">
+                  <option value="all">All Watch Status</option>
+                  <option value="watched">👁️ Watched</option>
+                  <option value="unwatched">👓 Unwatched</option>
+                  <option value="favorites">❤️ Favorites</option>
+                </select>
+              </div>
+
+              <button id="btn-reset-filters" class="btn btn-secondary btn-sm hidden" title="Reset all filters to default">
+                ✕ Reset
+              </button>
+            </div>
+
+            <!-- Inline Stats Pills (Zero Extra Height) -->
+            <div class="stats-inline" role="status" aria-label="Library Statistics">
+              <span class="stat-pill"><strong id="stat-total">0</strong> Total</span>
+              <span class="stat-pill success"><strong id="stat-matched">0</strong> Matched</span>
+              <span class="stat-pill warning"><strong id="stat-unmatched">0</strong> Unmatched</span>
+              <span class="stat-pill info"><strong id="stat-scraped">0</strong> Scraped</span>
+            </div>
           </div>
-
-          <!-- Cards Per Row Density Selector -->
-          <div class="density-group" role="group" aria-label="Cards per row view density">
-            <span class="density-label" id="density-label">Cards/Row:</span>
-            <button class="btn-density" data-cols="1" title="1 card per row (Showcase cover)" aria-label="1 card per row">1</button>
-            <button class="btn-density" data-cols="2" title="2 cards per row (Large cover)" aria-label="2 cards per row">2</button>
-            <button class="btn-density" data-cols="3" title="3 cards per row" aria-label="3 cards per row">3</button>
-            <button class="btn-density" data-cols="4" title="4 cards per row" aria-label="4 cards per row">4</button>
-            <button class="btn-density" data-cols="5" title="5 cards per row" aria-label="5 cards per row">5</button>
-            <button class="btn-density active" data-cols="auto" title="Auto responsive" aria-label="Auto responsive">Auto</button>
-          </div>
-
-          <div class="action-buttons">
-            <button id="btn-scrape-all" class="btn btn-primary" aria-label="Scrape all matched movies">
-              <span class="icon" aria-hidden="true">⚡</span> Scrape All
-            </button>
-            <button id="btn-organize-all" class="btn btn-accent" aria-label="Batch organize to NAS">
-              <span class="icon" aria-hidden="true">📂</span> Batch Organize
-            </button>
-          </div>
-        </div>
-
-        <!-- Multi-Faceted Filters Toolbar -->
-        <div class="filters-toolbar" role="toolbar" aria-label="Filter by actress, status, and tags">
-          <div class="filter-item">
-            <label for="filter-actress" class="filter-label">🎭 Actress</label>
-            <select id="filter-actress" class="select-dropdown select-filter">
-              <option value="">All Actresses</option>
-            </select>
-          </div>
-
-          <div class="filter-item">
-            <label for="filter-organized" class="filter-label">📁 Library</label>
-            <select id="filter-organized" class="select-dropdown select-filter">
-              <option value="all">All Library</option>
-              <option value="organized">📂 Organized in Jellyfin</option>
-              <option value="staging">📥 Staging (Pending)</option>
-            </select>
-          </div>
-
-          <div class="filter-item">
-            <label for="filter-scraped" class="filter-label">⚡ Metadata</label>
-            <select id="filter-scraped" class="select-dropdown select-filter">
-              <option value="all">All Scrape Status</option>
-              <option value="scraped">🟢 Scraped Ready</option>
-              <option value="unscraped">🟡 Pending Scrape</option>
-              <option value="unmatched">⚪ Unmatched Files</option>
-            </select>
-          </div>
-
-          <div class="filter-item">
-            <label for="filter-genre" class="filter-label">🏷️ Tag / Genre</label>
-            <select id="filter-genre" class="select-dropdown select-filter">
-              <option value="">All Tags / Genres</option>
-            </select>
-          </div>
-
-          <div class="filter-item">
-            <label for="filter-watch" class="filter-label">👁️ Watch Status</label>
-            <select id="filter-watch" class="select-dropdown select-filter">
-              <option value="all">All Watch Status</option>
-              <option value="watched">👁️ Watched</option>
-              <option value="unwatched">👓 Unwatched</option>
-              <option value="favorites">❤️ Favorites</option>
-            </select>
-          </div>
-
-          <button id="btn-reset-filters" class="btn btn-secondary btn-sm hidden" title="Reset all filters to default">
-            ✕ Reset Filters
-          </button>
-        </div>
-
-        <!-- Library Stats Bar -->
-        <div class="stats-bar" role="status" aria-label="Library Statistics">
-          <div class="stat-item"><span class="stat-num" id="stat-total">0</span> Total Videos</div>
-          <div class="stat-divider" aria-hidden="true"></div>
-          <div class="stat-item text-success"><span class="stat-num" id="stat-matched">0</span> Matched</div>
-          <div class="stat-divider" aria-hidden="true"></div>
-          <div class="stat-item text-warning"><span class="stat-num" id="stat-unmatched">0</span> Unmatched</div>
-          <div class="stat-divider" aria-hidden="true"></div>
-          <div class="stat-item text-info"><span class="stat-num" id="stat-scraped">0</span> Scraped</div>
         </div>
 
         <!-- Movie Cards Grid -->

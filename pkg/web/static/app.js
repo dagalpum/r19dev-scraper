@@ -23,7 +23,7 @@
     filterScraped: 'all',
     filterGenre: '',
     filterWatch: 'all',
-    sort: 'id-asc',
+    sort: 'date-desc',
     searchQuery: '',
     gridCols: localStorage.getItem('r19dev_grid_cols') || 'auto',
     selectedMovieId: null,
@@ -683,8 +683,8 @@
       if (state.sort === 'name-asc') return (a.files[0]?.name || '').localeCompare(b.files[0]?.name || '');
       if (state.sort === 'size-desc') return (b.totalSize || 0) - (a.totalSize || 0);
       if (state.sort === 'date-desc') {
-        const dateA = state.metadata[a.id]?.release_date || '';
-        const dateB = state.metadata[b.id]?.release_date || '';
+        const dateA = state.metadata[a.id]?.release_date || (a.files[0]?.mod_time ? a.files[0].mod_time.slice(0, 10) : '');
+        const dateB = state.metadata[b.id]?.release_date || (b.files[0]?.mod_time ? b.files[0].mod_time.slice(0, 10) : '');
         return dateB.localeCompare(dateA);
       }
       return 0;

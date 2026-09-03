@@ -108,6 +108,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/actresses/releases", s.handleActressReleases)
 	mux.HandleFunc("/api/organize", s.handleOrganize)
 	mux.HandleFunc("/api/organize/stream", s.handleOrganizeStream)
+	mux.HandleFunc("/api/open-folder", s.handleOpenFolder)
 
 	// Static Files from Embedded FS
 	subFS, err := fs.Sub(staticFS, "static")
@@ -193,12 +194,14 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	orgStatus, orgFolders := detectOrganizedStatus(target, matches, s.db)
 	resp := map[string]any{
-		"target_dir":       target,
-		"matches":          matches,
-		"metadata":         metadataMap,
-		"user_states":      userStatesMap,
-		"organized_status": detectOrganizedStatus(target, matches, s.db),
+		"target_dir":        target,
+		"matches":           matches,
+		"metadata":          metadataMap,
+		"user_states":       userStatesMap,
+		"organized_status":  orgStatus,
+		"organized_folders": orgFolders,
 	}
 
 	writeJSON(w, resp)
@@ -503,14 +506,16 @@ func (s *Server) handleScanStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	orgStatus, orgFolders := detectOrganizedStatus(target, finalMatches, s.db)
 	doneData, _ := json.Marshal(map[string]any{
-		"phase":            "done",
-		"target_dir":       target,
-		"total":            len(allFiles),
-		"matches":          finalMatches,
-		"metadata":         metadataMap,
-		"user_states":      userStatesMap,
-		"organized_status": detectOrganizedStatus(target, finalMatches, s.db),
+		"phase":             "done",
+		"target_dir":        target,
+		"total":             len(allFiles),
+		"matches":           finalMatches,
+		"metadata":          metadataMap,
+		"user_states":       userStatesMap,
+		"organized_status":  orgStatus,
+		"organized_folders": orgFolders,
 	})
 	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
 	flusher.Flush()
@@ -844,18 +849,24 @@ func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": message})
 }
 
-// detectOrganizedStatus checks which movies have already been organized into NAS Jellyfin structure.
-func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, database *db.DB) map[string]bool {
+// detectOrganizedStatus checks which movies have already been organized into NAS Jellyfin structure,
+// returning both a boolean map and a folder path map.
+func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, database *db.DB) (map[string]bool, map[string]string) {
 	organizedMap := make(map[string]bool)
+	folderMap := make(map[string]string)
+
 	if database != nil {
 		if orgs, err := database.GetOrganizedMap(); err == nil && orgs != nil {
 			organizedMap = orgs
+		}
+		if folders, err := database.GetOrganizedFolderMap(); err == nil && folders != nil {
+			folderMap = folders
 		}
 	}
 
 	checkDest := filepath.Join(targetDir, "JAV_Library")
 	for _, m := range matches {
-		if m.ID == "" || organizedMap[m.ID] {
+		if m.ID == "" || (organizedMap[m.ID] && folderMap[m.ID] != "") {
 			continue
 		}
 		// If video file itself is already inside a folder with .nfo, it's organized
@@ -863,6 +874,7 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 		nfoPath := filepath.Join(dir, m.ID+".nfo")
 		if _, err := os.Stat(nfoPath); err == nil {
 			organizedMap[m.ID] = true
+			folderMap[m.ID] = dir
 			if database != nil {
 				_ = database.SetOrganized(m.ID, dir, m.File.Path)
 			}
@@ -875,8 +887,13 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 					subPath := filepath.Join(checkDest, entry.Name())
 					if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
 						for _, sub := range subEntries {
-							if strings.Contains(strings.ToUpper(sub.Name()), m.ID) {
+							if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), m.ID) {
+								foundFolder := filepath.Join(subPath, sub.Name())
 								organizedMap[m.ID] = true
+								folderMap[m.ID] = foundFolder
+								if database != nil {
+									_ = database.SetOrganized(m.ID, foundFolder, "")
+								}
 								break
 							}
 						}
@@ -886,7 +903,88 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 		}
 	}
 
-	return organizedMap
+	return organizedMap, folderMap
+}
+
+func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Path    string `json:"path"`
+		MovieID string `json:"movie_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	targetPath := strings.TrimSpace(req.Path)
+	if targetPath == "" && req.MovieID != "" {
+		if s.db != nil {
+			targetFolder, _, _ := s.db.GetOrganizedDetails(req.MovieID)
+			targetPath = targetFolder
+		}
+	}
+
+	// Fallback to searching in JAV_Library if not in DB
+	if targetPath == "" && req.MovieID != "" {
+		libDir := filepath.Join(s.targetDir, "JAV_Library")
+		if entries, err := os.ReadDir(libDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					subPath := filepath.Join(libDir, entry.Name())
+					if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
+						for _, sub := range subEntries {
+							if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), req.MovieID) {
+								targetPath = filepath.Join(subPath, sub.Name())
+								break
+							}
+						}
+					}
+				}
+				if targetPath != "" {
+					break
+				}
+			}
+		}
+	}
+
+	if targetPath == "" {
+		writeJSONError(w, "folder path not found for movie", http.StatusNotFound)
+		return
+	}
+
+	// Verify target exists
+	if fi, err := os.Stat(targetPath); err != nil {
+		writeJSONError(w, fmt.Sprintf("path not found: %v", err), http.StatusNotFound)
+		return
+	} else if !fi.IsDir() {
+		targetPath = filepath.Dir(targetPath)
+	}
+
+	if err := OpenFolder(targetPath); err != nil {
+		writeJSONError(w, fmt.Sprintf("failed to open folder: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{"success": true, "path": targetPath})
+}
+
+// OpenFolder opens the specified directory in the OS file manager (Finder on macOS, Explorer on Windows, xdg-open on Linux).
+func OpenFolder(path string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", path)
+	case "windows":
+		cmd = exec.Command("explorer", path)
+	default:
+		cmd = exec.Command("xdg-open", path)
+	}
+	return cmd.Start()
 }
 
 // OpenBrowser opens the given URL in the user's default web browser.

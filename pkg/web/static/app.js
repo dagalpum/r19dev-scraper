@@ -16,6 +16,7 @@
     metadata: {},       // ID -> scraper.Movie
     userStates: {},     // ID -> db.UserState
     organizedStatus: {}, // ID -> bool
+    organizedFolders: {}, // ID -> folder path
     currentGallery: [],  // PhotoSwipe items for open modal
     actresses: [],      // Followed actresses
     filterActress: '',
@@ -469,6 +470,7 @@
         if (data.metadata) Object.assign(state.metadata, data.metadata);
         if (data.user_states) Object.assign(state.userStates, data.user_states);
         if (data.organized_status) Object.assign(state.organizedStatus, data.organized_status);
+        if (data.organized_folders) Object.assign(state.organizedFolders, data.organized_folders);
 
         state.groupedMovies = groupMatches(state.rawMatches);
 
@@ -553,6 +555,9 @@
         const status = item.success ? (dryRun ? '[PLAN]' : '[MOVED]') : '[FAIL]';
         if (item.success && !dryRun && item.movie_id) {
           state.organizedStatus[item.movie_id] = true;
+          if (item.target_folder) {
+            state.organizedFolders[item.movie_id] = item.target_folder;
+          }
         }
         elements.organizerLog.textContent += `${status} ${item.movie_id} -> ${item.target_folder || ''}\n`;
         if (item.target_video) {
@@ -759,7 +764,7 @@
     // Organized Badge (Clean pill for footer)
     let organizedBadge = '';
     if (isOrganized) {
-      organizedBadge = `<span class="badge-status badge-organized" title="Organized in Jellyfin Library"><i data-lucide="folder-check"></i> Organized</span>`;
+      organizedBadge = `<span class="badge-status badge-organized clickable" title="Organized in Jellyfin (Click to open in Finder)" onclick="event.stopPropagation(); window.app.openFolder('${id}')" role="button" tabindex="0"><i data-lucide="folder-check"></i> Organized ↗</span>`;
     } else if (movie.id) {
       organizedBadge = `<span class="badge-status badge-staging" title="Pending NAS organize"><i data-lucide="inbox"></i> Staging</span>`;
     }
@@ -819,8 +824,8 @@
             <button class="btn-icon-sm btn-watched ${uState.is_watched ? 'active' : ''}" title="Toggle Watched" aria-label="Toggle watched status for ${escapeHtml(id)}">
               <i data-lucide="eye"></i>
             </button>
-            <button class="btn-icon-sm btn-organize-quick ${isOrganized ? 'active' : ''}" title="Organize for NAS Jellyfin" aria-label="Organize ${escapeHtml(id)}">
-              <i data-lucide="folder-output"></i>
+            <button class="btn-icon-sm btn-organize-quick ${isOrganized ? 'active' : ''}" title="${isOrganized ? 'Open folder in Finder' : 'Organize for NAS Jellyfin'}" aria-label="${isOrganized ? 'Open folder in Finder' : 'Organize'} ${escapeHtml(id)}">
+              <i data-lucide="${isOrganized ? 'folder-open' : 'folder-output'}"></i>
             </button>
           </div>
         </div>
@@ -857,7 +862,11 @@
 
     card.querySelector('.btn-organize-quick')?.addEventListener('click', async (e) => {
       e.stopPropagation();
-      await organizeSingle(movie.id);
+      if (isOrganized) {
+        await openFolder(movie.id);
+      } else {
+        await organizeSingle(movie.id);
+      }
     });
 
     return card;
@@ -887,6 +896,7 @@
   function renderModalContent(movie, meta) {
     const id = movie.id || 'UNMATCHED';
     const uState = state.userStates[id] || {};
+    const isOrganized = Boolean(state.organizedStatus[id]);
     const coverUrl = meta?.cover_url || meta?.poster_url || '';
 
     // Multi-part files list
@@ -989,6 +999,21 @@
           <h2 id="modal-movie-title">${escapeHtml(meta?.title || movie.files[0]?.name || 'No title')}</h2>
           <div class="ja-title">${escapeHtml(meta?.original_title || '')}</div>
 
+          ${isOrganized ? `
+            <div class="modal-folder-banner" role="region" aria-label="Organized Destination Folder">
+              <div class="folder-banner-info">
+                <span class="folder-banner-icon">📁</span>
+                <div class="folder-banner-text">
+                  <span class="folder-banner-label">Jellyfin Destination Folder:</span>
+                  <code class="folder-banner-path" title="${escapeHtml(state.organizedFolders[id] || '')}">${escapeHtml(state.organizedFolders[id] || 'Organized in JAV_Library')}</code>
+                </div>
+              </div>
+              <button class="btn btn-secondary btn-sm btn-open-folder" onclick="window.app.openFolder('${id}', '${escapeHtml(state.organizedFolders[id] || '')}')">
+                <i data-lucide="external-link"></i> Open in Finder
+              </button>
+            </div>
+          ` : ''}
+
           <!-- Interactive Status Controls -->
           <div class="modal-controls">
             <div style="display: flex; align-items: center; gap: 0.6rem;">
@@ -1011,9 +1036,18 @@
               ${uState.is_favorite ? '❤️ Favorited' : '🤍 Favorite'}
             </button>
 
-            <button class="btn btn-primary" onclick="window.app.organizeSingle('${id}')">
-              📂 Organize for Jellyfin
-            </button>
+            ${isOrganized ? `
+              <button class="btn btn-secondary" onclick="window.app.openFolder('${id}', '${escapeHtml(state.organizedFolders[id] || '')}')">
+                📂 Open Folder
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Re-run Jellyfin organize">
+                🔄 Re-organize
+              </button>
+            ` : `
+              <button class="btn btn-primary" onclick="window.app.organizeSingle('${id}')">
+                📂 Organize for Jellyfin
+              </button>
+            `}
           </div>
 
           <!-- Multi-Part Files -->
@@ -1465,12 +1499,15 @@
         const data = JSON.parse(e.data);
         if (data.success) {
           state.organizedStatus[id] = true;
+          if (data.target_folder) {
+            state.organizedFolders[id] = data.target_folder;
+          }
           renderMoviesGrid();
           if (state.selectedMovieId === id) {
             const cur = state.groupedMovies.find(m => m.id === id);
             if (cur) renderModalContent(cur, state.metadata[id]);
           }
-          showOpProgress('✅', `จัดระเบียบ ${id} สำเร็จ!`, '6 / 6', 100, data.message || `สร้าง NFO, HTML และดาวน์โหลดรูปภาพสำหรับ ${id} ครบถ้วน!`);
+          showOpProgress('✅', `จัดระเบียบ ${id} สำเร็จ!`, '6 / 6', 100, `บันทึกที่: ${data.target_folder || 'JAV_Library'}`);
           showToast(`✅ จัดระเบียบ ${id} เรียบร้อยแล้ว!`, 'success');
         } else {
           showOpProgress('❌', `จัดระเบียบ ${id} ไม่สำเร็จ`, '6 / 6', 100, `ข้อผิดพลาด: ${data.error || 'Unknown error'}`);
@@ -1488,6 +1525,25 @@
       es.close();
       hideOpProgress(2000);
     };
+  }
+
+  async function openFolder(id, path) {
+    const targetFolder = path || state.organizedFolders[id] || '';
+    showToast('📂 กำลังเปิดโฟลเดอร์ใน Finder...', 'info');
+    try {
+      const res = await fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ movie_id: id, path: targetFolder })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to open folder');
+      }
+      showToast(`📂 เปิดโฟลเดอร์เรียบร้อย: ${data.path}`, 'success');
+    } catch (err) {
+      showToast(`ไม่สามารถเปิดโฟลเดอร์ได้: ${err.message}`, 'danger');
+    }
   }
 
   // =========================================================================
@@ -1533,7 +1589,8 @@
     setRating,
     toggleFollowActress,
     unfollowActress,
-    organizeSingle
+    organizeSingle,
+    openFolder
   };
 
   document.addEventListener('DOMContentLoaded', init);

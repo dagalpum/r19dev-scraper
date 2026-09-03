@@ -596,3 +596,41 @@ func (d *DB) IsOrganized(movieID string) (bool, error) {
 	}
 	return count > 0, nil
 }
+
+// GetOrganizedDetails returns target_folder and target_video for a movie ID.
+func (d *DB) GetOrganizedDetails(movieID string) (targetFolder, targetVideo string, err error) {
+	movieID = strings.ToUpper(strings.TrimSpace(movieID))
+	if movieID == "" {
+		return "", "", nil
+	}
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	err = d.conn.QueryRow(`SELECT target_folder, target_video FROM organized_movies WHERE movie_id = ?`, movieID).Scan(&targetFolder, &targetVideo)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return targetFolder, targetVideo, err
+}
+
+// GetOrganizedFolderMap returns a map of movie_id -> target_folder.
+func (d *DB) GetOrganizedFolderMap() (map[string]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.conn.Query(`SELECT movie_id, target_folder FROM organized_movies`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var id, folder string
+		if err := rows.Scan(&id, &folder); err == nil && id != "" {
+			result[strings.ToUpper(id)] = folder
+		}
+	}
+	return result, nil
+}

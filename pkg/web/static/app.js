@@ -54,6 +54,15 @@
     orgProgressFill: document.getElementById('org-progress-fill'),
     orgProgressBar: document.getElementById('org-progress-bar'),
 
+    // Live Operation Activity Progress
+    opProgressBox: document.getElementById('op-progress-box'),
+    opIcon: document.getElementById('op-icon'),
+    opTitle: document.getElementById('op-title'),
+    opCounter: document.getElementById('op-counter'),
+    opPct: document.getElementById('op-pct'),
+    opMessage: document.getElementById('op-message'),
+    opProgressFill: document.getElementById('op-progress-fill'),
+
     // Library Controls
     searchInput: document.getElementById('search-input'),
     searchClear: document.getElementById('search-clear'),
@@ -521,6 +530,15 @@
       try {
         const data = JSON.parse(e.data);
         elements.orgProgressLabel.textContent = `Processing 0 of ${data.total} movies...`;
+      } catch (err) {}
+    });
+
+    es.addEventListener('step', (e) => {
+      try {
+        const step = JSON.parse(e.data);
+        elements.orgProgressLabel.textContent = `[${step.index}/${step.total}] ${step.movie_id}: ${step.message}`;
+        elements.organizerLog.textContent += `   → ${step.message}\n`;
+        elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
       } catch (err) {}
     });
 
@@ -1230,22 +1248,55 @@
   }
 
   // =========================================================================
+  // Live Operation Activity Progress Helpers
+  // =========================================================================
+  function showOpProgress(icon, title, countStr, pct, message) {
+    if (!elements.opProgressBox) return;
+    elements.opProgressBox.classList.remove('hidden');
+    elements.opIcon.textContent = icon;
+    elements.opTitle.textContent = title;
+    elements.opCounter.textContent = countStr || '';
+    elements.opPct.textContent = `${pct}%`;
+    elements.opMessage.textContent = message;
+    elements.opProgressFill.style.width = `${pct}%`;
+  }
+
+  function hideOpProgress(delayMs = 1500) {
+    if (!elements.opProgressBox) return;
+    setTimeout(() => {
+      elements.opProgressBox.classList.add('hidden');
+    }, delayMs);
+  }
+
+  // =========================================================================
   // API Action Helpers
   // =========================================================================
   async function scrapeMovie(id) {
     if (!id) return null;
     try {
+      showOpProgress('⚡', `กำลัง Scrape ${id}`, '1 / 1', 25, `กำลังค้นหาข้อมูล ${id} จาก R18.dev API...`);
       showToast(`Scraping ${id}...`, 'info');
+
+      // Intermediate step: download cover image
+      setTimeout(() => {
+        showOpProgress('⚡', `กำลัง Scrape ${id}`, '1 / 1', 65, `กำลังดาวน์โหลดและแคชภาพปก ${id}...`);
+      }, 500);
+
       const res = await fetch(`/api/scrape/${id}`, { method: 'POST' });
       const movie = await res.json();
       state.metadata[id] = movie;
       updateStats();
       populateFilterDropdowns();
       renderMoviesGrid();
+
+      showOpProgress('✅', `Scrape ${id} สำเร็จ!`, '1 / 1', 100, `บันทึกข้อมูลและภาพปก ${id} ลงระบบเรียบร้อย`);
       showToast(`Scraped ${id}!`, 'success');
+      hideOpProgress(1800);
       return movie;
     } catch (err) {
+      showOpProgress('❌', `Scrape ${id} ไม่สำเร็จ`, '1 / 1', 100, `ข้อผิดพลาด: ${err.message}`);
       showToast(`Scrape failed for ${id}: ${err.message}`, 'danger');
+      hideOpProgress(3000);
       return null;
     }
   }
@@ -1257,11 +1308,53 @@
       return;
     }
 
+    showOpProgress('⚡', 'กำลัง Batch Scrape', `0 / ${matched.length}`, 0, `กำลังเตรียมการ Scrape ทั้งหมด ${matched.length} เรื่อง...`);
     showToast(`Batch scraping ${matched.length} movies...`, 'info');
-    for (const m of matched) {
-      await scrapeMovie(m.id);
-    }
-    showToast('Batch scraping completed!', 'success');
+
+    let url = `/api/scrape/stream?path=${encodeURIComponent(state.activeDir || '.')}`;
+    const es = new EventSource(url);
+
+    es.addEventListener('start', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        showOpProgress('⚡', 'กำลัง Batch Scrape', `0 / ${data.total}`, 0, `เริ่ม Scrape ข้อมูล ${data.total} เรื่อง...`);
+      } catch (err) {}
+    });
+
+    es.addEventListener('step', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        showOpProgress('⚡', `กำลัง Scrape ${data.movie_id}`, `${data.index} / ${data.total}`, data.percent || 0, data.message);
+      } catch (err) {}
+    });
+
+    es.addEventListener('item', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.movie) {
+          state.metadata[data.movie_id] = data.movie;
+          updateStats();
+          populateFilterDropdowns();
+          renderMoviesGrid();
+        }
+        showOpProgress('⚡', `Scraped ${data.movie_id}`, `${data.index} / ${data.total}`, data.percent || 0, data.message || `บันทึก ${data.movie_id} สำเร็จ`);
+      } catch (err) {}
+    });
+
+    es.addEventListener('done', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        showOpProgress('✅', 'Batch Scrape เสร็จสมบูรณ์', `${data.success_count || data.success} / ${data.total}`, 100, data.message || `สำเร็จทั้งหมด ${data.success_count || data.success} เรื่อง`);
+        showToast(`Batch scraping completed: ${data.success_count || data.success}/${data.total} movies!`, 'success');
+      } catch (err) {}
+      es.close();
+      hideOpProgress(3000);
+    });
+
+    es.onerror = () => {
+      es.close();
+      hideOpProgress(2000);
+    };
   }
 
   async function toggleWatched(id) {
@@ -1351,31 +1444,50 @@
     if (!movie) return;
 
     const dest = elements.orgDestRoot.value.trim() || (state.activeDir + '/JAV_Library');
+    showOpProgress('📂', `กำลังจัดระเบียบ ${id}`, '0 / 6', 5, `กำลังเริ่มจัดระเบียบ ${id} สำหรับ Jellyfin...`);
     showToast(`Organizing ${id} for Jellyfin...`, 'info');
 
-    try {
-      // If multipart, organize each file into the single folder
-      for (const file of movie.files) {
-        await fetch('/api/organize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            source_file: file?.path,
-            destination: dest,
-            dry_run: false
-          })
-        });
-      }
-      showToast(`✅ Successfully organized ${id} into ${dest}`, 'success');
-      state.organizedStatus[id] = true;
-      renderMoviesGrid();
-      if (state.selectedMovieId === id) {
-        const movie = state.groupedMovies.find(m => m.id === id);
-        if (movie) renderModalContent(movie, state.metadata[id]);
-      }
-    } catch (err) {
-      showToast(`Error: ${err.message}`, 'danger');
-    }
+    let url = `/api/organize/stream?movie_id=${encodeURIComponent(id)}&destination=${encodeURIComponent(dest)}&dry_run=false`;
+    const es = new EventSource(url);
+
+    es.addEventListener('step', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        const stepNum = data.step_current || 1;
+        const totalSteps = data.step_total || 6;
+        const pct = Math.min(95, Math.round((stepNum / totalSteps) * 100));
+        showOpProgress('📂', `กำลังจัดระเบียบ ${data.movie_id}`, `${stepNum} / ${totalSteps}`, pct, data.message);
+      } catch (err) {}
+    });
+
+    es.addEventListener('item', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.success) {
+          state.organizedStatus[id] = true;
+          renderMoviesGrid();
+          if (state.selectedMovieId === id) {
+            const cur = state.groupedMovies.find(m => m.id === id);
+            if (cur) renderModalContent(cur, state.metadata[id]);
+          }
+          showOpProgress('✅', `จัดระเบียบ ${id} สำเร็จ!`, '6 / 6', 100, data.message || `สร้าง NFO, HTML และดาวน์โหลดรูปภาพสำหรับ ${id} ครบถ้วน!`);
+          showToast(`✅ จัดระเบียบ ${id} เรียบร้อยแล้ว!`, 'success');
+        } else {
+          showOpProgress('❌', `จัดระเบียบ ${id} ไม่สำเร็จ`, '6 / 6', 100, `ข้อผิดพลาด: ${data.error || 'Unknown error'}`);
+          showToast(`Error: ${data.error}`, 'danger');
+        }
+      } catch (err) {}
+    });
+
+    es.addEventListener('done', () => {
+      es.close();
+      hideOpProgress(3000);
+    });
+
+    es.onerror = () => {
+      es.close();
+      hideOpProgress(2000);
+    };
   }
 
   // =========================================================================

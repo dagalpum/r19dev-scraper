@@ -88,8 +88,11 @@ func PlanOrganize(match *matcher.MatchResult, movie *scraper.Movie, targetRoot s
 	}, nil
 }
 
-// OrganizeMatch moves the video file, creates the NAS folder structure, and generates all Jellyfin assets.
-func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scraper.Movie, userState *db.UserState, targetRoot string, dryRun bool) (*OrganizeResult, error) {
+// ProgressReporter defines a callback function to report organize step progress.
+type ProgressReporter func(step string, current, total int, message string)
+
+// OrganizeMatchWithProgress moves the video file, creates folder structure, generates NFO/HTML, downloads assets, with real-time progress callbacks.
+func OrganizeMatchWithProgress(ctx context.Context, match *matcher.MatchResult, movie *scraper.Movie, userState *db.UserState, targetRoot string, dryRun bool, reporter ProgressReporter) (*OrganizeResult, error) {
 	plan, err := PlanOrganize(match, movie, targetRoot)
 	if err != nil {
 		return nil, err
@@ -100,6 +103,9 @@ func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scrap
 	}
 
 	// 1. Create target folder structure
+	if reporter != nil {
+		reporter("create_folder", 1, 6, fmt.Sprintf("กำลังสร้างโฟลเดอร์ %s...", movie.ID))
+	}
 	if err := os.MkdirAll(plan.TargetFolder, 0o755); err != nil {
 		plan.Success = false
 		plan.Error = fmt.Sprintf("failed to create directory %s: %v", plan.TargetFolder, err)
@@ -107,6 +113,9 @@ func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scrap
 	}
 
 	// 2. Move video file safely (with cross-device fallback)
+	if reporter != nil {
+		reporter("move_video", 2, 6, fmt.Sprintf("กำลังย้ายไฟล์วิดีโอ %s...", filepath.Base(match.File.Path)))
+	}
 	if err := moveFile(match.File.Path, plan.TargetVideo); err != nil {
 		plan.Success = false
 		plan.Error = fmt.Sprintf("failed to move video file: %v", err)
@@ -114,20 +123,38 @@ func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scrap
 	}
 
 	// 3. Generate Jellyfin NFO
+	if reporter != nil {
+		reporter("write_nfo", 3, 6, fmt.Sprintf("กำลังสร้างไฟล์ Jellyfin Metadata (%s.nfo)...", movie.ID))
+	}
 	if err := jellyfin.WriteNFO(movie, userState, plan.NFOPath); err != nil {
 		// Log warning but don't abort
 		plan.Error = fmt.Sprintf("warning: failed to write NFO: %v", err)
 	}
 
 	// 4. Generate Standalone HTML Metadata Page
+	if reporter != nil {
+		reporter("write_html", 4, 6, "กำลังสร้างไฟล์ HTML Viewer (movie.html)...")
+	}
 	if err := jellyfin.WriteHTML(movie, userState, plan.HTMLPath); err != nil {
 		plan.Error = fmt.Sprintf("warning: failed to write HTML: %v", err)
 	}
 
 	// 5. Download and write all Jellyfin image assets (poster.jpg, fanart.jpg, extrafanart/...)
-	_ = jellyfin.DownloadAllAssets(ctx, movie, plan.TargetFolder)
+	if reporter != nil {
+		reporter("download_assets", 5, 6, "กำลังดาวน์โหลดรูปภาพและภาพตัวอย่าง...")
+	}
+	var assetReporter jellyfin.ProgressReporter
+	if reporter != nil {
+		assetReporter = func(step string, current, total int, message string) {
+			reporter(step, current, total, message)
+		}
+	}
+	_ = jellyfin.DownloadAllAssetsWithProgress(ctx, movie, plan.TargetFolder, assetReporter)
 
 	// 6. Record in SQLite Database
+	if reporter != nil {
+		reporter("save_db", 6, 6, "กำลังบันทึกสถานะลงฐานข้อมูล SQLite...")
+	}
 	if defaultDB, dErr := db.Default(); dErr == nil && defaultDB != nil {
 		_ = defaultDB.SaveMovie(movie)
 		_ = defaultDB.UpsertLibraryFile(db.LibraryFileRecord{
@@ -141,6 +168,11 @@ func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scrap
 	}
 
 	return plan, nil
+}
+
+// OrganizeMatch moves the video file, creates the NAS folder structure, and generates all Jellyfin assets.
+func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scraper.Movie, userState *db.UserState, targetRoot string, dryRun bool) (*OrganizeResult, error) {
+	return OrganizeMatchWithProgress(ctx, match, movie, userState, targetRoot, dryRun, nil)
 }
 
 // moveFile moves a file using os.Rename, falling back to copy+delete across different filesystems/mounts.

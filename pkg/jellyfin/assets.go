@@ -94,8 +94,11 @@ func DownloadAsset(ctx context.Context, imageURL, destPath string) error {
 	return err
 }
 
-// DownloadAllAssets downloads poster.jpg, fanart.jpg, and extrafanart/ sample screenshots for Jellyfin.
-func DownloadAllAssets(ctx context.Context, movie *scraper.Movie, movieDir string) error {
+// ProgressReporter defines a callback function to report asset download progress.
+type ProgressReporter func(step string, current, total int, message string)
+
+// DownloadAllAssetsWithProgress downloads poster.jpg, fanart.jpg, and extrafanart/ sample screenshots for Jellyfin with live progress reporting.
+func DownloadAllAssetsWithProgress(ctx context.Context, movie *scraper.Movie, movieDir string, reporter ProgressReporter) error {
 	if movie == nil || movieDir == "" {
 		return fmt.Errorf("invalid movie or target directory")
 	}
@@ -110,18 +113,28 @@ func DownloadAllAssets(ctx context.Context, movie *scraper.Movie, movieDir strin
 		posterURL = movie.PosterURL
 	}
 	if posterURL != "" {
+		if reporter != nil {
+			reporter("download_poster", 1, 2, "กำลังดาวน์โหลดภาพปกความละเอียดสูง (poster.jpg)...")
+		}
 		posterPath := filepath.Join(movieDir, "poster.jpg")
 		_ = DownloadAsset(ctx, posterURL, posterPath)
-		// Also create cover.jpg as symlink or copy for Jellyfin/Emby compatibility
+
+		if reporter != nil {
+			reporter("download_fanart", 2, 2, "กำลังดาวน์โหลดภาพ backdrop (fanart.jpg)...")
+		}
 		fanartPath := filepath.Join(movieDir, "fanart.jpg")
 		_ = DownloadAsset(ctx, posterURL, fanartPath)
 	}
 
 	// 2. Download Sample Screenshots into extrafanart/
-	if len(movie.SampleScreenshots) > 0 {
+	totalScreenshots := len(movie.SampleScreenshots)
+	if totalScreenshots > 0 {
 		extraDir := filepath.Join(movieDir, "extrafanart")
 		if err := os.MkdirAll(extraDir, 0o755); err == nil {
 			for i, rawURL := range movie.SampleScreenshots {
+				if reporter != nil {
+					reporter("download_screenshot", i+1, totalScreenshots, fmt.Sprintf("กำลังดาวน์โหลดภาพตัวอย่าง Screenshot (%d/%d)...", i+1, totalScreenshots))
+				}
 				sampleFile := filepath.Join(extraDir, fmt.Sprintf("fanart%d.jpg", i+1))
 				_ = DownloadAsset(ctx, rawURL, sampleFile)
 			}
@@ -129,4 +142,9 @@ func DownloadAllAssets(ctx context.Context, movie *scraper.Movie, movieDir strin
 	}
 
 	return nil
+}
+
+// DownloadAllAssets downloads poster.jpg, fanart.jpg, and extrafanart/ sample screenshots for Jellyfin.
+func DownloadAllAssets(ctx context.Context, movie *scraper.Movie, movieDir string) error {
+	return DownloadAllAssetsWithProgress(ctx, movie, movieDir, nil)
 }

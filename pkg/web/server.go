@@ -99,6 +99,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/scan/stream", s.handleScanStream)
 	mux.HandleFunc("/api/movie/", s.handleMovie)
 	mux.HandleFunc("/api/scrape/", s.handleScrape)
+	mux.HandleFunc("/api/scrape/stream", s.handleScrapeStream)
 	mux.HandleFunc("/api/images/", s.handleImage)
 	mux.HandleFunc("/api/proxy-image", s.handleProxyImage)
 	mux.HandleFunc("/api/actresses", s.handleActresses)
@@ -531,6 +532,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	destDir := r.URL.Query().Get("destination")
 	dryRun := r.URL.Query().Get("dry_run") == "true"
 	singleFile := r.URL.Query().Get("source_file")
+	targetMovieID := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("movie_id")))
 
 	if destDir == "" {
 		errData, _ := json.Marshal(map[string]any{"error": "destination is required"})
@@ -539,7 +541,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 600*time.Second)
 	defer cancel()
 
 	var matches []matcher.MatchResult
@@ -569,6 +571,9 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	var validMatches []matcher.MatchResult
 	for _, m := range matches {
 		if m.ID != "" {
+			if targetMovieID != "" && m.ID != targetMovieID {
+				continue
+			}
 			validMatches = append(validMatches, m)
 		}
 	}
@@ -582,6 +587,17 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 
 	successCount := 0
 	for i, match := range validMatches {
+		// Report step: checking metadata
+		stepCheck, _ := json.Marshal(map[string]any{
+			"movie_id": match.ID,
+			"step":     "check_metadata",
+			"index":    i + 1,
+			"total":    len(validMatches),
+			"message":  fmt.Sprintf("กำลังตรวจสอบข้อมูล metadata ของ %s...", match.ID),
+		})
+		fmt.Fprintf(w, "event: step\ndata: %s\n\n", stepCheck)
+		flusher.Flush()
+
 		movie, err := s.scraperClient.Scrape(ctx, match.ID)
 		if err != nil {
 			itemData, _ := json.Marshal(map[string]any{
@@ -602,7 +618,22 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 			uState, _ = s.db.GetUserState(match.ID)
 		}
 
-		res, err := organizer.OrganizeMatch(ctx, &match, movie, uState, destDir, dryRun)
+		// Progress reporter callback for granular steps inside OrganizeMatch
+		stepReporter := func(step string, current, total int, message string) {
+			stepJSON, _ := json.Marshal(map[string]any{
+				"movie_id":     match.ID,
+				"step":         step,
+				"step_current": current,
+				"step_total":   total,
+				"message":      message,
+				"index":        i + 1,
+				"total":        len(validMatches),
+			})
+			fmt.Fprintf(w, "event: step\ndata: %s\n\n", stepJSON)
+			flusher.Flush()
+		}
+
+		res, err := organizer.OrganizeMatchWithProgress(ctx, &match, movie, uState, destDir, dryRun, stepReporter)
 		success := err == nil && res != nil && res.Success
 		if success {
 			successCount++
@@ -620,6 +651,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 			"target_video":  res.TargetVideo,
 			"success":       success,
 			"dry_run":       dryRun,
+			"message":       fmt.Sprintf("จัดระเบียบ %s สำเร็จ!", match.ID),
 		})
 		fmt.Fprintf(w, "event: item\ndata: %s\n\n", itemData)
 		flusher.Flush()
@@ -629,6 +661,130 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 		"phase":         "done",
 		"total":         len(validMatches),
 		"success_count": successCount,
+		"message":       fmt.Sprintf("จัดระเบียบเสร็จสมบูรณ์ %d/%d ไฟล์", successCount, len(validMatches)),
+	})
+	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
+	flusher.Flush()
+}
+
+func (s *Server) handleScrapeStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	targetID := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("id")))
+	srcDir := r.URL.Query().Get("path")
+	if srcDir == "" || srcDir == "." {
+		srcDir = s.targetDir
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 600*time.Second)
+	defer cancel()
+
+	var idsToScrape []string
+	if targetID != "" {
+		idsToScrape = []string{targetID}
+	} else {
+		scanRes, err := s.scanner.Scan(srcDir)
+		if err != nil {
+			errData, _ := json.Marshal(map[string]any{"error": err.Error()})
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
+			flusher.Flush()
+			return
+		}
+		matches := s.matcher.Match(scanRes.Files)
+		seen := make(map[string]bool)
+		for _, m := range matches {
+			if m.ID != "" && !seen[m.ID] {
+				seen[m.ID] = true
+				if s.db != nil {
+					if existing, _ := s.db.GetMovie(m.ID); existing != nil {
+						continue
+					}
+				}
+				idsToScrape = append(idsToScrape, m.ID)
+			}
+		}
+	}
+
+	startData, _ := json.Marshal(map[string]any{
+		"phase": "start",
+		"total": len(idsToScrape),
+	})
+	fmt.Fprintf(w, "event: start\ndata: %s\n\n", startData)
+	flusher.Flush()
+
+	successCount := 0
+	for i, id := range idsToScrape {
+		// Step 1: Querying R18.dev API
+		step1, _ := json.Marshal(map[string]any{
+			"movie_id": id,
+			"step":     "fetch_api",
+			"index":    i + 1,
+			"total":    len(idsToScrape),
+			"percent":  (i * 100) / len(idsToScrape),
+			"message":  fmt.Sprintf("กำลังดึงข้อมูล %s จาก R18.dev API...", id),
+		})
+		fmt.Fprintf(w, "event: step\ndata: %s\n\n", step1)
+		flusher.Flush()
+
+		movie, err := s.scraperClient.Scrape(ctx, id)
+		if err != nil {
+			itemData, _ := json.Marshal(map[string]any{
+				"movie_id": id,
+				"index":    i + 1,
+				"total":    len(idsToScrape),
+				"percent":  (i + 1) * 100 / len(idsToScrape),
+				"success":  false,
+				"error":    err.Error(),
+			})
+			fmt.Fprintf(w, "event: item\ndata: %s\n\n", itemData)
+			flusher.Flush()
+			continue
+		}
+
+		// Step 2: Caching image and saving to database
+		step2, _ := json.Marshal(map[string]any{
+			"movie_id": id,
+			"step":     "save_db",
+			"index":    i + 1,
+			"total":    len(idsToScrape),
+			"percent":  (i*100 + 70) / len(idsToScrape),
+			"message":  fmt.Sprintf("กำลังบันทึกข้อมูลและภาพปก %s ลงฐานข้อมูล...", id),
+		})
+		fmt.Fprintf(w, "event: step\ndata: %s\n\n", step2)
+		flusher.Flush()
+
+		if s.db != nil {
+			_ = s.db.SaveMovie(movie)
+		}
+		successCount++
+
+		itemData, _ := json.Marshal(map[string]any{
+			"movie_id": id,
+			"index":    i + 1,
+			"total":    len(idsToScrape),
+			"percent":  (i + 1) * 100 / len(idsToScrape),
+			"success":  true,
+			"movie":    movie,
+			"message":  fmt.Sprintf("Scrape %s สำเร็จ!", id),
+		})
+		fmt.Fprintf(w, "event: item\ndata: %s\n\n", itemData)
+		flusher.Flush()
+	}
+
+	doneData, _ := json.Marshal(map[string]any{
+		"phase":         "done",
+		"total":         len(idsToScrape),
+		"success_count": successCount,
+		"message":       fmt.Sprintf("Scrape เสร็จสมบูรณ์ %d/%d เรื่อง", successCount, len(idsToScrape)),
 	})
 	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
 	flusher.Flush()

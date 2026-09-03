@@ -342,9 +342,70 @@ body {
   display: block;
 }
 
-/* ==========================================================================
-   Streaming Progress Bars
-   ========================================================================== */
+/* Live Operation Activity Progress Bar */
+.op-progress-box {
+  background: linear-gradient(135deg, rgba(20, 23, 36, 0.98), rgba(28, 32, 51, 0.98));
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1.1rem;
+  margin-bottom: 0.85rem;
+  box-shadow: 0 4px 20px rgba(122, 162, 247, 0.3);
+  animation: fadeIn var(--transition-fast);
+}
+
+.op-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.op-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.op-icon {
+  font-size: 1.15rem;
+}
+
+.op-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.op-badge {
+  background: rgba(122, 162, 247, 0.2);
+  color: var(--primary);
+  border: 1px solid rgba(122, 162, 247, 0.4);
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.op-pct {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--primary);
+}
+
+.op-detail-row {
+  margin-bottom: 0.45rem;
+}
+
+.op-message {
+  font-size: 0.82rem;
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .progress-box {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);

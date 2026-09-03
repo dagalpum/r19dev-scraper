@@ -284,13 +284,35 @@ func runActress(args []string) {
 		fmt.Printf("🗑️ Unfollowed '%s'\n", name)
 
 	case "check":
-		summaries, err := svc.CheckAllFollowed(context.Background())
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Error checking releases: %v\n", err)
-			os.Exit(1)
+		var summaries []actress.ActressSummary
+		if len(args) > 1 {
+			targetName := strings.TrimSpace(args[1])
+			summary, err := svc.GetActressSummary(context.Background(), targetName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Error checking releases for %s: %v\n", targetName, err)
+				os.Exit(1)
+			}
+			if summary != nil {
+				if followed, _ := d.ListFollowedActresses(); len(followed) > 0 {
+					for _, a := range followed {
+						if strings.EqualFold(a.Name, targetName) {
+							summary.Actress = a
+							break
+						}
+					}
+				}
+				summaries = append(summaries, *summary)
+			}
+		} else {
+			var err error
+			summaries, err = svc.CheckAllFollowed(context.Background())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Error checking releases: %v\n", err)
+				os.Exit(1)
+			}
 		}
 		if len(summaries) == 0 {
-			fmt.Println("No actresses followed yet. Use: r19dev actress follow \"<name>\"")
+			fmt.Println("No releases found or no actresses followed yet.")
 			return
 		}
 		fmt.Printf("=== Actress Release Tracker & Filmography ===\n\n")

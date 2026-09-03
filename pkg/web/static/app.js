@@ -1123,6 +1123,13 @@
     state.selectedMovieId = null;
   }
 
+  function openMovieById(id) {
+    if (!id) return;
+    const existing = state.groupedMovies.find(m => m.id && m.id.toUpperCase() === id.toUpperCase());
+    const movieObj = existing || { id: id, files: [] };
+    openMovieDetail(movieObj);
+  }
+
   function renderModalContent(movie, meta) {
     const id = movie.id || 'UNMATCHED';
     const uState = state.userStates[id] || {};
@@ -1463,7 +1470,7 @@
                 : '<span class="pill pill-missing">🔴 Missing / New</span>';
               const watched = rel.is_watched ? ' • 👁️ Watched' : '';
               return `
-                <div class="movie-card" style="padding: 0.8rem;" tabindex="0" role="article">
+                <div class="movie-card" style="padding: 0.8rem; cursor: pointer;" tabindex="0" role="article" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openMovie('${escapeHtml(rel.movie_id)}');}">
                   <img src="${rel.cover_url || '/placeholder.png'}" alt="Cover for ${escapeHtml(rel.movie_id)}" style="width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 0.6rem;" />
                   <div style="font-weight: 700; color: #fff; font-size: 0.9rem;">${escapeHtml(rel.movie_id)}</div>
                   <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(rel.title)}</div>
@@ -1812,6 +1819,7 @@
 
   // Expose global app object for inline handlers
   window.app = {
+    openMovie: openMovieById,
     openGallery,
     openLightbox,
     toggleWatched,

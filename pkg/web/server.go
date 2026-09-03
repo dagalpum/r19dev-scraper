@@ -151,8 +151,11 @@ func (s *Server) Start(openBrowserOnStart bool) error {
 
 func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 	target := r.URL.Query().Get("path")
-	if target == "" {
+	if target == "" || target == "." {
 		target = s.targetDir
+	}
+	if abs, err := filepath.Abs(target); err == nil && abs != "" {
+		target = abs
 	}
 
 	scanRes, err := s.scanner.Scan(target)
@@ -380,8 +383,11 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Scan directory
 		srcDir := req.Source
-		if srcDir == "" {
+		if srcDir == "" || srcDir == "." {
 			srcDir = s.targetDir
+		}
+		if abs, err := filepath.Abs(srcDir); err == nil && abs != "" {
+			srcDir = abs
 		}
 		scanRes, err := s.scanner.Scan(srcDir)
 		if err != nil {
@@ -437,8 +443,11 @@ func (s *Server) handleScanStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
 	target := r.URL.Query().Get("path")
-	if target == "" {
+	if target == "" || target == "." {
 		target = s.targetDir
+	}
+	if abs, err := filepath.Abs(target); err == nil && abs != "" {
+		target = abs
 	}
 
 	ch := make(chan []scanner.FileInfo, 20)
@@ -535,8 +544,11 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 			Name: filepath.Base(singleFile),
 		}})
 	} else {
-		if srcDir == "" {
+		if srcDir == "" || srcDir == "." {
 			srcDir = s.targetDir
+		}
+		if abs, err := filepath.Abs(srcDir); err == nil && abs != "" {
+			srcDir = abs
 		}
 		scanRes, err := s.scanner.Scan(srcDir)
 		if err != nil {

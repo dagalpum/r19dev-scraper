@@ -10,7 +10,7 @@
   // Application State
   const state = {
     activeTab: 'library',
-    activeDir: '.',
+    activeDir: '',
     rawMatches: [],     // Raw matches from backend
     groupedMovies: [],  // Grouped by JAV ID
     metadata: {},       // ID -> scraper.Movie
@@ -176,8 +176,22 @@
     });
 
     elements.btnRescan.addEventListener('click', () => {
-      startScanStream();
+      startScanStream(state.activeDir);
     });
+
+    if (elements.labelActiveDir) {
+      const badge = elements.labelActiveDir.closest('.dir-badge');
+      if (badge) {
+        badge.style.cursor = 'pointer';
+        badge.title = 'Click to change scan directory';
+        badge.addEventListener('click', () => {
+          const newPath = prompt('Enter folder path to scan:', state.activeDir || '/Volumes/home/BT/2026');
+          if (newPath && newPath.trim()) {
+            startScanStream(newPath.trim());
+          }
+        });
+      }
+    }
 
     elements.btnScrapeAll.addEventListener('click', () => {
       scrapeAllMatched();
@@ -302,7 +316,10 @@
     loadActressesData();
   }
 
-  function startScanStream() {
+  function startScanStream(customPath) {
+    if (customPath) {
+      state.activeDir = customPath;
+    }
     if (state.scanEventSource) {
       state.scanEventSource.close();
     }
@@ -311,9 +328,15 @@
     elements.scanProgressBox.classList.remove('hidden');
     elements.scanProgressFill.style.width = '10%';
     elements.scanProgressPct.textContent = 'Scanning...';
-    elements.scanProgressLabel.textContent = '🔍 Discovering video files...';
+    elements.scanProgressLabel.textContent = state.activeDir
+      ? `🔍 Scanning ${state.activeDir}...`
+      : '🔍 Discovering video files...';
 
-    const es = new EventSource('/api/scan/stream?path=' + encodeURIComponent(state.activeDir));
+    let url = '/api/scan/stream';
+    if (state.activeDir && state.activeDir !== '.') {
+      url += '?path=' + encodeURIComponent(state.activeDir);
+    }
+    const es = new EventSource(url);
     state.scanEventSource = es;
 
     es.addEventListener('progress', (e) => {

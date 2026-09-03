@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="R19DEV Studio - High performance JAV library manager, metadata scraper, and Jellyfin NAS organizer">
   <title>R19DEV Studio - JAV Scraper & Media Hub</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,61 +12,78 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- WCAG Skip Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   <div id="app">
     <!-- Top Navigation Bar -->
-    <header class="navbar">
+    <header class="navbar" role="banner">
       <div class="nav-brand">
-        <div class="brand-logo">🎬</div>
+        <span class="brand-logo" aria-hidden="true">🎬</span>
         <div class="brand-text">
-          <span class="brand-title">R19DEV</span>
+          <h1 class="brand-title">R19DEV</h1>
           <span class="brand-subtitle">Studio & Jellyfin Hub</span>
         </div>
       </div>
 
-      <nav class="nav-tabs">
-        <button class="nav-tab active" data-tab="library">
-          <span class="tab-icon">📁</span>
+      <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
+        <button id="tab-btn-library" class="nav-tab active" data-tab="library" role="tab" aria-selected="true" aria-controls="tab-library">
+          <span class="tab-icon" aria-hidden="true">📁</span>
           <span>Library</span>
-          <span class="badge-count" id="count-library">0</span>
+          <span class="badge-count" id="count-library" aria-label="Total files">0</span>
         </button>
-        <button class="nav-tab" data-tab="actresses">
-          <span class="tab-icon">⭐</span>
+        <button id="tab-btn-actresses" class="nav-tab" data-tab="actresses" role="tab" aria-selected="false" aria-controls="tab-actresses">
+          <span class="tab-icon" aria-hidden="true">⭐</span>
           <span>Actresses</span>
-          <span class="badge-count" id="count-actresses">0</span>
+          <span class="badge-count" id="count-actresses" aria-label="Followed actresses count">0</span>
         </button>
-        <button class="nav-tab" data-tab="organizer">
-          <span class="tab-icon">📂</span>
+        <button id="tab-btn-organizer" class="nav-tab" data-tab="organizer" role="tab" aria-selected="false" aria-controls="tab-organizer">
+          <span class="tab-icon" aria-hidden="true">📂</span>
           <span>NAS Organizer</span>
         </button>
       </nav>
 
       <div class="nav-actions">
-        <div class="dir-badge" id="nav-active-dir" title="Current Directory">
-          <span class="dir-icon">📂</span>
+        <div class="dir-badge" id="nav-active-dir" title="Current Directory" tabindex="0" aria-label="Current Directory">
+          <span class="dir-icon" aria-hidden="true">📂</span>
           <span class="dir-name" id="label-active-dir">/</span>
         </div>
-        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory">
-          <span class="icon">🔄</span> Rescan
+        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory" aria-label="Rescan Directory">
+          <span class="icon" aria-hidden="true">🔄</span> Rescan
         </button>
       </div>
     </header>
 
     <!-- Main Container -->
-    <main class="main-content">
+    <main id="main-content" class="main-content" role="main">
 
       <!-- TAB 1: LIBRARY & SCANNER -->
-      <section id="tab-library" class="tab-pane active">
+      <section id="tab-library" class="tab-pane active" role="tabpanel" aria-labelledby="tab-btn-library">
+        
+        <!-- Live Scan Progress Bar -->
+        <div id="scan-progress-box" class="progress-box hidden" role="region" aria-label="Scan Progress">
+          <div class="progress-info">
+            <span id="scan-progress-label" aria-live="polite">🔍 Scanning directory for videos...</span>
+            <span id="scan-progress-pct" class="progress-pct">0%</span>
+          </div>
+          <div class="progress-track" role="progressbar" id="scan-progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Scan Progress Bar">
+            <div class="progress-fill" id="scan-progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
         <!-- Control Bar -->
-        <div class="control-bar">
+        <div class="control-bar" role="toolbar" aria-label="Library Controls">
           <div class="search-box">
-            <span class="search-icon">🔍</span>
-            <input type="text" id="search-input" placeholder="Search by JAV ID, file name, actress, studio..." autocomplete="off">
-            <button id="search-clear" class="btn-clear hidden">×</button>
+            <label for="search-input" class="sr-only">Search library</label>
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input type="text" id="search-input" placeholder="Search by JAV ID, title, actress, studio..." autocomplete="off">
+            <button id="search-clear" class="btn-clear hidden" aria-label="Clear search">×</button>
           </div>
 
           <div class="filter-group">
-            <select id="filter-status" class="select-dropdown">
-              <option value="all">All Statuses</option>
+            <label for="filter-status" class="sr-only">Filter by status</label>
+            <select id="filter-status" class="select-dropdown" aria-label="Filter by status">
+              <option value="all">All Movies</option>
               <option value="matched">Matched JAV ID</option>
               <option value="unmatched">Unmatched Files</option>
               <option value="scraped">Scraped Metadata</option>
@@ -73,7 +92,8 @@
               <option value="favorites">Favorites (❤️)</option>
             </select>
 
-            <select id="sort-by" class="select-dropdown">
+            <label for="sort-by" class="sr-only">Sort by</label>
+            <select id="sort-by" class="select-dropdown" aria-label="Sort by">
               <option value="id-asc">JAV ID (A-Z)</option>
               <option value="id-desc">JAV ID (Z-A)</option>
               <option value="name-asc">Filename (A-Z)</option>
@@ -82,42 +102,53 @@
             </select>
           </div>
 
+          <!-- Cards Per Row Density Selector -->
+          <div class="density-group" role="group" aria-label="Cards per row view density">
+            <span class="density-label" id="density-label">Cards/Row:</span>
+            <button class="btn-density" data-cols="1" title="1 card per row (Showcase cover)" aria-label="1 card per row">1</button>
+            <button class="btn-density" data-cols="2" title="2 cards per row (Large cover)" aria-label="2 cards per row">2</button>
+            <button class="btn-density" data-cols="3" title="3 cards per row" aria-label="3 cards per row">3</button>
+            <button class="btn-density" data-cols="4" title="4 cards per row" aria-label="4 cards per row">4</button>
+            <button class="btn-density" data-cols="5" title="5 cards per row" aria-label="5 cards per row">5</button>
+            <button class="btn-density active" data-cols="auto" title="Auto responsive" aria-label="Auto responsive">Auto</button>
+          </div>
+
           <div class="action-buttons">
-            <button id="btn-scrape-all" class="btn btn-primary">
-              <span class="icon">⚡</span> Scrape All
+            <button id="btn-scrape-all" class="btn btn-primary" aria-label="Scrape all matched movies">
+              <span class="icon" aria-hidden="true">⚡</span> Scrape All
             </button>
-            <button id="btn-organize-all" class="btn btn-accent">
-              <span class="icon">📂</span> Batch Organize
+            <button id="btn-organize-all" class="btn btn-accent" aria-label="Batch organize to NAS">
+              <span class="icon" aria-hidden="true">📂</span> Batch Organize
             </button>
           </div>
         </div>
 
         <!-- Library Stats Bar -->
-        <div class="stats-bar">
-          <div class="stat-item"><span class="stat-num" id="stat-total">0</span> Total Files</div>
-          <div class="stat-divider"></div>
+        <div class="stats-bar" role="status" aria-label="Library Statistics">
+          <div class="stat-item"><span class="stat-num" id="stat-total">0</span> Total Videos</div>
+          <div class="stat-divider" aria-hidden="true"></div>
           <div class="stat-item text-success"><span class="stat-num" id="stat-matched">0</span> Matched</div>
-          <div class="stat-divider"></div>
+          <div class="stat-divider" aria-hidden="true"></div>
           <div class="stat-item text-warning"><span class="stat-num" id="stat-unmatched">0</span> Unmatched</div>
-          <div class="stat-divider"></div>
+          <div class="stat-divider" aria-hidden="true"></div>
           <div class="stat-item text-info"><span class="stat-num" id="stat-scraped">0</span> Scraped</div>
         </div>
 
         <!-- Movie Cards Grid -->
-        <div id="movies-grid" class="movies-grid">
+        <div id="movies-grid" class="movies-grid grid-auto" role="feed" aria-label="Movie library cards">
           <!-- Dynamically populated via app.js -->
         </div>
 
         <!-- Empty State -->
         <div id="library-empty" class="empty-state hidden">
-          <div class="empty-icon">📁</div>
+          <div class="empty-icon" aria-hidden="true">📁</div>
           <h3>No videos found</h3>
           <p>Scan a directory containing video files (.mp4, .mkv, .avi) to get started.</p>
         </div>
       </section>
 
       <!-- TAB 2: ACTRESS HUB & NEW RELEASES -->
-      <section id="tab-actresses" class="tab-pane">
+      <section id="tab-actresses" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-actresses">
         <div class="actress-header">
           <div class="actress-header-info">
             <h2>⭐ Followed Actresses</h2>
@@ -125,26 +156,27 @@
           </div>
 
           <div class="actress-add-box">
+            <label for="input-actress-name" class="sr-only">Actress name to follow</label>
             <input type="text" id="input-actress-name" placeholder="Add Actress Name (e.g. Kanna Seto)" />
             <button id="btn-add-actress" class="btn btn-primary">
-              <span class="icon">+</span> Follow
+              <span class="icon" aria-hidden="true">+</span> Follow
             </button>
           </div>
         </div>
 
-        <div id="actresses-container" class="actresses-container">
+        <div id="actresses-container" class="actresses-container" role="feed" aria-label="Followed actresses list">
           <!-- Dynamically populated via app.js -->
         </div>
 
         <div id="actresses-empty" class="empty-state hidden">
-          <div class="empty-icon">⭐</div>
+          <div class="empty-icon" aria-hidden="true">⭐</div>
           <h3>No actresses followed yet</h3>
           <p>Click the "⭐ Follow" button on any movie card or type an actress name above to track new releases.</p>
         </div>
       </section>
 
       <!-- TAB 3: NAS ORGANIZER -->
-      <section id="tab-organizer" class="tab-pane">
+      <section id="tab-organizer" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-organizer">
         <div class="organizer-card">
           <h2>📂 NAS Jellyfin Directory Organizer</h2>
           <p class="organizer-desc">
@@ -153,28 +185,39 @@
             with full metadata, high-res posters, fanart, and sample screenshots.
           </p>
 
-          <div class="organizer-form">
+          <form id="form-organizer" class="organizer-form" onsubmit="event.preventDefault()">
             <div class="form-group">
               <label for="org-src-dir">Source Directory (Current Videos)</label>
-              <input type="text" id="org-src-dir" class="form-input" placeholder="/Volumes/home/BT/2026" />
+              <input type="text" id="org-src-dir" class="form-input" placeholder="/Volumes/home/BT/2026" required />
             </div>
 
             <div class="form-group">
               <label for="org-dest-root">Jellyfin Destination Root (NAS Library)</label>
-              <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/JAV_Library" />
+              <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/JAV_Library" required />
             </div>
 
             <div class="form-options">
-              <label class="checkbox-label">
+              <label class="checkbox-label" for="org-dry-run">
                 <input type="checkbox" id="org-dry-run" checked />
                 <span><strong>Dry Run Mode:</strong> Preview folder actions safely without moving files</span>
               </label>
             </div>
 
             <div class="form-actions">
-              <button id="btn-start-organize" class="btn btn-primary btn-lg">
-                <span class="icon">🚀</span> Start Organize
+              <button type="button" id="btn-start-organize" class="btn btn-primary btn-lg">
+                <span class="icon" aria-hidden="true">🚀</span> Start Organize
               </button>
+            </div>
+          </form>
+
+          <!-- Live Organize Progress Bar -->
+          <div id="org-progress-box" class="progress-box hidden" role="region" aria-label="Organize Progress">
+            <div class="progress-info">
+              <span id="org-progress-label" aria-live="polite">Organizing movies...</span>
+              <span id="org-progress-pct" class="progress-pct">0%</span>
+            </div>
+            <div class="progress-track" role="progressbar" id="org-progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Organize Progress Bar">
+              <div class="progress-fill" id="org-progress-fill" style="width: 0%"></div>
             </div>
           </div>
 
@@ -182,19 +225,19 @@
           <div class="organizer-log-wrapper">
             <div class="log-header">
               <span>Console Log</span>
-              <button id="btn-clear-log" class="btn-clear-log">Clear</button>
+              <button id="btn-clear-log" class="btn-clear-log" aria-label="Clear console log">Clear</button>
             </div>
-            <pre id="organizer-log" class="console-log">Ready. Click "Start Organize" to preview or process files.</pre>
+            <pre id="organizer-log" class="console-log" aria-live="polite">Ready. Click "Start Organize" to preview or process files.</pre>
           </div>
         </div>
       </section>
 
     </main>
 
-    <!-- MOVIE DETAIL MODAL / INSPECTOR -->
-    <div id="modal-movie" class="modal-backdrop hidden">
+    <!-- MOVIE DETAIL MODAL / INSPECTOR (Full-Width Hero Cover) -->
+    <div id="modal-movie" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-movie-title">
       <div class="modal-card">
-        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)">×</button>
+        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close dialog">×</button>
 
         <div class="modal-body" id="modal-content">
           <!-- Dynamically populated via app.js -->
@@ -203,14 +246,14 @@
     </div>
 
     <!-- IMAGE LIGHTBOX MODAL -->
-    <div id="lightbox" class="lightbox-backdrop hidden">
-      <button id="btn-close-lightbox" class="btn-lightbox-close">×</button>
-      <img id="lightbox-img" src="" alt="Full Resolution Image" />
-      <div id="lightbox-caption" class="lightbox-caption"></div>
+    <div id="lightbox" class="lightbox-backdrop hidden" role="dialog" aria-modal="true" aria-label="Image preview">
+      <button id="btn-close-lightbox" class="btn-lightbox-close" aria-label="Close image preview">×</button>
+      <img id="lightbox-img" src="" alt="Full Resolution Screenshot" />
+      <div id="lightbox-caption" class="lightbox-caption" aria-live="polite"></div>
     </div>
 
     <!-- TOAST NOTIFICATIONS -->
-    <div id="toast-container" class="toast-container"></div>
+    <div id="toast-container" class="toast-container" role="region" aria-label="Notifications" aria-live="polite"></div>
   </div>
 
   <script src="/app.js"></script>

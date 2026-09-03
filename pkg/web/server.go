@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 	"github.com/dagalp/r19dev-scraper/pkg/actress"
 	"github.com/dagalp/r19dev-scraper/pkg/cache"
 	"github.com/dagalp/r19dev-scraper/pkg/db"
+	"github.com/dagalp/r19dev-scraper/pkg/jellyfin"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
 	"github.com/dagalp/r19dev-scraper/pkg/organizer"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
@@ -93,14 +95,17 @@ func (s *Server) Handler() (http.Handler, error) {
 
 	// API Routes
 	mux.HandleFunc("/api/scan", s.handleScan)
+	mux.HandleFunc("/api/scan/stream", s.handleScanStream)
 	mux.HandleFunc("/api/movie/", s.handleMovie)
 	mux.HandleFunc("/api/scrape/", s.handleScrape)
 	mux.HandleFunc("/api/images/", s.handleImage)
+	mux.HandleFunc("/api/proxy-image", s.handleProxyImage)
 	mux.HandleFunc("/api/actresses", s.handleActresses)
 	mux.HandleFunc("/api/actresses/follow", s.handleActressFollow)
 	mux.HandleFunc("/api/actresses/unfollow", s.handleActressUnfollow)
 	mux.HandleFunc("/api/actresses/releases", s.handleActressReleases)
 	mux.HandleFunc("/api/organize", s.handleOrganize)
+	mux.HandleFunc("/api/organize/stream", s.handleOrganizeStream)
 
 	// Static Files from Embedded FS
 	subFS, err := fs.Sub(staticFS, "static")
@@ -417,6 +422,236 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 		"success_count": successCount,
 		"total_count":   len(results),
 	})
+}
+
+func (s *Server) handleScanStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	target := r.URL.Query().Get("path")
+	if target == "" {
+		target = s.targetDir
+	}
+
+	ch := make(chan []scanner.FileInfo, 20)
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	go func() {
+		defer close(ch)
+		_, _ = s.scanner.ScanStream(ctx, target, 5, ch)
+	}()
+
+	var allFiles []scanner.FileInfo
+	for chunk := range ch {
+		allFiles = append(allFiles, chunk...)
+		matches := s.matcher.Match(allFiles)
+		data, _ := json.Marshal(map[string]any{
+			"phase":      "scanning",
+			"discovered": len(allFiles),
+			"matched":    len(matches),
+			"chunk_size": len(chunk),
+		})
+		fmt.Fprintf(w, "event: progress\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	// Done scanning, compile full results
+	finalMatches := s.matcher.Match(allFiles)
+	metadataMap := make(map[string]*scraper.Movie)
+	userStatesMap := make(map[string]*db.UserState)
+
+	for _, m := range finalMatches {
+		if m.ID == "" {
+			continue
+		}
+		if s.db != nil {
+			if mov, _ := s.db.GetMovie(m.ID); mov != nil {
+				metadataMap[m.ID] = mov
+			}
+			if uState, _ := s.db.GetUserState(m.ID); uState != nil {
+				userStatesMap[m.ID] = uState
+			}
+		}
+		if _, ok := metadataMap[m.ID]; !ok {
+			if mov, found := cache.Default().GetMovie(m.ID); found && mov != nil {
+				metadataMap[m.ID] = mov
+			}
+		}
+	}
+
+	doneData, _ := json.Marshal(map[string]any{
+		"phase":       "done",
+		"target_dir":  target,
+		"total":       len(allFiles),
+		"matches":     finalMatches,
+		"metadata":    metadataMap,
+		"user_states": userStatesMap,
+	})
+	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
+	flusher.Flush()
+}
+
+func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	srcDir := r.URL.Query().Get("source")
+	destDir := r.URL.Query().Get("destination")
+	dryRun := r.URL.Query().Get("dry_run") == "true"
+	singleFile := r.URL.Query().Get("source_file")
+
+	if destDir == "" {
+		errData, _ := json.Marshal(map[string]any{"error": "destination is required"})
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
+		flusher.Flush()
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
+	defer cancel()
+
+	var matches []matcher.MatchResult
+	if singleFile != "" {
+		mc, _ := matcher.New(matcher.DefaultConfig())
+		matches = mc.Match([]scanner.FileInfo{{
+			Path: singleFile,
+			Name: filepath.Base(singleFile),
+		}})
+	} else {
+		if srcDir == "" {
+			srcDir = s.targetDir
+		}
+		scanRes, err := s.scanner.Scan(srcDir)
+		if err != nil {
+			errData, _ := json.Marshal(map[string]any{"error": err.Error()})
+			fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
+			flusher.Flush()
+			return
+		}
+		matches = s.matcher.Match(scanRes.Files)
+	}
+
+	var validMatches []matcher.MatchResult
+	for _, m := range matches {
+		if m.ID != "" {
+			validMatches = append(validMatches, m)
+		}
+	}
+
+	startData, _ := json.Marshal(map[string]any{
+		"phase": "start",
+		"total": len(validMatches),
+	})
+	fmt.Fprintf(w, "event: start\ndata: %s\n\n", startData)
+	flusher.Flush()
+
+	successCount := 0
+	for i, match := range validMatches {
+		movie, err := s.scraperClient.Scrape(ctx, match.ID)
+		if err != nil {
+			itemData, _ := json.Marshal(map[string]any{
+				"index":    i + 1,
+				"total":    len(validMatches),
+				"percent":  (i + 1) * 100 / len(validMatches),
+				"movie_id": match.ID,
+				"success":  false,
+				"error":    err.Error(),
+			})
+			fmt.Fprintf(w, "event: item\ndata: %s\n\n", itemData)
+			flusher.Flush()
+			continue
+		}
+
+		var uState *db.UserState
+		if s.db != nil {
+			uState, _ = s.db.GetUserState(match.ID)
+		}
+
+		res, err := organizer.OrganizeMatch(ctx, &match, movie, uState, destDir, dryRun)
+		success := err == nil && res != nil && res.Success
+		if success {
+			successCount++
+		}
+
+		itemData, _ := json.Marshal(map[string]any{
+			"index":         i + 1,
+			"total":         len(validMatches),
+			"percent":       (i + 1) * 100 / len(validMatches),
+			"movie_id":      match.ID,
+			"target_folder": res.TargetFolder,
+			"target_video":  res.TargetVideo,
+			"success":       success,
+			"dry_run":       dryRun,
+		})
+		fmt.Fprintf(w, "event: item\ndata: %s\n\n", itemData)
+		flusher.Flush()
+	}
+
+	doneData, _ := json.Marshal(map[string]any{
+		"phase":         "done",
+		"total":         len(validMatches),
+		"success_count": successCount,
+	})
+	fmt.Fprintf(w, "event: done\ndata: %s\n\n", doneData)
+	flusher.Flush()
+}
+
+func (s *Server) handleProxyImage(w http.ResponseWriter, r *http.Request) {
+	rawURL := r.URL.Query().Get("url")
+	if rawURL == "" {
+		http.Error(w, "missing url parameter", http.StatusBadRequest)
+		return
+	}
+
+	upgradedURL := jellyfin.UpgradeDMMImageURL(rawURL)
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, upgradedURL, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	req.Header.Set("User-Agent", scraper.DefaultUA)
+	req.Header.Set("Referer", "https://r18.dev/")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		// Fallback to raw URL
+		if upgradedURL != rawURL {
+			reqOrig, oErr := http.NewRequestWithContext(r.Context(), http.MethodGet, rawURL, nil)
+			if oErr == nil {
+				reqOrig.Header.Set("User-Agent", scraper.DefaultUA)
+				resp, err = client.Do(reqOrig)
+			}
+		}
+	}
+
+	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
+		http.NotFound(w, r)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = io.Copy(w, resp.Body)
 }
 
 // --- Helpers ---

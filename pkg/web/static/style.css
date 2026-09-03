@@ -1317,6 +1317,7 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   overflow: hidden;
+  position: relative;
 }
 
 .log-header {
@@ -1326,20 +1327,81 @@ body {
   padding: 0.6rem 1rem;
   background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   color: var(--text-muted);
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.btn-clear-log {
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
+.log-header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.log-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  display: inline-block;
+}
+
+.log-badge-auto {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  background: rgba(158, 206, 106, 0.18);
+  color: var(--success);
+  border: 1px solid rgba(158, 206, 106, 0.3);
+  transition: all var(--transition-fast);
+}
+
+.log-badge-auto.paused {
+  background: rgba(224, 175, 104, 0.18);
+  color: var(--warning);
+  border-color: rgba(224, 175, 104, 0.3);
+}
+
+.log-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-log-action {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all var(--transition-fast);
 }
 
-.btn-clear-log:hover {
+.btn-log-action:hover {
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
+  border-color: var(--primary);
+}
+
+.btn-log-action.active {
+  background: var(--primary-subtle);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.log-container {
+  position: relative;
 }
 
 .console-log {
@@ -1348,9 +1410,42 @@ body {
   font-size: 0.82rem;
   color: var(--text-main);
   line-height: 1.6;
-  max-height: 320px;
+  max-height: 380px;
   overflow-y: auto;
   white-space: pre-wrap;
+  user-select: text !important;
+  scroll-behavior: smooth;
+}
+
+.btn-resume-scroll {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  background: var(--primary);
+  color: #0c0e14;
+  border: none;
+  border-radius: 20px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(122, 162, 247, 0.4);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  z-index: 10;
+  animation: bounce 1.5s infinite;
+  transition: transform var(--transition-fast);
+}
+
+.btn-resume-scroll:hover {
+  transform: translateY(-2px);
+  background: var(--primary-hover);
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 
 /* ==========================================================================

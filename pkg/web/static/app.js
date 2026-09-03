@@ -31,6 +31,7 @@
     isScanning: false,
     scanEventSource: null,
     orgEventSource: null,
+    logAutoScroll: true,
   };
 
   // DOM Selectors
@@ -97,6 +98,10 @@
     btnStartOrganize: document.getElementById('btn-start-organize'),
     organizerLog: document.getElementById('organizer-log'),
     btnClearLog: document.getElementById('btn-clear-log'),
+    btnCopyLog: document.getElementById('btn-copy-log'),
+    btnToggleAutoscroll: document.getElementById('btn-toggle-autoscroll'),
+    btnResumeScroll: document.getElementById('btn-resume-scroll'),
+    logScrollBadge: document.getElementById('log-scroll-badge'),
 
     // Modals
     modalMovie: document.getElementById('modal-movie'),
@@ -333,9 +338,98 @@
     });
   }
 
+  function appendOrganizerLog(text) {
+    if (!elements.organizerLog) return;
+    elements.organizerLog.textContent += text;
+    if (state.logAutoScroll) {
+      elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+    } else {
+      if (elements.btnResumeScroll) {
+        elements.btnResumeScroll.classList.remove('hidden');
+      }
+    }
+  }
+
   function setupOrganizer() {
-    elements.btnClearLog.addEventListener('click', () => {
-      elements.organizerLog.textContent = 'Console cleared.';
+    elements.btnClearLog?.addEventListener('click', () => {
+      elements.organizerLog.textContent = 'Console cleared.\n';
+      if (elements.btnResumeScroll) elements.btnResumeScroll.classList.add('hidden');
+    });
+
+    elements.btnCopyLog?.addEventListener('click', async () => {
+      const text = elements.organizerLog?.textContent || '';
+      if (!text.trim()) {
+        showToast('No logs to copy', 'warning');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('📋 Copied console log to clipboard!', 'success');
+      } catch (err) {
+        showToast('Failed to copy: ' + err.message, 'danger');
+      }
+    });
+
+    elements.btnResumeScroll?.addEventListener('click', () => {
+      state.logAutoScroll = true;
+      if (elements.organizerLog) {
+        elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+      }
+      elements.btnResumeScroll.classList.add('hidden');
+      if (elements.logScrollBadge) {
+        elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
+        elements.logScrollBadge.classList.remove('paused');
+      }
+      elements.btnToggleAutoscroll?.classList.add('active');
+    });
+
+    elements.btnToggleAutoscroll?.addEventListener('click', () => {
+      state.logAutoScroll = !state.logAutoScroll;
+      if (state.logAutoScroll) {
+        if (elements.organizerLog) {
+          elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+        }
+        elements.btnResumeScroll?.classList.add('hidden');
+        if (elements.logScrollBadge) {
+          elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
+          elements.logScrollBadge.classList.remove('paused');
+        }
+        elements.btnToggleAutoscroll.classList.add('active');
+        showToast('Auto-scroll resumed ⬇️', 'info');
+      } else {
+        if (elements.logScrollBadge) {
+          elements.logScrollBadge.textContent = 'Auto-Scroll: PAUSED';
+          elements.logScrollBadge.classList.add('paused');
+        }
+        elements.btnToggleAutoscroll.classList.remove('active');
+        showToast('Auto-scroll paused ⏸️', 'info');
+      }
+    });
+
+    elements.organizerLog?.addEventListener('scroll', () => {
+      const el = elements.organizerLog;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 45;
+      if (isNearBottom) {
+        if (!state.logAutoScroll) {
+          state.logAutoScroll = true;
+          if (elements.logScrollBadge) {
+            elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
+            elements.logScrollBadge.classList.remove('paused');
+          }
+          elements.btnResumeScroll?.classList.add('hidden');
+          elements.btnToggleAutoscroll?.classList.add('active');
+        }
+      } else {
+        if (state.logAutoScroll) {
+          state.logAutoScroll = false;
+          if (elements.logScrollBadge) {
+            elements.logScrollBadge.textContent = 'Auto-Scroll: PAUSED';
+            elements.logScrollBadge.classList.add('paused');
+          }
+          elements.btnResumeScroll?.classList.remove('hidden');
+          elements.btnToggleAutoscroll?.classList.remove('active');
+        }
+      }
     });
 
     elements.btnStartOrganize.addEventListener('click', () => {
@@ -523,6 +617,13 @@
     elements.btnStartOrganize.disabled = true;
 
     elements.organizerLog.textContent = `🚀 Starting organize from ${src} -> ${dest} (DryRun: ${dryRun})...\n\n`;
+    state.logAutoScroll = true;
+    if (elements.logScrollBadge) {
+      elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
+      elements.logScrollBadge.classList.remove('paused');
+    }
+    elements.btnResumeScroll?.classList.add('hidden');
+    elements.btnToggleAutoscroll?.classList.add('active');
 
     const url = `/api/organize/stream?source=${encodeURIComponent(src)}&destination=${encodeURIComponent(dest)}&dry_run=${dryRun}`;
     const es = new EventSource(url);
@@ -539,8 +640,7 @@
       try {
         const step = JSON.parse(e.data);
         elements.orgProgressLabel.textContent = `[${step.index}/${step.total}] ${step.movie_id}: ${step.message}`;
-        elements.organizerLog.textContent += `   → ${step.message}\n`;
-        elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+        appendOrganizerLog(`   → ${step.message}\n`);
       } catch (err) {}
     });
 
@@ -559,11 +659,14 @@
             state.organizedFolders[item.movie_id] = item.target_folder;
           }
         }
-        elements.organizerLog.textContent += `${status} ${item.movie_id} -> ${item.target_folder || ''}\n`;
+        let line = `${status} ${item.movie_id} -> ${item.target_folder || ''}\n`;
         if (item.target_video) {
-          elements.organizerLog.textContent += `   Video: ${item.target_video}\n`;
+          line += `   Video: ${item.target_video}\n`;
         }
-        elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+        if (!item.success && item.error) {
+          line += `   ❌ ข้อผิดพลาด: ${item.error}\n`;
+        }
+        appendOrganizerLog(line);
       } catch (err) {}
     });
 
@@ -574,8 +677,7 @@
         elements.orgProgressPct.textContent = '100%';
         elements.orgProgressLabel.textContent = `✨ Finished! Organized ${data.success_count} / ${data.total} movies.`;
 
-        elements.organizerLog.textContent += `\n✨ Complete! Successfully processed ${data.success_count}/${data.total} movies.\n`;
-        elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+        appendOrganizerLog(`\n✨ Complete! Successfully processed ${data.success_count}/${data.total} movies.\n`);
         showToast(`Organize complete: ${data.success_count} movies processed!`, 'success');
 
         renderMoviesGrid();
@@ -590,7 +692,7 @@
     });
 
     es.addEventListener('error', (e) => {
-      elements.organizerLog.textContent += `❌ Connection closed or error occurred.\n`;
+      appendOrganizerLog(`❌ Connection closed or error occurred.\n`);
       es.close();
       state.orgEventSource = null;
       elements.btnStartOrganize.disabled = false;

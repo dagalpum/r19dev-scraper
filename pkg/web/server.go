@@ -141,10 +141,10 @@ func (s *Server) Start(openBrowserOnStart bool) error {
 	}
 
 	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", s.port),
-		Handler:      handler,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		Addr:              fmt.Sprintf(":%d", s.port),
+		Handler:           handler,
+		ReadHeaderTimeout: 15 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	return server.ListenAndServe()
@@ -546,7 +546,10 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 600*time.Second)
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	ctx, cancel := context.WithTimeout(r.Context(), 1800*time.Second)
 	defer cancel()
 
 	var matches []matcher.MatchResult
@@ -647,15 +650,30 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		errMsg := ""
+		if err != nil {
+			errMsg = err.Error()
+		} else if res != nil && res.Error != "" {
+			errMsg = res.Error
+		}
+
+		targetFolder := ""
+		targetVideo := ""
+		if res != nil {
+			targetFolder = res.TargetFolder
+			targetVideo = res.TargetVideo
+		}
+
 		itemData, _ := json.Marshal(map[string]any{
 			"index":         i + 1,
 			"total":         len(validMatches),
 			"percent":       (i + 1) * 100 / len(validMatches),
 			"movie_id":      match.ID,
-			"target_folder": res.TargetFolder,
-			"target_video":  res.TargetVideo,
+			"target_folder": targetFolder,
+			"target_video":  targetVideo,
 			"success":       success,
 			"dry_run":       dryRun,
+			"error":         errMsg,
 			"message":       fmt.Sprintf("จัดระเบียบ %s สำเร็จ!", match.ID),
 		})
 		fmt.Fprintf(w, "event: item\ndata: %s\n\n", itemData)
@@ -690,7 +708,10 @@ func (s *Server) handleScrapeStream(w http.ResponseWriter, r *http.Request) {
 		srcDir = s.targetDir
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 600*time.Second)
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
+	ctx, cancel := context.WithTimeout(r.Context(), 1800*time.Second)
 	defer cancel()
 
 	var idsToScrape []string

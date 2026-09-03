@@ -284,10 +284,29 @@
           <!-- Organizer Console Log -->
           <div class="organizer-log-wrapper">
             <div class="log-header">
-              <span>Console Log</span>
-              <button id="btn-clear-log" class="btn-clear-log" aria-label="Clear console log">Clear</button>
+              <div class="log-header-left">
+                <span class="log-status-dot"></span>
+                <span>Console Log</span>
+                <span id="log-scroll-badge" class="log-badge-auto">Auto-Scroll: ON</span>
+              </div>
+              <div class="log-header-actions">
+                <button id="btn-toggle-autoscroll" class="btn-log-action active" title="Toggle Auto-Scroll" aria-label="Toggle Auto-Scroll">
+                  <span id="autoscroll-icon">⏸️</span> <span id="autoscroll-text">Auto-Scroll</span>
+                </button>
+                <button id="btn-copy-log" class="btn-log-action" title="Copy Log to Clipboard" aria-label="Copy console log">
+                  📋 Copy
+                </button>
+                <button id="btn-clear-log" class="btn-log-action btn-clear-log" title="Clear console log" aria-label="Clear console log">
+                  🗑️ Clear
+                </button>
+              </div>
             </div>
-            <pre id="organizer-log" class="console-log" aria-live="polite">Ready. Click "Start Organize" to preview or process files.</pre>
+            <div class="log-container">
+              <pre id="organizer-log" class="console-log" aria-live="polite">Ready. Click "Start Organize" to preview or process files.</pre>
+              <button id="btn-resume-scroll" class="btn-resume-scroll hidden" title="Scroll to bottom and resume auto-scroll">
+                ⬇️ New logs below (Click to resume)
+              </button>
+            </div>
           </div>
         </div>
       </section>

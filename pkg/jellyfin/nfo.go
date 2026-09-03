@@ -149,7 +149,8 @@ func WriteNFO(movie *scraper.Movie, userState *db.UserState, destPath string) er
 	return os.WriteFile(destPath, data, 0o644)
 }
 
-// SanitizeFilename cleans invalid filesystem characters from folder/file names.
+// SanitizeFilename cleans invalid filesystem characters from folder/file names
+// and caps length to 180 bytes to prevent filesystem ENAMETOOLONG errors (255 bytes max for NAME_MAX).
 func SanitizeFilename(name string) string {
 	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
 	for _, char := range invalidChars {
@@ -159,5 +160,24 @@ func SanitizeFilename(name string) string {
 	for strings.Contains(name, "  ") {
 		name = strings.ReplaceAll(name, "  ", " ")
 	}
-	return strings.TrimSpace(name)
+	name = strings.TrimSpace(name)
+
+	// Cap at 180 bytes safely respecting UTF-8 rune boundaries
+	const maxBytes = 180
+	if len(name) > maxBytes {
+		runes := []rune(name)
+		var b strings.Builder
+		curBytes := 0
+		for _, r := range runes {
+			rLen := len(string(r))
+			if curBytes+rLen > maxBytes {
+				break
+			}
+			b.WriteRune(r)
+			curBytes += rLen
+		}
+		name = strings.TrimSpace(b.String())
+	}
+
+	return name
 }

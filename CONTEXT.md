@@ -28,7 +28,7 @@ JAV media files downloaded from various torrents, Usenet groups, or DMM web rips
 r19dev-scraper/
 ├── cmd/
 │   └── r19dev/
-│       └── main.go           # CLI argument parsing, entrypoints for TUI / Scan / Scrape
+│       └── main.go           # CLI argument parsing, entrypoints for Web / TUI / Scan / Scrape / Actress / Organize
 ├── pkg/
 │   ├── scanner/              # Module 1: Filesystem Discovery & Validation
 │   │   ├── config.go         # Config struct & defaults (extensions, min size, exclusions)
@@ -44,7 +44,28 @@ r19dev-scraper/
 │   │   ├── normalizer.go     # Conversion: JAV ID -> R18 combined format
 │   │   ├── r18dev.go         # HTTP client communicating with R18.dev API
 │   │   └── r18dev_test.go    # Unit tests for ID normalizer
-│   └── tui/                  # Module 4: Interactive Terminal Dashboard
+│   ├── db/                   # Module 4: SQLite Database & Audit Trail
+│   │   ├── db.go             # SQLite engine (pure Go modernc.org/sqlite), schema, migrations, auto-pruning
+│   │   └── db_test.go        # Tests for user states, movies, library files, and operation history
+│   ├── organizer/            # Module 5: NAS Directory & Jellyfin Organizer
+│   │   ├── organizer.go      # Move/Copy planning, multi-part handling, granular step progress reporter
+│   │   └── organizer_test.go # Plan & execution tests with dry-run verification
+│   ├── jellyfin/             # Module 6: Jellyfin Metadata & Media Assets
+│   │   ├── nfo.go            # Kodi/Jellyfin NFO XML generator & 180-byte safe filename sanitizer
+│   │   ├── html.go           # Standalone offline dark-mode HTML viewer generator
+│   │   ├── assets.go         # Asset downloader (poster, fanart, extrafanart) with granular progress
+│   │   └── jellyfin_test.go  # Tests for NFO XML, HTML, and DMM URL upgrader
+│   ├── actress/              # Module 7: Actress Tracking Service
+│   │   ├── service.go        # Follow/Unfollow, filmography cross-reference against local library
+│   │   └── service_test.go   # Actress service tests
+│   ├── cache/                # Module 8: Persistent Disk Cache
+│   │   ├── cache.go          # LRU disk cache for API payloads and image assets
+│   │   └── cache_test.go     # Cache persistence tests
+│   ├── web/                  # Module 9: Single-Binary Web UI Studio
+│   │   ├── server.go         # HTTP router, SSE stream handlers (scan, scrape, organize), timeout guards
+│   │   ├── server_test.go    # REST and streaming endpoint test suite
+│   │   └── static/           # Embedded SPA assets (index.html, style.css, app.js, vendor/lucide.min.js)
+│   └── tui/                  # Module 10: Interactive Terminal Dashboard
 │       ├── app.go            # Bubble Tea Model (Init, Update, async Cmd handlers)
 │       ├── views.go          # View layout: Split screen (file table + metadata inspector)
 │       ├── edit_modal.go     # Textinput modal for manual ID override
@@ -62,25 +83,21 @@ r19dev-scraper/
 
 ## 4. Key Architectural Invariants & Patterns
 
-### 4.1 Non-Blocking IO in TUI
-* Never perform network requests or disk scans synchronously inside `Update()` or `View()`.
-* Wrap long-running IO in `tea.Cmd` returning dedicated message structs (`scanDoneMsg`, `scrapeDoneMsg`).
-* The UI retains interactivity at 60 FPS while background workers execute.
+### 4.1 Non-Blocking IO & SSE Streaming
+* Long-running operations (organize, scan, scrape) stream real-time events over Server-Sent Events (SSE) with granular steps (`step`, `item`, `done`).
+* Global `http.Server.WriteTimeout` is kept disabled for streaming endpoints, with write deadlines reset via `rc := http.NewResponseController(w); rc.SetWriteDeadline(time.Time{})` to allow continuous processing for up to 30 minutes without disconnection.
 
-### 4.2 Safe Regex Word Boundaries
-* Standard `\b` boundaries in Go's `regexp` package treat underscores (`_`) as word characters.
-* To properly match IDs embedded in filenames like `4k2.com@kavr00428_1_8k.mp4`, regexes use boundary assertions:
-  ```regex
-  (?:^|[^a-zA-Z0-9])([A-Za-z]{2,6})-(\d{2,5})(?:$|[^a-zA-Z0-9])
-  ```
+### 4.2 English Metadata Hierarchy & 180-Byte Filesystem Limits
+* **Naming Convention**: Folder structure follows `<Dest>/<Actress_Name>/<JAV-ID Title>/`. Actress name and movie title prioritize English metadata, falling back to Japanese only when English is absent.
+* **ENAMETOOLONG Prevention**: Single directory components are capped at $\le 180$ bytes along UTF-8 rune boundaries, preventing OS filesystem `ENAMETOOLONG` errors (255-byte limit on APFS, ext4, NTFS, and SMB shares).
 
-### 4.3 In-Memory Cache
-* `tui.Model` maintains a `metadataCache map[string]*scraper.Movie` and `scrapeErrors map[string]string`.
-* When the user scrolls through previously inspected items, metadata renders instantly from cache without re-hitting R18.dev.
+### 4.3 SQLite Audit Trail with Auto-Pruning
+* All organize and scrape operations are logged into the `operation_history` table in SQLite (`~/Library/Caches/r19dev/r19dev.db` on macOS).
+* Automated pruning keeps only the last 100 entries and purges logs older than 30 days, guaranteeing zero disk clutter.
 
-### 4.4 Symlink Protection
-* The scanner executes `os.Lstat()` on every discovered node.
-* Symlinks are filtered out (`lstat.Mode() & os.ModeSymlink != 0`) to guarantee immunity from circular links or traversal escapes.
+### 4.4 Symlink Protection & Boundary-Safe Regexes
+* The scanner executes `os.Lstat()` on every node; symlinks are filtered out to guarantee immunity from circular loops.
+* Regex matching uses boundary assertions `(?:^|[^a-zA-Z0-9])` instead of standard `\b` to avoid splitting on underscores.
 
 ---
 
@@ -97,18 +114,18 @@ r19dev-scraper/
 ## 6. Developer Commands
 
 ```bash
-# Build the binary into bin/r19dev
+# Build standalone binary into bin/r19dev
 make build
 
-# Run all test suites with verbose output
+# Run all test suites
 make test
 
-# Launch TUI on a test directory
-./bin/r19dev tui /path/to/videos
+# Launch Web UI Studio
+./bin/r19dev web /Volumes/home/BT/2026
 
-# CLI scan with JSON output
-./bin/r19dev scan /path/to/videos --json
+# Launch TUI
+./bin/r19dev tui /Volumes/home/BT/2026
 
-# Direct API scrape check
-./bin/r19dev scrape MIDA-517
+# CLI Scan
+./bin/r19dev scan /Volumes/home/BT/2026 --json
 ```

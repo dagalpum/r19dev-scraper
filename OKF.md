@@ -92,29 +92,49 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - Headers: Standard browser `User-Agent`, `Referer: https://r18.dev/`, `Accept: application/json`.
   - Non-200 / 404 responses are translated into strongly-typed errors without crashing.
 
-### 3.4 Terminal User Interface (`pkg/tui`)
+### 3.5 Database & Audit Trail (`pkg/db`)
 
-Built on the **Elm Architecture** (Model - View - Update):
+* **Storage Engine**: Pure Go SQLite (`modernc.org/sqlite` without CGO), stored at `~/.cache/r19dev/r19dev.db` (Linux) or `~/Library/Caches/r19dev/r19dev.db` (macOS).
+* **Schema & Relations**:
+  - `actresses`: Tracked performers with Japanese/Romaji names, follower status, and notes.
+  - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, actresses, genres, screenshots).
+  - `user_state`: User watch state (`is_watched`), ratings (1–5 ⭐), and favorites (`is_favorite`).
+  - `library_files`: Scanned file catalog with size, part number, and destination paths.
+  - `organized_movies`: Maps `movie_id` to `target_folder` and `target_video` for instant status detection and One-Click Finder access.
+  - `operation_history`: Audit trail for all organize and scrape runs storing execution metadata, success/fail metrics, and complete console output.
+* **Auto-Retention & Clutter Prevention**:
+  - Automatically prunes records older than 30 days: `DELETE FROM operation_history WHERE created_at < datetime('now', '-30 days')`.
+  - Automatically enforces a 100-run ceiling: `DELETE FROM operation_history WHERE id NOT IN (SELECT id FROM operation_history ORDER BY id DESC LIMIT 100)`.
+  - Maintains a tiny database footprint (< 5MB) with zero `.log` file clutter on user disks.
 
-1. **State Isolation**:
-   - `files`: Raw filesystem entities.
-   - `matches`: Extracted identifiers.
-   - `metadataCache`: In-memory map of `[ID] -> *Movie`.
-   - `scrapeErrors`: In-memory map of `[ID] -> error string`.
-   - `editModal`: Focused text-input overlay state.
+### 3.6 Jellyfin Organizer Pipeline (`pkg/organizer` & `pkg/jellyfin`)
 
-2. **Async Commands (`tea.Cmd`)**:
-   - Directory scanning and API fetching are dispatched as asynchronous tea commands (`scanDoneMsg`, `scrapeDoneMsg`), ensuring the UI never stutters or drops frames during network or disk IO.
+* **Directory Layout & Priority**:
+  ```
+  <Destination_Root>/<Actress_Name>/<JAV-ID Sanitized_Title>/
+  ```
+  1. **Actress Name**: English/Romaji name preferred. Falls back to Japanese Kanji if English is empty; defaults to `Unknown Actress` if neither exists.
+  2. **Movie Title**: English title preferred. Falls back to Original Japanese Title if English is empty; defaults to `JAV-ID` if neither exists.
+  3. **Multi-Part Consolidation**: All parts of the same movie are moved into the same destination directory as `<JAV-ID>-cd1.mp4`, `<JAV-ID>-cd2.mp4` per Jellyfin multi-disc specifications.
+* **Filesystem Boundary Safety (ENAMETOOLONG Prevention)**:
+  - `SanitizeFilename` strips invalid OS characters (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`) and collapses whitespace.
+  - **180-Byte Hard Limit**: Truncates names strictly at $\le 180$ bytes without splitting UTF-8 multi-byte runes, preventing `ENAMETOOLONG` errors on APFS, ext4, NTFS, and SMB shares (where `NAME_MAX` is 255 bytes).
+* **Metadata & Asset Generation**:
+  - `<JAV-ID>.nfo`: Full XML metadata with premiered date, year, actors, plot, MPAA rating, and unique IDs.
+  - `movie.html`: Standalone offline dark-mode HTML summary page with gallery lightbox.
+  - Asset Downloader: Full jacket cover (`poster.jpg`), backdrop (`fanart.jpg`), and sample screenshots (`extrafanart/fanart{N}.jpg`).
+* **One-Click Reveal**: Backend `POST /api/open-folder` invokes native file managers (`open` on macOS Finder, `explorer` on Windows, `xdg-open` on Linux).
 
-3. **Layout & Table Engine**:
-   - Dynamically calculates viewport dimensions on `tea.WindowSizeMsg`.
-   - Responsive split ratio: 58% table view with dynamic filename column scaling, remaining width dedicated to metadata inspection panel.
-   - Cached statistics (`matchedCount`, `unmatchedCount`) eliminating frame-by-frame $O(N)$ recomputation.
+### 3.7 Web Studio Architecture (`pkg/web`)
 
-4. **Network & Concurrency Optimizations**:
-   - **Debounced Navigation**: 250ms debounce timer preventing duplicate HTTP requests during rapid keyboard scrolling.
-   - **HTTP Connection Pooling**: Reuses TCP/TLS sockets via `http.Transport` with Keep-Alive.
-   - **Streaming Batch Scraper (`s` key)**: 3-worker concurrency pool streaming live progress into the TUI event loop without blocking.
+* **Single Binary Embedding**: Frontend assets (`index.html`, `style.css`, `app.js`, `vendor/lucide.min.js`) embedded via `embed.FS`.
+* **Real-Time Streaming (SSE)**:
+  - Streaming endpoints: `/api/scan/stream`, `/api/organize/stream`, `/api/scrape/stream`.
+  - **Connection Timeout Handling**: Removed 60s `WriteTimeout` on global `http.Server`. Active SSE handlers clear write deadlines via `rc := http.NewResponseController(w); rc.SetWriteDeadline(time.Time{})` and employ an extended 30-minute context timeout.
+* **Console Log Ergonomics**:
+  - **Smart Auto-Scroll**: Listens to viewport scroll position; scrolling up pauses auto-scroll (`Auto-Scroll: PAUSED`) and reveals a floating resume button. Scrolling to the bottom resumes auto-scroll automatically.
+  - **Clipboard Copy**: Direct copy button copies raw console output with toast confirmation.
+  - **History Integration**: Header button opens SQLite Operation History modal with instant log inspection and audit trail review.
 
 ---
 
@@ -124,17 +144,8 @@ Built on the **Elm Architecture** (Model - View - Update):
 |---|---|---|
 | **Noise Prefix in Filename** | `4k2.com@kavr00428_1_8k.mp4` | Matcher strips `4k2.com@`, parses `kavr00428` as `KAVR-428`, identifies part 1. |
 | **VR 5-Digit zero padding** | `sivr00045` | Normalizer correctly maps to `SIVR-045` (3-digit minimum format) and `sivr00045` for R18.dev. |
-| **Network Failure during Scrape** | 503 / DNS / Timeout | TUI displays clear warning badge in the detail panel with retry hint (`Enter`) or override (`e`). |
-| **Ambiguous / Custom Filename** | Unmatched file | User presses `e`, inputs correct ID, model re-triggers targeted scrape immediately. |
+| **Excessive Title Length** | Title > 250 characters (`CJOD-505`) | `SanitizeFilename` caps directory component at 180 bytes along UTF-8 boundaries, avoiding `ENAMETOOLONG`. |
+| **Long-Running Organize Stream** | Connection closed at 60s | Global `WriteTimeout` removed, `SetWriteDeadline(time.Time{})` applied on SSE response controller. |
+| **Multi-Part Video (CD1/CD2)** | Sibling parts in directory | Consolidated into a single Jellyfin folder with `-cd1.mp4`, `-cd2.mp4` naming. |
+| **Network Failure during Scrape** | 503 / DNS / Timeout | UI displays clear warning badge in the detail panel with retry hint or manual ID override. |
 | **Symlink Recursion** | Cyclic links in NAS | Skipped unconditionally at `os.Lstat` evaluation phase. |
-
----
-
-## 5. Extensibility & Future Architecture Hooks
-
-1. **Additional Metadata Providers**:
-   The `scraper.Client` can be extended into an interface (`Provider`) to support fallback scrapers (e.g. JavLibrary, DMM/Fanza, JavBus, MGS).
-2. **NFO & Media Exporter**:
-   `Movie` model contains canonical fields ready for Kodi/Jellyfin/Plex `.nfo` XML serialization and thumbnail downloading.
-3. **Database Caching Layer**:
-   `metadataCache` can be backed by SQLite or BoltDB for offline persistence.

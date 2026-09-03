@@ -107,11 +107,12 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	query := `
 	SELECT m.id, m.title, m.original_title, m.maker, m.release_date, m.cover_url, m.actresses_json,
 	       COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0), COALESCE(u.is_favorite, 0),
-	       lf.file_path
+	       MAX(lf.file_path)
 	FROM movies m
 	LEFT JOIN user_state u ON m.id = u.movie_id
 	LEFT JOIN library_files lf ON m.id = lf.movie_id
 	WHERE m.actresses_json LIKE ? COLLATE NOCASE
+	GROUP BY m.id
 	ORDER BY m.release_date DESC
 	`
 

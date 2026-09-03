@@ -1,58 +1,73 @@
-# R19DEV Studio & Scraper
+# 🎬 R19DEV Studio & Scraper
 
-A modern, high-performance JAV video library scanner, pattern matcher, R18.dev metadata scraper, and Jellyfin NAS organizer written in Go. Available as both a **Single-Binary Web UI Studio** and an **Interactive Terminal TUI**.
+A modern, high-performance JAV video library scanner, pattern matcher, R18.dev metadata scraper, and Jellyfin NAS organizer written in Go. Available as both a **Single-Binary Web UI Studio** and an **Interactive Terminal TUI** with native GPU rendering.
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- 🌐 **Modern Web UI Studio**:
-  - **Embedded Single Binary**: Runs on any Mac, Linux, or NAS with zero external runtime dependencies (`embed.FS`).
-  - **Full HD Visuals**: Real high-resolution covers, backdrop banners, actress profile avatars, and interactive lightbox galleries for sample screenshots.
-  - **Live Search & Filter**: Instantly filter by JAV ID, title, filename, actress, studio, watched status, or rating.
-  - **Batch Operations**: One-click "Scrape All" and "Batch Organize".
-- ⭐ **Actress Hub & Release Tracker**:
-  - Follow favorite actresses and track their entire filmography.
-  - Automatically cross-references with your local library to classify releases:
-    - 🟢 **Downloaded** (available on your disk/NAS)
-    - 🔴 **Missing / New** (announced/released but not downloaded yet)
-    - 👁️ **Watched / Unwatched**
-    - ⭐ **User Rating (1-5 stars) / Favorite ❤️**
-- 📂 **NAS Directory Organizer & Jellyfin Pipeline**:
-  - Organizes movies into: `{Destination}/{Actress}/{JAV-ID} {Title}/`
-  - Moves video files (with multi-part `-cd1`, `-cd2` consolidation).
-  - Generates official Kodi / Jellyfin XML `.nfo` files.
-  - Generates standalone, responsive dark-mode `movie.html` summary pages.
-  - Auto-upgrades DMM URLs to download Full HD `poster.jpg`, `fanart.jpg`, and all sample screenshots into `extrafanart/`.
-  - Supports `--dry-run` to preview all folder operations safely before moving.
-- 💾 **SQLite Local Database**:
-  - Embedded SQLite database (`~/.cache/r19dev/r19dev.db`) storing actress follow lists, filmographies, watch history, and 1-5 star ratings.
-- 🖥️ **Interactive Terminal TUI**:
-  - Built with Charm's Bubble Tea and Lip Gloss.
-  - 24-bit Truecolor and native Kitty GPU graphics mode.
+### 🌐 1. Modern Web UI Studio (`r19dev web`)
+- **Embedded Single Binary**: Built using Go's `embed.FS` — zero external runtime dependencies, zero Node.js required. Runs natively on macOS, Linux, or NAS servers.
+- **📦 Multi-Part & Multi-File Aggregation**: Files belonging to the same movie (e.g. `_1.mp4`, `_2.mp4`, `-cd1.mp4`, `-cd2.mp4`) are automatically merged into a **single card** with part chips (`P1, P2 (2 parts • 8.4 GB)`).
+- **🎛️ Dynamic Grid Density (1–5 Cards/Row)**: Adjust view layout from **1 card/row** (wide showcase layout with large cover) up to **5 cards/row** (compact grid) or **Auto**. Preferences are automatically saved in `localStorage`.
+- **🖼️ Full-Width Hero Cover Modal**: Clicking any movie card displays a cinematic, full-width high-resolution cover banner with an ambient blurred backdrop, interactive rating stars (1–5 ⭐), watched toggle (👁️), favorite toggle (❤️), and direct full-screen zoom.
+- **📸 High-Resolution Screenshot Lightbox**: Safe DMM high-resolution image upgrader (`jp-` format) with dual-layer fallback to prevent 404s, backend image proxy fallback, and `<meta name="referrer" content="no-referrer">` to prevent CDN hotlink blocking.
+- **📊 Real-Time Streaming Progress Bars**: Live Server-Sent Events (SSE) stream progress bars for both **Scanning** (live file discovery & matching) and **NAS Organizing** (step-by-step progress, target path, and live console logs).
+- **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
+
+### ⭐ 2. Actress Hub & Filmography Tracker
+- **Follow & Track**: Follow favorite actresses by English romaji or Japanese kanji name.
+- **New Release Discovery**: Automatically cross-references an actress's complete filmography against your local video files:
+  - 🟢 **Downloaded**: Movie is present in your local disk / NAS library.
+  - 🔴 **Missing / New**: Released or announced titles not yet in your library.
+  - 👁️ **Watched / Unwatched**: Track your watch history.
+  - ⭐ **User Rating**: 1 to 5 star ratings stored in the local SQLite database.
+
+### 📂 3. NAS Directory Organizer & Jellyfin Pipeline
+- Organizes videos into the standardized folder structure:
+  ```
+  {Destination}/{Actress}/{JAV-ID} {Title}/
+  ```
+- **Consolidation**: Consolidates multi-part videos (e.g. `SNOS-038-cd1.mp4`, `SNOS-038-cd2.mp4`).
+- **Jellyfin Metadata (.nfo)**: Generates official Kodi/Jellyfin Movie NFO XML with title, original title, plot, studio, release date, runtime, actresses with thumbnail URLs, genres, watched status, and user ratings.
+- **Standalone `movie.html`**: Generates a responsive, standalone dark-mode summary page with embedded actress cards and sample screenshots for offline browsing.
+- **High-Res Assets**: Downloads full-resolution `poster.jpg` (cover jacket), `fanart.jpg` (backdrop), and all sample gallery screenshots into `extrafanart/`.
+- **Safe Dry-Run Mode**: Supports `--dry-run` to preview all target folder moves and asset creations safely before applying changes.
+
+### 🖥️ 4. Interactive Terminal TUI (`r19dev tui`)
+- Built with Charm's **Bubble Tea** and **Lip Gloss**.
+- **Kitty GPU Graphics Protocol**: Native pixel-perfect bitmap rendering on Kitty, Ghostty, and WezTerm.
+- **iTerm2 Inline Images Protocol**: Native bitmap rendering on iTerm2, WezTerm, Warp, and VS Code.
+- **Sixel Graphics Protocol**: 6-pixel band bitmap rendering on Foot, XTerm, and Sixel-enabled terminals.
+- **24-bit Truecolor Half-Block (`▀`)**: Universal fallback for any terminal emulator.
+- Quick shortcut keys: `Enter` to scrape, `v` for Kitty GPU cover, `t` for watched, `1`-`5` to rate, `a` to follow actress, `w` to organize.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Build
+### 1. Build Single Binary
 ```bash
 make build
-# Creates standalone binary at ./bin/r19dev
+# Compiles standalone binary to ./bin/r19dev
 ```
 
 ### 2. Launch Web UI Studio (Recommended)
 ```bash
-# Launches local web server & automatically opens your browser at http://localhost:8080
+# Launches web server & opens browser automatically at http://localhost:8080
 ./bin/r19dev web /Volumes/home/BT/2026
 
-# Or specify custom port
-./bin/r19dev web /Volumes/home/BT/2026 --port 9090
+# Custom port or no-open mode for headless servers / NAS:
+./bin/r19dev web /Volumes/home/BT/2026 --port 9090 --no-open
 ```
 
 ### 3. Launch Interactive Terminal TUI
 ```bash
+# Auto-detect terminal graphics capability
 ./bin/r19dev tui /Volumes/home/BT/2026
+
+# Force Kitty GPU protocol (Ghostty / Kitty):
+./bin/r19dev tui /Volumes/home/BT/2026 --proto kitty
 ```
 
 ### 4. Actress Tracking via CLI
@@ -67,12 +82,12 @@ make build
 ./bin/r19dev actress check
 ```
 
-### 5. NAS Jellyfin Organize via CLI
+### 5. NAS Directory Organize via CLI
 ```bash
-# Preview folder organization without moving files (Dry-Run)
+# Safe preview without moving files (Dry-Run)
 ./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/JAV_Library --dry-run
 
-# Execute organization
+# Execute organization and asset generation
 ./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/JAV_Library
 ```
 
@@ -94,3 +109,35 @@ make build
             ├── fanart2.jpg
             └── fanart8.jpg
 ```
+
+---
+
+## ⌨️ TUI Keybindings
+
+| Key | Action |
+|---|---|
+| `↑` / `k` / `↓` / `j` | Navigate files |
+| `PgUp` / `PgDn` | Page scroll |
+| `Enter` / `Space` | Fetch R18.dev metadata & cover preview |
+| `v` | Fullscreen Cover Jacket (Native Kitty GPU mode) |
+| `c` | Toggle Cover Art preview on/off |
+| `p` | Cycle graphics protocol (Auto $\rightarrow$ Kitty $\rightarrow$ iTerm2 $\rightarrow$ Sixel $\rightarrow$ HalfBlock) |
+| `t` | Toggle Watched status (👁️) |
+| `f` | Toggle Favorite status (❤️) |
+| `1` – `5` | Set User Rating (1 to 5 stars ⭐) |
+| `a` | Follow primary actress |
+| `w` | Organize current movie for NAS Jellyfin |
+| `e` | Edit / Override JAV ID for selected file |
+| `r` | Rescan directory |
+| `q` / `Ctrl+C` | Quit |
+
+---
+
+## 🛠️ Architecture & Tech Stack
+
+- **Language**: Go 1.22+
+- **Database**: Pure Go SQLite (`modernc.org/sqlite` - zero CGO required)
+- **TUI Framework**: Charm Bubble Tea (`tea.Model`), Lip Gloss styling
+- **Web Frontend**: Vanilla ES6+ SPA, Vanilla CSS with CSS Grid & Custom Tokens, Embedded via `embed.FS`
+- **Metadata Source**: R18.dev REST API with persistent LRU disk caching (`~/.cache/r19dev`)
+- **Organize Pipeline**: Atomic file rename with cross-filesystem copy fallback, sanitized filenames, XML generator, and HTTP client asset downloader.

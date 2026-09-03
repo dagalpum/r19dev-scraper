@@ -18,7 +18,11 @@
     organizedStatus: {}, // ID -> bool
     currentGallery: [],  // PhotoSwipe items for open modal
     actresses: [],      // Followed actresses
-    filter: 'all',
+    filterActress: '',
+    filterOrganized: 'all',
+    filterScraped: 'all',
+    filterGenre: '',
+    filterWatch: 'all',
     sort: 'id-asc',
     searchQuery: '',
     gridCols: localStorage.getItem('r19dev_grid_cols') || 'auto',
@@ -53,7 +57,12 @@
     // Library Controls
     searchInput: document.getElementById('search-input'),
     searchClear: document.getElementById('search-clear'),
-    filterStatus: document.getElementById('filter-status'),
+    filterActress: document.getElementById('filter-actress'),
+    filterOrganized: document.getElementById('filter-organized'),
+    filterScraped: document.getElementById('filter-scraped'),
+    filterGenre: document.getElementById('filter-genre'),
+    filterWatch: document.getElementById('filter-watch'),
+    btnResetFilters: document.getElementById('btn-reset-filters'),
     sortBy: document.getElementById('sort-by'),
     densityButtons: document.querySelectorAll('.btn-density'),
     btnScrapeAll: document.getElementById('btn-scrape-all'),
@@ -171,9 +180,33 @@
       renderMoviesGrid();
     });
 
-    elements.filterStatus.addEventListener('change', (e) => {
-      state.filter = e.target.value;
+    elements.filterActress?.addEventListener('change', (e) => {
+      state.filterActress = e.target.value;
       renderMoviesGrid();
+    });
+
+    elements.filterOrganized?.addEventListener('change', (e) => {
+      state.filterOrganized = e.target.value;
+      renderMoviesGrid();
+    });
+
+    elements.filterScraped?.addEventListener('change', (e) => {
+      state.filterScraped = e.target.value;
+      renderMoviesGrid();
+    });
+
+    elements.filterGenre?.addEventListener('change', (e) => {
+      state.filterGenre = e.target.value;
+      renderMoviesGrid();
+    });
+
+    elements.filterWatch?.addEventListener('change', (e) => {
+      state.filterWatch = e.target.value;
+      renderMoviesGrid();
+    });
+
+    elements.btnResetFilters?.addEventListener('click', () => {
+      resetFilters();
     });
 
     elements.sortBy.addEventListener('change', (e) => {
@@ -206,6 +239,66 @@
     elements.btnOrganizeAll.addEventListener('click', () => {
       switchTab('organizer');
     });
+  }
+
+  function resetFilters() {
+    state.filterActress = '';
+    state.filterOrganized = 'all';
+    state.filterScraped = 'all';
+    state.filterGenre = '';
+    state.filterWatch = 'all';
+    state.searchQuery = '';
+
+    if (elements.searchInput) elements.searchInput.value = '';
+    if (elements.searchClear) elements.searchClear.classList.add('hidden');
+    if (elements.filterActress) elements.filterActress.value = '';
+    if (elements.filterOrganized) elements.filterOrganized.value = 'all';
+    if (elements.filterScraped) elements.filterScraped.value = 'all';
+    if (elements.filterGenre) elements.filterGenre.value = '';
+    if (elements.filterWatch) elements.filterWatch.value = 'all';
+
+    renderMoviesGrid();
+  }
+
+  function populateFilterDropdowns() {
+    if (!elements.filterActress || !elements.filterGenre) return;
+
+    const actressCounts = new Map();
+    const genreCounts = new Map();
+
+    state.groupedMovies.forEach(movie => {
+      const meta = state.metadata[movie.id];
+      if (meta) {
+        (meta.actresses || []).forEach(act => {
+          if (act && act.name) {
+            actressCounts.set(act.name, (actressCounts.get(act.name) || 0) + 1);
+          }
+        });
+        (meta.genres || []).forEach(g => {
+          if (g) {
+            genreCounts.set(g, (genreCounts.get(g) || 0) + 1);
+          }
+        });
+      }
+    });
+
+    // Populate Actress Filter
+    const curActress = elements.filterActress.value;
+    const sortedActresses = Array.from(actressCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    elements.filterActress.innerHTML = `<option value="">All Actresses (${sortedActresses.length})</option>` +
+      sortedActresses.map(([name, count]) => `<option value="${escapeHtml(name)}">${escapeHtml(name)} (${count})</option>`).join('');
+    if (actressCounts.has(curActress)) {
+      elements.filterActress.value = curActress;
+    }
+
+    // Populate Genre / Tag Filter
+    const curGenre = elements.filterGenre.value;
+    const sortedGenres = Array.from(genreCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    elements.filterGenre.innerHTML = `<option value="">All Tags / Genres (${sortedGenres.length})</option>` +
+      sortedGenres.map(([genre, count]) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)} (${count})</option>`).join('');
+    if (genreCounts.has(curGenre)) {
+      elements.filterGenre.value = curGenre;
+    }
   }
 
   function setupModals() {
@@ -375,6 +468,7 @@
         elements.scanProgressLabel.textContent = `✅ Scan complete: ${state.groupedMovies.length} movies (${state.rawMatches.length} files found)`;
 
         updateStats();
+        populateFilterDropdowns();
         renderMoviesGrid();
 
         setTimeout(() => {
@@ -516,45 +610,70 @@
   // Library Grid Rendering
   // =========================================================================
   function renderMoviesGrid() {
-    let list = [...state.groupedMovies];
+    let list = state.groupedMovies.filter(movie => {
+      const meta = state.metadata[movie.id];
+      const uState = state.userStates[movie.id] || {};
+      const isOrganized = Boolean(state.organizedStatus[movie.id]);
+      const isScraped = Boolean(meta);
 
-    // Search filter
-    if (state.searchQuery) {
-      list = list.filter(m => {
-        const id = (m.id || '').toLowerCase();
-        const fnames = m.files.map(f => (f?.name || '').toLowerCase()).join(' ');
-        const meta = state.metadata[m.id];
+      // Search Query
+      if (state.searchQuery) {
+        const id = (movie.id || '').toLowerCase();
+        const fnames = (movie.files || []).map(f => (f.name || '').toLowerCase()).join(' ');
         const title = (meta?.title || '').toLowerCase();
         const studio = (meta?.maker || '').toLowerCase();
         const actNames = (meta?.actresses || []).map(a => a.name.toLowerCase()).join(' ');
+        const tags = (meta?.genres || []).map(g => g.toLowerCase()).join(' ');
 
-        return id.includes(state.searchQuery) ||
-               fnames.includes(state.searchQuery) ||
-               title.includes(state.searchQuery) ||
-               studio.includes(state.searchQuery) ||
-               actNames.includes(state.searchQuery);
-      });
-    }
+        const match = id.includes(state.searchQuery) ||
+                      fnames.includes(state.searchQuery) ||
+                      title.includes(state.searchQuery) ||
+                      studio.includes(state.searchQuery) ||
+                      actNames.includes(state.searchQuery) ||
+                      tags.includes(state.searchQuery);
+        if (!match) return false;
+      }
 
-    // Status filter
-    if (state.filter === 'matched') {
-      list = list.filter(m => m.id);
-    } else if (state.filter === 'unmatched') {
-      list = list.filter(m => !m.id);
-    } else if (state.filter === 'scraped') {
-      list = list.filter(m => m.id && state.metadata[m.id]);
-    } else if (state.filter === 'unscraped') {
-      list = list.filter(m => m.id && !state.metadata[m.id]);
-    } else if (state.filter === 'organized') {
-      list = list.filter(m => m.id && state.organizedStatus[m.id]);
-    } else if (state.filter === 'unorganized') {
-      list = list.filter(m => m.id && !state.organizedStatus[m.id]);
-    } else if (state.filter === 'watched') {
-      list = list.filter(m => m.id && state.userStates[m.id]?.is_watched);
-    } else if (state.filter === 'unwatched') {
-      list = list.filter(m => m.id && !state.userStates[m.id]?.is_watched);
-    } else if (state.filter === 'favorites') {
-      list = list.filter(m => m.id && state.userStates[m.id]?.is_favorite);
+      // Actress Filter
+      if (state.filterActress) {
+        const actNames = (meta?.actresses || []).map(a => a.name);
+        if (!actNames.includes(state.filterActress)) return false;
+      }
+
+      // Organized Filter
+      if (state.filterOrganized === 'organized' && !isOrganized) return false;
+      if (state.filterOrganized === 'staging' && isOrganized) return false;
+
+      // Scraped Filter
+      if (state.filterScraped === 'scraped' && !isScraped) return false;
+      if (state.filterScraped === 'unscraped' && (isScraped || !movie.id)) return false;
+      if (state.filterScraped === 'unmatched' && movie.id) return false;
+
+      // Genre / Tag Filter
+      if (state.filterGenre) {
+        const genres = meta?.genres || [];
+        if (!genres.includes(state.filterGenre)) return false;
+      }
+
+      // Watch Status Filter
+      if (state.filterWatch === 'watched' && !uState.is_watched) return false;
+      if (state.filterWatch === 'unwatched' && uState.is_watched) return false;
+      if (state.filterWatch === 'favorites' && !uState.is_favorite) return false;
+
+      return true;
+    });
+
+    // Check if any filter is active to show Reset button
+    const hasActiveFilter = Boolean(
+      state.filterActress ||
+      (state.filterOrganized && state.filterOrganized !== 'all') ||
+      (state.filterScraped && state.filterScraped !== 'all') ||
+      state.filterGenre ||
+      (state.filterWatch && state.filterWatch !== 'all') ||
+      state.searchQuery
+    );
+    if (elements.btnResetFilters) {
+      elements.btnResetFilters.classList.toggle('hidden', !hasActiveFilter);
     }
 
     // Sort
@@ -609,7 +728,7 @@
       partBadge = `<span class="badge-status badge-multipart" title="${movie.files.length} video files"><i data-lucide="layers"></i> ${partStr}</span>`;
     }
 
-    // Scraped Badge
+    // Scraped Badge (Clean pill for footer)
     let scrapedBadge = '';
     if (isScraped) {
       scrapedBadge = `<span class="badge-status badge-scraped" title="Metadata scraped from R18.dev"><i data-lucide="check-circle-2"></i> Scraped</span>`;
@@ -619,7 +738,7 @@
       scrapedBadge = `<span class="badge-status badge-staging" title="No JAV ID matched"><i data-lucide="help-circle"></i> Unmatched</span>`;
     }
 
-    // Organized Badge
+    // Organized Badge (Clean pill for footer)
     let organizedBadge = '';
     if (isOrganized) {
       organizedBadge = `<span class="badge-status badge-organized" title="Organized in Jellyfin Library"><i data-lucide="folder-check"></i> Organized</span>`;
@@ -627,9 +746,9 @@
       organizedBadge = `<span class="badge-status badge-staging" title="Pending NAS organize"><i data-lucide="inbox"></i> Staging</span>`;
     }
 
-    // Watched & Fav Badges
-    const watchedBadge = uState.is_watched ? '<span class="badge-status badge-watched" title="Watched"><i data-lucide="eye"></i> Watched</span>' : '';
-    const favBadge = uState.is_favorite ? '<span class="badge-status badge-fav" title="Favorited"><i data-lucide="heart"></i> Fav</span>' : '';
+    // Watched & Fav Badges (Clean indicator on cover overlay)
+    const watchedCoverBadge = uState.is_watched ? '<span class="badge-status badge-watched" title="Watched"><i data-lucide="eye"></i></span>' : '';
+    const favCoverBadge = uState.is_favorite ? '<span class="badge-status badge-fav" title="Favorited"><i data-lucide="heart"></i></span>' : '';
     const ratingStr = uState.user_rating ? '⭐'.repeat(uState.user_rating) : '';
 
     // Date Badge with clear labeling
@@ -651,11 +770,9 @@
         <img class="card-cover-img" src="${coverUrl}" alt="Jacket cover for ${escapeHtml(id)}" onerror="this.src='/placeholder.png'" loading="lazy" />
         <div class="card-overlay-badge">${escapeHtml(id)}</div>
         <div class="card-overlay-status">
-          ${scrapedBadge}
-          ${organizedBadge}
           ${partBadge}
-          ${watchedBadge}
-          ${favBadge}
+          ${watchedCoverBadge}
+          ${favCoverBadge}
         </div>
       </div>
       <div class="card-content">
@@ -669,7 +786,11 @@
           ${actressesHtml}
         </div>
         <div class="card-footer">
-          <div style="font-size: 0.85rem; color: var(--warning); min-height: 20px;">${ratingStr}</div>
+          <div class="card-footer-status">
+            ${scrapedBadge}
+            ${organizedBadge}
+            ${ratingStr ? `<span class="rating-display">${ratingStr}</span>` : ''}
+          </div>
           <div class="card-actions" onclick="event.stopPropagation()">
             <button class="btn-icon-sm btn-scrape" title="Scrape metadata from R18.dev" aria-label="Scrape metadata for ${escapeHtml(id)}">
               <i data-lucide="sparkles"></i> Scrape
@@ -785,15 +906,16 @@
       }).join('');
     }
 
-    // Sample Screenshots with SAFE High-Res URL & Fallbacks
     // Build PhotoSwipe 5 gallery dataset
     const galleryItems = [];
     if (coverUrl) {
       galleryItems.push({
         src: coverUrl,
         fallbackSrc: coverUrl,
-        w: 1200,
-        h: 800,
+        w: 800,
+        h: 538,
+        width: 800,
+        height: 538,
         alt: `Jacket Cover - ${id}`
       });
     }
@@ -807,13 +929,15 @@
         galleryItems.push({
           src: highResUrl,
           fallbackSrc: url,
-          w: 1280,
-          h: 720,
+          w: 800,
+          h: 533,
+          width: 800,
+          height: 533,
           alt: `Screenshot #${idx + 1} - ${id}`
         });
 
         return `
-          <div class="gallery-thumbnail" tabindex="0" role="button" aria-label="View Screenshot #${idx + 1} in gallery"
+          <div class="gallery-thumbnail" data-idx="${galleryIdx}" tabindex="0" role="button" aria-label="View Screenshot #${idx + 1} in gallery"
                onclick="window.app.openGallery(${galleryIdx})"
                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openGallery(${galleryIdx});}">
             <img src="${url}" alt="Screenshot #${idx + 1}" loading="lazy" onerror="this.src='/api/proxy-image?url=${encodeURIComponent(url)}'" />
@@ -949,6 +1073,29 @@
     if (!state.currentGallery || state.currentGallery.length === 0) return;
     try {
       await initPhotoSwipe();
+
+      // Probe already-loaded thumbnails in DOM for pixel-perfect aspect ratios
+      state.currentGallery.forEach((item, i) => {
+        if (i === 0) {
+          const cover = document.querySelector('.modal-hero-cover-img');
+          if (cover && cover.naturalWidth && cover.naturalHeight) {
+            item.w = cover.naturalWidth;
+            item.h = cover.naturalHeight;
+            item.width = cover.naturalWidth;
+            item.height = cover.naturalHeight;
+          }
+        } else {
+          const thumb = document.querySelector(`.gallery-thumbnail[data-idx="${i}"] img`);
+          if (thumb && thumb.naturalWidth && thumb.naturalHeight) {
+            // High-res screenshots maintain identical aspect ratio as thumbnails
+            item.w = thumb.naturalWidth * 2;
+            item.h = thumb.naturalHeight * 2;
+            item.width = thumb.naturalWidth * 2;
+            item.height = thumb.naturalHeight * 2;
+          }
+        }
+      });
+
       const lightbox = new pswpLightboxModule({
         dataSource: state.currentGallery,
         pswpModule: pswpModule,
@@ -956,6 +1103,29 @@
         bgOpacity: 0.96,
         padding: { top: 24, bottom: 24, left: 24, right: 24 },
       });
+
+      // Recalculate natural dimensions dynamically when high-res image loads
+      lightbox.on('loadComplete', ({ slide, content }) => {
+        if (content && content.element && content.isImageContent()) {
+          const img = content.element;
+          const nw = img.naturalWidth;
+          const nh = img.naturalHeight;
+          if (nw && nh && (slide.width !== nw || slide.height !== nh)) {
+            slide.width = nw;
+            slide.height = nh;
+            if (content.data) {
+              content.data.width = nw;
+              content.data.height = nh;
+              content.data.w = nw;
+              content.data.h = nh;
+            }
+            slide.calculateSize();
+            slide.updateContentSize(true);
+            slide.applyCurrentZoomPan();
+          }
+        }
+      });
+
       lightbox.init();
       lightbox.loadAndOpen(index);
     } catch (err) {
@@ -1070,6 +1240,7 @@
       const movie = await res.json();
       state.metadata[id] = movie;
       updateStats();
+      populateFilterDropdowns();
       renderMoviesGrid();
       showToast(`Scraped ${id}!`, 'success');
       return movie;

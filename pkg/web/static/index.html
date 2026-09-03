@@ -81,20 +81,6 @@
             <button id="search-clear" class="btn-clear hidden" aria-label="Clear search">×</button>
           </div>
 
-          <div class="filter-group">
-            <label for="filter-status" class="sr-only">Filter by status</label>
-            <select id="filter-status" class="select-dropdown" aria-label="Filter by status">
-              <option value="all">All Movies</option>
-              <option value="scraped">🟢 Scraped (Metadata ready)</option>
-              <option value="unscraped">🟡 Pending Scrape (Needs metadata)</option>
-              <option value="organized">📂 Organized (In Jellyfin Library)</option>
-              <option value="unorganized">📥 Staging (Pending organize)</option>
-              <option value="watched">👁️ Watched</option>
-              <option value="unwatched">👓 Unwatched</option>
-              <option value="favorites">❤️ Favorites</option>
-              <option value="unmatched">⚪ Unmatched Files</option>
-            </select>
-
             <label for="sort-by" class="sr-only">Sort by</label>
             <select id="sort-by" class="select-dropdown" aria-label="Sort by">
               <option value="id-asc">JAV ID (A-Z)</option>
@@ -124,6 +110,56 @@
               <span class="icon" aria-hidden="true">📂</span> Batch Organize
             </button>
           </div>
+        </div>
+
+        <!-- Multi-Faceted Filters Toolbar -->
+        <div class="filters-toolbar" role="toolbar" aria-label="Filter by actress, status, and tags">
+          <div class="filter-item">
+            <label for="filter-actress" class="filter-label">🎭 Actress</label>
+            <select id="filter-actress" class="select-dropdown select-filter">
+              <option value="">All Actresses</option>
+            </select>
+          </div>
+
+          <div class="filter-item">
+            <label for="filter-organized" class="filter-label">📁 Library</label>
+            <select id="filter-organized" class="select-dropdown select-filter">
+              <option value="all">All Library</option>
+              <option value="organized">📂 Organized in Jellyfin</option>
+              <option value="staging">📥 Staging (Pending)</option>
+            </select>
+          </div>
+
+          <div class="filter-item">
+            <label for="filter-scraped" class="filter-label">⚡ Metadata</label>
+            <select id="filter-scraped" class="select-dropdown select-filter">
+              <option value="all">All Scrape Status</option>
+              <option value="scraped">🟢 Scraped Ready</option>
+              <option value="unscraped">🟡 Pending Scrape</option>
+              <option value="unmatched">⚪ Unmatched Files</option>
+            </select>
+          </div>
+
+          <div class="filter-item">
+            <label for="filter-genre" class="filter-label">🏷️ Tag / Genre</label>
+            <select id="filter-genre" class="select-dropdown select-filter">
+              <option value="">All Tags / Genres</option>
+            </select>
+          </div>
+
+          <div class="filter-item">
+            <label for="filter-watch" class="filter-label">👁️ Watch Status</label>
+            <select id="filter-watch" class="select-dropdown select-filter">
+              <option value="all">All Watch Status</option>
+              <option value="watched">👁️ Watched</option>
+              <option value="unwatched">👓 Unwatched</option>
+              <option value="favorites">❤️ Favorites</option>
+            </select>
+          </div>
+
+          <button id="btn-reset-filters" class="btn btn-secondary btn-sm hidden" title="Reset all filters to default">
+            ✕ Reset Filters
+          </button>
         </div>
 
         <!-- Library Stats Bar -->

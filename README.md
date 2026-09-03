@@ -1,31 +1,35 @@
-# R19DEV Scraper
+# R19DEV Studio & Scraper
 
-A modern, standalone JAV video library scanner, pattern matcher, and R18.dev metadata scraper written in Go, featuring a sleek interactive **Terminal User Interface (TUI)** built with Charm's Bubble Tea and Lip Gloss.
+A modern, high-performance JAV video library scanner, pattern matcher, R18.dev metadata scraper, and Jellyfin NAS organizer written in Go. Available as both a **Single-Binary Web UI Studio** and an **Interactive Terminal TUI**.
 
 ---
 
 ## ✨ Features
 
-- 📁 **Safe & Fast Video Scanner**: Recursively discovers video files (`.mp4`, `.mkv`, `.avi`, `.wmv`, `.iso`, etc.), filters out ad/sample files below configured thresholds (MinSizeMB), and safely ignores symlinks.
-- 🎯 **Advanced JAV ID Matcher**:
-  - Automatically strips domain and tracker noise prefixes (e.g. `hhd800.com@`, `4k2.com@`, `twojav.com@`).
-  - Supports standard hyphenated IDs (`MIDA-517`, `SNOS-028`, `WAAA-615`).
-  - Supports 5-digit VR and Content IDs (`kavr00428` $\rightarrow$ `KAVR-428`, `sivr00394`, `mdvr00406`).
-  - Supports FC2 (`FC2-PPV-1234567`) and uncensored date-based IDs (`020326_001-1PON`).
-  - Multi-part detection and sibling directory validation (`_1`, `_2`, `-pt1`, `-pt2`).
-- 🌐 **R18.dev Scraper**: Direct JSON API integration with R18.dev in English (default) or Japanese for rich movie metadata, cast information, genre tags, cover jackets, and sample screenshot galleries.
-- 🖼️ **Pixel Graphics Protocols & Truecolor Cover Art**:
-  - **Kitty Graphics Protocol**: Native pixel-perfect bitmap rendering on Kitty, Ghostty, WezTerm.
-  - **iTerm2 Inline Images Protocol**: Native bitmap rendering on iTerm2, WezTerm, Warp, VS Code.
-  - **Sixel Graphics Protocol**: 6-pixel band bitmap rendering on Foot, XTerm, and Sixel-enabled terminals.
-  - **ANSI Half-Block (`▀`)**: Universal 24-bit Truecolor fallback for any standard terminal emulator.
-  - **Auto-Detection & Real-Time Switching**: Press `p` in TUI to cycle through protocols!
-- 🖥️ **Interactive TUI**:
-  - Live split-view table and metadata inspector.
-  - Manual ID override modal (`e` key) for edge-case files.
-  - One-key live scraping preview (`Enter`).
-  - Toggle cover view (`c` key).
-  - Switch graphics protocol (`p` key).
+- 🌐 **Modern Web UI Studio**:
+  - **Embedded Single Binary**: Runs on any Mac, Linux, or NAS with zero external runtime dependencies (`embed.FS`).
+  - **Full HD Visuals**: Real high-resolution covers, backdrop banners, actress profile avatars, and interactive lightbox galleries for sample screenshots.
+  - **Live Search & Filter**: Instantly filter by JAV ID, title, filename, actress, studio, watched status, or rating.
+  - **Batch Operations**: One-click "Scrape All" and "Batch Organize".
+- ⭐ **Actress Hub & Release Tracker**:
+  - Follow favorite actresses and track their entire filmography.
+  - Automatically cross-references with your local library to classify releases:
+    - 🟢 **Downloaded** (available on your disk/NAS)
+    - 🔴 **Missing / New** (announced/released but not downloaded yet)
+    - 👁️ **Watched / Unwatched**
+    - ⭐ **User Rating (1-5 stars) / Favorite ❤️**
+- 📂 **NAS Directory Organizer & Jellyfin Pipeline**:
+  - Organizes movies into: `{Destination}/{Actress}/{JAV-ID} {Title}/`
+  - Moves video files (with multi-part `-cd1`, `-cd2` consolidation).
+  - Generates official Kodi / Jellyfin XML `.nfo` files.
+  - Generates standalone, responsive dark-mode `movie.html` summary pages.
+  - Auto-upgrades DMM URLs to download Full HD `poster.jpg`, `fanart.jpg`, and all sample screenshots into `extrafanart/`.
+  - Supports `--dry-run` to preview all folder operations safely before moving.
+- 💾 **SQLite Local Database**:
+  - Embedded SQLite database (`~/.cache/r19dev/r19dev.db`) storing actress follow lists, filmographies, watch history, and 1-5 star ratings.
+- 🖥️ **Interactive Terminal TUI**:
+  - Built with Charm's Bubble Tea and Lip Gloss.
+  - 24-bit Truecolor and native Kitty GPU graphics mode.
 
 ---
 
@@ -34,42 +38,59 @@ A modern, standalone JAV video library scanner, pattern matcher, and R18.dev met
 ### 1. Build
 ```bash
 make build
-# or: go build -o bin/r19dev ./cmd/r19dev
+# Creates standalone binary at ./bin/r19dev
 ```
 
-### 2. Launch Interactive TUI
+### 2. Launch Web UI Studio (Recommended)
 ```bash
-# Auto-detect best graphics protocol
+# Launches local web server & automatically opens your browser at http://localhost:8080
+./bin/r19dev web /Volumes/home/BT/2026
+
+# Or specify custom port
+./bin/r19dev web /Volumes/home/BT/2026 --port 9090
+```
+
+### 3. Launch Interactive Terminal TUI
+```bash
 ./bin/r19dev tui /Volumes/home/BT/2026
-
-# Or specify a protocol explicitly
-./bin/r19dev tui /Volumes/home/BT/2026 --proto kitty
-./bin/r19dev tui /Volumes/home/BT/2026 --proto iterm2
-./bin/r19dev tui /Volumes/home/BT/2026 --proto sixel
-./bin/r19dev tui /Volumes/home/BT/2026 --proto halfblock
 ```
 
-### 3. CLI Scan & Match
+### 4. Actress Tracking via CLI
 ```bash
-./bin/r19dev scan /Volumes/home/BT/2026
+# Follow an actress
+./bin/r19dev actress follow "Kanna Seto"
+
+# List followed actresses
+./bin/r19dev actress list
+
+# Check new releases vs local library
+./bin/r19dev actress check
 ```
 
-### 4. Direct R18.dev Scrape (English)
+### 5. NAS Jellyfin Organize via CLI
 ```bash
-./bin/r19dev scrape MIDA-517
+# Preview folder organization without moving files (Dry-Run)
+./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/JAV_Library --dry-run
+
+# Execute organization
+./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/JAV_Library
 ```
 
 ---
 
-## ⌨️ TUI Keybindings
+## 📂 NAS Jellyfin Directory Structure
 
-| Key | Action |
-|---|---|
-| `↑` / `k` / `↓` / `j` | Navigate files |
-| `PgUp` / `PgDn` | Page scroll |
-| `Enter` / `Space` | Fetch R18.dev metadata & cover preview |
-| `c` | Toggle Cover Art preview on/off |
-| `p` | Cycle graphics protocol (Auto $\rightarrow$ Kitty $\rightarrow$ iTerm2 $\rightarrow$ Sixel $\rightarrow$ HalfBlock) |
-| `e` | Edit / Override JAV ID for selected file |
-| `r` | Rescan directory |
-| `q` / `Ctrl+C` | Quit |
+```
+/Volumes/home/JAV_Library/
+└── 瀬戸環奈 (Kanna Seto)/
+    └── SNOS-038 AV Debut 1st Anniversary Work.../
+        ├── SNOS-038.mp4                 # Video file (or -cd1.mp4, -cd2.mp4)
+        ├── SNOS-038.nfo                 # Kodi / Jellyfin Metadata XML
+        ├── movie.html                   # Standalone responsive summary page
+        ├── poster.jpg                   # High-Res Cover Jacket
+        ├── fanart.jpg                   # Landscape Backdrop
+        └── extrafanart/                 # High-Res Sample Screenshots
+            ├── fanart1.jpg
+            ├── fanart2.jpg
+            └── fanart8.jpg
+```

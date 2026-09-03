@@ -18,20 +18,40 @@ import (
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
 	"github.com/dagalp/r19dev-scraper/pkg/tui"
+	"github.com/dagalp/r19dev-scraper/pkg/web"
 )
 
-const version = "1.1.0"
+const version = "2.0.0"
 
 func main() {
 	args := os.Args[1:]
 
 	if len(args) == 0 {
-		runTUI(".", "en", tui.ProtocolAuto)
+		runWeb(".", 8080, true)
 		return
 	}
 
 	cmd := strings.ToLower(args[0])
 	switch cmd {
+	case "web", "serve", "ui":
+		target := "."
+		port := 8080
+		openBrowser := true
+		for i := 1; i < len(args); i++ {
+			if (args[i] == "--port" || args[i] == "-p") && i+1 < len(args) {
+				var p int
+				if _, err := fmt.Sscanf(args[i+1], "%d", &p); err == nil && p > 0 {
+					port = p
+				}
+				i++
+			} else if args[i] == "--no-open" {
+				openBrowser = false
+			} else if !strings.HasPrefix(args[i], "-") {
+				target = args[i]
+			}
+		}
+		runWeb(target, port, openBrowser)
+
 	case "tui":
 		target := "."
 		lang := "en"
@@ -97,10 +117,26 @@ func main() {
 
 	default:
 		if stat, err := os.Stat(args[0]); err == nil && stat.IsDir() {
-			runTUI(args[0], "en", tui.ProtocolAuto)
+			runWeb(args[0], 8080, true)
 			return
 		}
 		printHelp()
+	}
+}
+
+func runWeb(targetDir string, port int, openBrowser bool) {
+	srv, err := web.NewServer(web.Config{
+		TargetDir: targetDir,
+		Port:      port,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to initialize Web server: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := srv.Start(openBrowser); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Web server error: %v\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -381,8 +417,13 @@ func printHelp() {
 	fmt.Println(`🎬 R19DEV Scraper - JAV Scanner, Matcher, Actress Tracker & NAS Jellyfin Organizer
 
 Usage:
-  r19dev [path]               Launch Interactive TUI (default: .)
-  r19dev tui [path] [flags]   Launch Interactive TUI
+  r19dev [path]               Launch Modern Web UI Studio (default: .)
+  r19dev web [path] [flags]   Launch Modern Web UI Studio
+                              Flags:
+                                --port <8080>           HTTP server port (default: 8080)
+                                --no-open               Do not auto-open default browser
+
+  r19dev tui [path] [flags]   Launch Interactive Terminal TUI
                               Flags:
                                 --lang <en|ja>          Language preference (default: en)
                                 --proto <auto|halfblock>  Graphics protocol

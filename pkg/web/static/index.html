@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>R19DEV Studio - JAV Scraper & Media Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top Navigation Bar -->
+    <header class="navbar">
+      <div class="nav-brand">
+        <div class="brand-logo">🎬</div>
+        <div class="brand-text">
+          <span class="brand-title">R19DEV</span>
+          <span class="brand-subtitle">Studio & Jellyfin Hub</span>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="library">
+          <span class="tab-icon">📁</span>
+          <span>Library</span>
+          <span class="badge-count" id="count-library">0</span>
+        </button>
+        <button class="nav-tab" data-tab="actresses">
+          <span class="tab-icon">⭐</span>
+          <span>Actresses</span>
+          <span class="badge-count" id="count-actresses">0</span>
+        </button>
+        <button class="nav-tab" data-tab="organizer">
+          <span class="tab-icon">📂</span>
+          <span>NAS Organizer</span>
+        </button>
+      </nav>
+
+      <div class="nav-actions">
+        <div class="dir-badge" id="nav-active-dir" title="Current Directory">
+          <span class="dir-icon">📂</span>
+          <span class="dir-name" id="label-active-dir">/</span>
+        </div>
+        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory">
+          <span class="icon">🔄</span> Rescan
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="main-content">
+
+      <!-- TAB 1: LIBRARY & SCANNER -->
+      <section id="tab-library" class="tab-pane active">
+        <!-- Control Bar -->
+        <div class="control-bar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" placeholder="Search by JAV ID, file name, actress, studio..." autocomplete="off">
+            <button id="search-clear" class="btn-clear hidden">×</button>
+          </div>
+
+          <div class="filter-group">
+            <select id="filter-status" class="select-dropdown">
+              <option value="all">All Statuses</option>
+              <option value="matched">Matched JAV ID</option>
+              <option value="unmatched">Unmatched Files</option>
+              <option value="scraped">Scraped Metadata</option>
+              <option value="watched">Watched (👁️)</option>
+              <option value="unwatched">Unwatched (👓)</option>
+              <option value="favorites">Favorites (❤️)</option>
+            </select>
+
+            <select id="sort-by" class="select-dropdown">
+              <option value="id-asc">JAV ID (A-Z)</option>
+              <option value="id-desc">JAV ID (Z-A)</option>
+              <option value="name-asc">Filename (A-Z)</option>
+              <option value="size-desc">File Size (Large-Small)</option>
+              <option value="date-desc">Release Date (Newest)</option>
+            </select>
+          </div>
+
+          <div class="action-buttons">
+            <button id="btn-scrape-all" class="btn btn-primary">
+              <span class="icon">⚡</span> Scrape All
+            </button>
+            <button id="btn-organize-all" class="btn btn-accent">
+              <span class="icon">📂</span> Batch Organize
+            </button>
+          </div>
+        </div>
+
+        <!-- Library Stats Bar -->
+        <div class="stats-bar">
+          <div class="stat-item"><span class="stat-num" id="stat-total">0</span> Total Files</div>
+          <div class="stat-divider"></div>
+          <div class="stat-item text-success"><span class="stat-num" id="stat-matched">0</span> Matched</div>
+          <div class="stat-divider"></div>
+          <div class="stat-item text-warning"><span class="stat-num" id="stat-unmatched">0</span> Unmatched</div>
+          <div class="stat-divider"></div>
+          <div class="stat-item text-info"><span class="stat-num" id="stat-scraped">0</span> Scraped</div>
+        </div>
+
+        <!-- Movie Cards Grid -->
+        <div id="movies-grid" class="movies-grid">
+          <!-- Dynamically populated via app.js -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="library-empty" class="empty-state hidden">
+          <div class="empty-icon">📁</div>
+          <h3>No videos found</h3>
+          <p>Scan a directory containing video files (.mp4, .mkv, .avi) to get started.</p>
+        </div>
+      </section>
+
+      <!-- TAB 2: ACTRESS HUB & NEW RELEASES -->
+      <section id="tab-actresses" class="tab-pane">
+        <div class="actress-header">
+          <div class="actress-header-info">
+            <h2>⭐ Followed Actresses</h2>
+            <p>Track favorite actresses and discover new releases versus your local library.</p>
+          </div>
+
+          <div class="actress-add-box">
+            <input type="text" id="input-actress-name" placeholder="Add Actress Name (e.g. Kanna Seto)" />
+            <button id="btn-add-actress" class="btn btn-primary">
+              <span class="icon">+</span> Follow
+            </button>
+          </div>
+        </div>
+
+        <div id="actresses-container" class="actresses-container">
+          <!-- Dynamically populated via app.js -->
+        </div>
+
+        <div id="actresses-empty" class="empty-state hidden">
+          <div class="empty-icon">⭐</div>
+          <h3>No actresses followed yet</h3>
+          <p>Click the "⭐ Follow" button on any movie card or type an actress name above to track new releases.</p>
+        </div>
+      </section>
+
+      <!-- TAB 3: NAS ORGANIZER -->
+      <section id="tab-organizer" class="tab-pane">
+        <div class="organizer-card">
+          <h2>📂 NAS Jellyfin Directory Organizer</h2>
+          <p class="organizer-desc">
+            Organizes matched videos into the official Jellyfin structure:
+            <code>{Destination}/{Actress}/{JAV-ID} {Title}/</code>
+            with full metadata, high-res posters, fanart, and sample screenshots.
+          </p>
+
+          <div class="organizer-form">
+            <div class="form-group">
+              <label for="org-src-dir">Source Directory (Current Videos)</label>
+              <input type="text" id="org-src-dir" class="form-input" placeholder="/Volumes/home/BT/2026" />
+            </div>
+
+            <div class="form-group">
+              <label for="org-dest-root">Jellyfin Destination Root (NAS Library)</label>
+              <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/JAV_Library" />
+            </div>
+
+            <div class="form-options">
+              <label class="checkbox-label">
+                <input type="checkbox" id="org-dry-run" checked />
+                <span><strong>Dry Run Mode:</strong> Preview folder actions safely without moving files</span>
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <button id="btn-start-organize" class="btn btn-primary btn-lg">
+                <span class="icon">🚀</span> Start Organize
+              </button>
+            </div>
+          </div>
+
+          <!-- Organizer Console Log -->
+          <div class="organizer-log-wrapper">
+            <div class="log-header">
+              <span>Console Log</span>
+              <button id="btn-clear-log" class="btn-clear-log">Clear</button>
+            </div>
+            <pre id="organizer-log" class="console-log">Ready. Click "Start Organize" to preview or process files.</pre>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- MOVIE DETAIL MODAL / INSPECTOR -->
+    <div id="modal-movie" class="modal-backdrop hidden">
+      <div class="modal-card">
+        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)">×</button>
+
+        <div class="modal-body" id="modal-content">
+          <!-- Dynamically populated via app.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- IMAGE LIGHTBOX MODAL -->
+    <div id="lightbox" class="lightbox-backdrop hidden">
+      <button id="btn-close-lightbox" class="btn-lightbox-close">×</button>
+      <img id="lightbox-img" src="" alt="Full Resolution Image" />
+      <div id="lightbox-caption" class="lightbox-caption"></div>
+    </div>
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div id="toast-container" class="toast-container"></div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

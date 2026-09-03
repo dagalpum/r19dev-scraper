@@ -8,50 +8,52 @@
   --bg-card: #1c2033;
   --bg-card-hover: #262b45;
   --bg-input: #10121d;
-  
+
   --border-subtle: #2b304c;
   --border-focus: #7aa2f7;
-  
+
   --primary: #7aa2f7;
   --primary-hover: #89b4fa;
   --primary-subtle: rgba(122, 162, 247, 0.18);
-  
+
   --accent: #bb9af7;
   --accent-pink: #f7768e;
   --accent-pink-subtle: rgba(247, 118, 142, 0.18);
-  
+
   --success: #9ece6a;
   --success-subtle: rgba(158, 206, 106, 0.18);
-  
+
   --warning: #e0af68;
   --warning-subtle: rgba(224, 175, 104, 0.18);
-  
+
   --danger: #f7768e;
-  
+
   /* WCAG High-Contrast Text */
   --text-main: #d5defa;
   --text-bright: #ffffff;
   --text-muted: #8d97be;
   --text-dim: #7982a9;
-  
+
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
-  
+
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
   --radius-xl: 24px;
-  
+
   --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.85);
   --shadow-glow: 0 0 20px rgba(122, 162, 247, 0.25);
-  
+
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Reset & Base Setup */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -459,8 +461,13 @@ body {
 }
 
 @keyframes shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* ==========================================================================
@@ -532,7 +539,9 @@ body {
   padding: 0 0.2rem;
 }
 
-.btn-clear:hover { color: #fff; }
+.btn-clear:hover {
+  color: #fff;
+}
 
 .sort-box .select-dropdown {
   background: var(--bg-input);
@@ -653,9 +662,17 @@ body {
   font-weight: 700;
 }
 
-.stat-pill.success strong { color: var(--success); }
-.stat-pill.warning strong { color: var(--warning); }
-.stat-pill.info strong { color: var(--primary); }
+.stat-pill.success strong {
+  color: var(--success);
+}
+
+.stat-pill.warning strong {
+  color: var(--warning);
+}
+
+.stat-pill.info strong {
+  color: var(--primary);
+}
 
 /* ==========================================================================
    Movies Grid Layout & Dynamic Density
@@ -667,29 +684,57 @@ body {
 }
 
 /* Column Variants */
-.movies-grid.grid-auto   { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
-.movies-grid.grid-cols-1 { grid-template-columns: 1fr; }
-.movies-grid.grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
-.movies-grid.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
-.movies-grid.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-.movies-grid.grid-cols-5 { grid-template-columns: repeat(5, 1fr); }
+.movies-grid.grid-auto {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.movies-grid.grid-cols-1 {
+  grid-template-columns: 1fr;
+}
+
+.movies-grid.grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.movies-grid.grid-cols-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.movies-grid.grid-cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.movies-grid.grid-cols-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
 
 @media (max-width: 1200px) {
-  .movies-grid.grid-cols-5 { grid-template-columns: repeat(4, 1fr); }
-  .movies-grid.grid-cols-4 { grid-template-columns: repeat(3, 1fr); }
+  .movies-grid.grid-cols-5 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .movies-grid.grid-cols-4 {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 @media (max-width: 860px) {
+
   .movies-grid.grid-cols-5,
   .movies-grid.grid-cols-4,
-  .movies-grid.grid-cols-3 { grid-template-columns: repeat(2, 1fr); }
+  .movies-grid.grid-cols-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (max-width: 580px) {
+
   .movies-grid.grid-cols-5,
   .movies-grid.grid-cols-4,
   .movies-grid.grid-cols-3,
-  .movies-grid.grid-cols-2 { grid-template-columns: 1fr; }
+  .movies-grid.grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ==========================================================================
@@ -1177,9 +1222,23 @@ body {
   gap: 0.35rem;
 }
 
-.pill-downloaded { background: var(--success-subtle); color: var(--success); border: 1px solid rgba(158, 206, 106, 0.35); }
-.pill-missing { background: var(--accent-pink-subtle); color: var(--accent-pink); border: 1px solid rgba(247, 118, 142, 0.35); }
-.pill-watched { background: var(--primary-subtle); color: var(--primary); border: 1px solid rgba(122, 162, 247, 0.35); }
+.pill-downloaded {
+  background: var(--success-subtle);
+  color: var(--success);
+  border: 1px solid rgba(158, 206, 106, 0.35);
+}
+
+.pill-missing {
+  background: var(--accent-pink-subtle);
+  color: var(--accent-pink);
+  border: 1px solid rgba(247, 118, 142, 0.35);
+}
+
+.pill-watched {
+  background: var(--primary-subtle);
+  color: var(--primary);
+  border: 1px solid rgba(122, 162, 247, 0.35);
+}
 
 /* ==========================================================================
    NAS Organizer Tab
@@ -1279,7 +1338,9 @@ body {
   cursor: pointer;
 }
 
-.btn-clear-log:hover { color: #fff; }
+.btn-clear-log:hover {
+  color: #fff;
+}
 
 .console-log {
   padding: 1rem;
@@ -1310,8 +1371,13 @@ body {
 }
 
 @keyframes modalFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .modal-card {
@@ -1495,7 +1561,8 @@ body {
   transition: transform 0.15s ease, filter 0.15s ease;
 }
 
-.star-btn.active, .star-btn:hover {
+.star-btn.active,
+.star-btn:hover {
   filter: grayscale(0);
   transform: scale(1.2);
 }
@@ -1529,7 +1596,9 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.multipart-item:last-child { border-bottom: none; }
+.multipart-item:last-child {
+  border-bottom: none;
+}
 
 /* Sample Gallery Grid */
 .gallery-section-title {
@@ -1655,8 +1724,15 @@ body {
 }
 
 @keyframes toastSlideIn {
-  from { transform: translateX(100%); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 .hidden {

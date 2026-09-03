@@ -97,6 +97,22 @@ func TestOrganizeMatch(t *testing.T) {
 		t.Errorf("Expected Unknown Actress: %s", planUnknown.TargetFolder)
 	}
 
+	// 1d. Test English Movie Title priority and Japanese Title fallback
+	if !strings.Contains(dryPlan.TargetFolder, "SNOS-038 AV Debut 1st Anniversary Work") {
+		t.Errorf("Expected English movie title in folder: %s", dryPlan.TargetFolder)
+	}
+
+	movieJaTitleOnly := *movie
+	movieJaTitleOnly.Title = ""
+	movieJaTitleOnly.OriginalTitle = "夫の目の前で犯されて"
+	planJaTitle, err := PlanOrganize(match, &movieJaTitleOnly, destRoot)
+	if err != nil {
+		t.Fatalf("Plan failed for JaTitleOnly: %v", err)
+	}
+	if !strings.Contains(planJaTitle.TargetFolder, "SNOS-038 夫の目の前で犯されて") {
+		t.Errorf("Expected Japanese title fallback: %s", planJaTitle.TargetFolder)
+	}
+
 	// Verify source video still exists after dry run
 	if _, err := os.Stat(video1); err != nil {
 		t.Errorf("Dry-run moved file unexpectedly: %v", err)

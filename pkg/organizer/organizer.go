@@ -49,11 +49,19 @@ func PlanOrganize(match *matcher.MatchResult, movie *scraper.Movie, targetRoot s
 	actressFolder = jellyfin.SanitizeFilename(actressFolder)
 
 	// Clean movie folder: JAV-ID SanitizedTitle
-	cleanTitle := jellyfin.SanitizeFilename(movie.Title)
-	if cleanTitle == "" {
-		cleanTitle = "Movie"
+	// Prioritize English Title (movie.Title). Fallback to Japanese (movie.OriginalTitle) only if English is unavailable.
+	title := strings.TrimSpace(movie.Title)
+	if title == "" {
+		title = strings.TrimSpace(movie.OriginalTitle)
 	}
-	movieFolder := jellyfin.SanitizeFilename(fmt.Sprintf("%s %s", movie.ID, cleanTitle))
+	cleanTitle := jellyfin.SanitizeFilename(title)
+
+	var movieFolder string
+	if cleanTitle != "" {
+		movieFolder = jellyfin.SanitizeFilename(fmt.Sprintf("%s %s", movie.ID, cleanTitle))
+	} else {
+		movieFolder = movie.ID
+	}
 	targetMovieDir := filepath.Join(targetRoot, actressFolder, movieFolder)
 
 	ext := filepath.Ext(match.File.Path)

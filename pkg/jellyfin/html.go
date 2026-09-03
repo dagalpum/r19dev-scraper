@@ -17,7 +17,11 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState) string {
 		return ""
 	}
 
-	titleEsc := html.EscapeString(movie.Title)
+	displayTitle := strings.TrimSpace(movie.Title)
+	if displayTitle == "" {
+		displayTitle = strings.TrimSpace(movie.OriginalTitle)
+	}
+	titleEsc := html.EscapeString(displayTitle)
 	origTitleEsc := html.EscapeString(movie.OriginalTitle)
 	idEsc := html.EscapeString(movie.ID)
 	makerEsc := html.EscapeString(movie.Maker)

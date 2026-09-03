@@ -68,12 +68,21 @@ func GenerateNFO(movie *scraper.Movie, userState *db.UserState) ([]byte, error) 
 		year = movie.ReleaseDate[:4]
 	}
 
+	displayTitle := strings.TrimSpace(movie.Title)
+	if displayTitle == "" {
+		displayTitle = strings.TrimSpace(movie.OriginalTitle)
+	}
+	formattedTitle := fmt.Sprintf("[%s] %s", movie.ID, displayTitle)
+	if displayTitle == "" {
+		formattedTitle = movie.ID
+	}
+
 	nfo := MovieNFO{
-		Title:         fmt.Sprintf("[%s] %s", movie.ID, movie.Title),
+		Title:         formattedTitle,
 		OriginalTitle: movie.OriginalTitle,
 		SortTitle:     movie.ID,
 		Year:          year,
-		Plot:          movie.Title,
+		Plot:          displayTitle,
 		Runtime:       movie.RuntimeMinutes,
 		Poster:        "poster.jpg",
 		Fanart:        &FanartInfo{Thumb: "fanart.jpg"},

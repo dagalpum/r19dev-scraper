@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -126,10 +127,30 @@ func (s *Server) Handler() (http.Handler, error) {
 }
 
 // Start runs the HTTP listener on the configured port.
+// If the configured port is already in use, it automatically falls back to the next available port.
 func (s *Server) Start(openBrowserOnStart bool) error {
 	handler, err := s.Handler()
 	if err != nil {
 		return err
+	}
+
+	var ln net.Listener
+	originalPort := s.port
+	for p := s.port; p <= s.port+20; p++ {
+		l, err := net.Listen("tcp", fmt.Sprintf(":%d", p))
+		if err == nil {
+			ln = l
+			s.port = p
+			break
+		}
+	}
+	if ln == nil {
+		return fmt.Errorf("could not bind to port %d or any alternate port up to %d: address already in use", originalPort, originalPort+20)
+	}
+	defer ln.Close()
+
+	if s.port != originalPort {
+		fmt.Printf("⚠️  Port %d is already in use, automatically switched to port %d\n", originalPort, s.port)
 	}
 
 	serverURL := fmt.Sprintf("http://localhost:%d", s.port)
@@ -144,13 +165,12 @@ func (s *Server) Start(openBrowserOnStart bool) error {
 	}
 
 	server := &http.Server{
-		Addr:              fmt.Sprintf(":%d", s.port),
 		Handler:           handler,
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
-	return server.ListenAndServe()
+	return server.Serve(ln)
 }
 
 // --- REST Handlers ---

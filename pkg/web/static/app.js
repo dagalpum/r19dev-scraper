@@ -76,7 +76,8 @@
     filterGenre: document.getElementById('filter-genre'),
     filterWatch: document.getElementById('filter-watch'),
     btnResetFilters: document.getElementById('btn-reset-filters'),
-    sortSelect: document.getElementById('sort-select'),
+    sortSelect: document.getElementById('sort-by') || document.getElementById('sort-select'),
+    densityButtons: document.querySelectorAll('.btn-density'),
     btnGridShowcase: document.getElementById('btn-grid-showcase'),
     btnGridDense: document.getElementById('btn-grid-dense'),
     btnScrapeAll: document.getElementById('btn-scrape-all'),
@@ -153,24 +154,24 @@
   // Initialization
   // =========================================================================
   function init() {
-    setupTabSwitching();
-    setupSearchAndFilters();
-    setupDensityControl();
-    setupModals();
-    setupOrganizer();
-    setupActressHub();
-    setupHistoryModal();
+    try { setupTabSwitching(); } catch (e) { console.error('setupTabSwitching failed:', e); }
+    try { setupSearchAndFilters(); } catch (e) { console.error('setupSearchAndFilters failed:', e); }
+    try { setupDensityControl(); } catch (e) { console.error('setupDensityControl failed:', e); }
+    try { setupModals(); } catch (e) { console.error('setupModals failed:', e); }
+    try { setupOrganizer(); } catch (e) { console.error('setupOrganizer failed:', e); }
+    try { setupActressHub(); } catch (e) { console.error('setupActressHub failed:', e); }
+    try { setupHistoryModal(); } catch (e) { console.error('setupHistoryModal failed:', e); }
 
     // Initial Data Fetch
-    fetchInitialData();
+    try { fetchInitialData(); } catch (e) { console.error('fetchInitialData failed:', e); }
 
     if (window.lucide) {
-      window.lucide.createIcons();
+      try { window.lucide.createIcons(); } catch (e) {}
     }
   }
 
   function setupTabSwitching() {
-    elements.tabs.forEach(tab => {
+    (elements.tabs || []).forEach(tab => {
       tab.addEventListener('click', () => {
         const tabId = tab.dataset.tab;
         switchTab(tabId);
@@ -180,12 +181,12 @@
 
   function switchTab(tabId) {
     state.activeTab = tabId;
-    elements.tabs.forEach(t => {
+    (elements.tabs || []).forEach(t => {
       const isCur = t.dataset.tab === tabId;
       t.classList.toggle('active', isCur);
       t.setAttribute('aria-selected', isCur ? 'true' : 'false');
     });
-    elements.panes.forEach(p => p.classList.toggle('active', p.id === `tab-${tabId}`));
+    (elements.panes || []).forEach(p => p.classList.toggle('active', p.id === `tab-${tabId}`));
 
     if (tabId === 'actresses') {
       loadActressesData();
@@ -196,7 +197,7 @@
     // Apply saved density
     applyGridDensity(state.gridCols);
 
-    elements.densityButtons.forEach(btn => {
+    (elements.densityButtons || []).forEach(btn => {
       btn.addEventListener('click', () => {
         const cols = btn.dataset.cols;
         state.gridCols = cols;
@@ -207,13 +208,15 @@
   }
 
   function applyGridDensity(cols) {
-    elements.densityButtons.forEach(b => {
+    (elements.densityButtons || []).forEach(b => {
       const isCur = b.dataset.cols === cols;
       b.classList.toggle('active', isCur);
       b.setAttribute('aria-pressed', isCur ? 'true' : 'false');
     });
 
-    elements.moviesGrid.className = 'movies-grid ' + (cols === 'auto' ? 'grid-auto' : `grid-cols-${cols}`);
+    if (elements.moviesGrid) {
+      elements.moviesGrid.className = 'movies-grid ' + (cols === 'auto' ? 'grid-auto' : `grid-cols-${cols}`);
+    }
   }
 
   function setupSearchAndFilters() {
@@ -283,11 +286,11 @@
       }
     }
 
-    elements.btnScrapeAll.addEventListener('click', () => {
+    elements.btnScrapeAll?.addEventListener('click', () => {
       scrapeAllMatched();
     });
 
-    elements.btnOrganizeAll.addEventListener('click', () => {
+    elements.btnOrganizeAll?.addEventListener('click', () => {
       switchTab('organizer');
     });
   }
@@ -353,21 +356,23 @@
   }
 
   function setupModals() {
-    elements.btnCloseModal.addEventListener('click', closeModal);
-    elements.modalMovie.addEventListener('click', (e) => {
+    elements.btnCloseModal?.addEventListener('click', closeModal);
+    elements.modalMovie?.addEventListener('click', (e) => {
       if (e.target === elements.modalMovie) closeModal();
     });
 
-    elements.btnCloseLightbox.addEventListener('click', closeLightbox);
-    elements.lightbox.addEventListener('click', (e) => {
+    elements.btnCloseLightbox?.addEventListener('click', closeLightbox);
+    elements.lightbox?.addEventListener('click', (e) => {
       if (e.target === elements.lightbox) closeLightbox();
     });
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (!elements.lightbox.classList.contains('hidden')) {
+        if (!elements.lightbox?.classList.contains('hidden')) {
           closeLightbox();
-        } else if (!elements.modalMovie.classList.contains('hidden')) {
+        } else if (!elements.drawerActressProfile?.classList.contains('hidden')) {
+          closeActressProfileDrawer();
+        } else if (!elements.modalMovie?.classList.contains('hidden')) {
           closeModal();
         } else if (!elements.modalHistory?.classList.contains('hidden')) {
           closeHistoryModal();
@@ -587,42 +592,22 @@
       }
     });
 
-    elements.btnStartOrganize.addEventListener('click', () => {
+    elements.btnStartOrganize?.addEventListener('click', () => {
       startOrganizeStream();
     });
   }
 
   function setupActressHub() {
-    elements.btnAddActress?.addEventListener('click', async () => {
-      const name = elements.inputActressName.value.trim();
-      if (!name) return;
-      try {
-        await fetch('/api/actresses/follow', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name })
-        });
-        elements.inputActressName.value = '';
-        state.activeActressName = name;
-        showToast(`Followed ${name} ⭐`, 'success');
-        await loadActressesData();
-      } catch (err) {
-        showToast('Error following actress: ' + err.message, 'danger');
-      }
-    });
+    elements.btnAddActress?.addEventListener('click', followActressFromInput);
 
     elements.inputActressName?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        elements.btnAddActress?.click();
+        followActressFromInput();
       }
     });
 
-    elements.btnRefreshActresses?.addEventListener('click', async () => {
-      showToast('Refreshing all actress releases... 🔄', 'info');
-      await loadActressesData();
-      showToast('All actress releases updated! ✅', 'success');
-    });
+    elements.btnRefreshActresses?.addEventListener('click', (e) => refreshAllActresses(e.currentTarget));
 
     elements.chatActressSearch?.addEventListener('input', (e) => {
       state.actressSearchQuery = (e.target.value || '').trim().toLowerCase();
@@ -630,71 +615,16 @@
     });
 
     elements.btnOpenProfileDrawer?.addEventListener('click', () => {
-      let activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
-      if (!activeEntry && state.actresses.length > 0) {
-        activeEntry = state.actresses[0];
-        state.activeActressName = activeEntry.actress.name;
-      }
-      if (activeEntry) {
-        openActressProfileDrawer(activeEntry);
-      } else {
-        showToast('Please select or follow an actress first', 'info');
-      }
+      openActressProfileDrawer();
     });
 
     elements.btnCloseDrawer?.addEventListener('click', closeActressProfileDrawer);
     elements.drawerProfileBackdrop?.addEventListener('click', closeActressProfileDrawer);
 
-    elements.btnHeaderUnfollow?.addEventListener('click', async () => {
-      if (!state.activeActressName) return;
-      if (confirm(`Unfollow ${state.activeActressName}?`)) {
-        await unfollowActress(state.activeActressName);
-        state.activeActressName = null;
-        await loadActressesData();
-      }
-    });
-
-    elements.btnChatTrackTitle?.addEventListener('click', () => {
-      let targetName = state.activeActressName;
-      if (!targetName && state.actresses.length > 0) {
-        targetName = state.actresses[0].actress.name;
-        state.activeActressName = targetName;
-      }
-      if (targetName) {
-        trackTitleToActress(targetName);
-      } else {
-        showToast('Please select or follow an actress first', 'info');
-      }
-    });
-
-    elements.btnChatRefresh?.addEventListener('click', (e) => {
-      let targetName = state.activeActressName;
-      if (!targetName && state.actresses.length > 0) {
-        targetName = state.actresses[0].actress.name;
-        state.activeActressName = targetName;
-      }
-      if (targetName) {
-        refreshSingleActress(targetName, e.currentTarget);
-      } else {
-        showToast('Please select or follow an actress first', 'info');
-      }
-    });
-
-    elements.btnChatOpenFolder?.addEventListener('click', async () => {
-      let activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
-      if (!activeEntry && state.actresses.length > 0) {
-        activeEntry = state.actresses[0];
-        state.activeActressName = activeEntry.actress.name;
-      }
-      if (!activeEntry) {
-        showToast('Please select an actress first', 'warning');
-        return;
-      }
-      const dl = (activeEntry.releases || []).find(r => r.is_downloaded);
-      const folderToOpen = dl?.organized_folder || dl?.library_path || '';
-      const movieID = dl?.movie_id || '';
-      await openFolder(movieID, folderToOpen, activeEntry.actress.name);
-    });
+    elements.btnHeaderUnfollow?.addEventListener('click', unfollowActiveActress);
+    elements.btnChatTrackTitle?.addEventListener('click', trackTitleActiveActress);
+    elements.btnChatRefresh?.addEventListener('click', (e) => refreshActiveActress(e.currentTarget));
+    elements.btnChatOpenFolder?.addEventListener('click', openActiveActressFolder);
   }
 
   // =========================================================================
@@ -1594,7 +1524,17 @@
   }
 
   function openActressProfileDrawer(entry) {
-    if (!entry) return;
+    if (!entry) {
+      entry = state.actresses.find(e => e.actress.name === state.activeActressName);
+      if (!entry && state.actresses.length > 0) {
+        entry = state.actresses[0];
+        state.activeActressName = entry.actress.name;
+      }
+    }
+    if (!entry) {
+      showToast('Please select or follow an actress first', 'info');
+      return;
+    }
     const a = entry.actress;
     const releases = entry.releases || [];
     const total = entry.total || releases.length;
@@ -1613,75 +1553,77 @@
     // Extract unique studios/makers from releases
     const makers = [...new Set(releases.map(r => r.maker).filter(Boolean))];
 
-    elements.drawerContent.innerHTML = `
-      <div class="drawer-hero">
-        <img class="drawer-hero-avatar" src="${avatar}" alt="Avatar of ${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
-        <h2>${escapeHtml(a.name)}</h2>
-        <div class="drawer-ja">${escapeHtml(a.ja_name || '')}</div>
-        ${a.r18_id ? `<div style="font-size: 0.78rem; color: var(--accent-cyan); margin-top: 0.35rem; font-family: monospace;">R18.dev ID: #${a.r18_id}</div>` : ''}
-      </div>
+    if (elements.drawerContent) {
+      elements.drawerContent.innerHTML = `
+        <div class="drawer-hero">
+          <img class="drawer-hero-avatar" src="${avatar}" alt="Avatar of ${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+          <h2>${escapeHtml(a.name)}</h2>
+          <div class="drawer-ja">${escapeHtml(a.ja_name || '')}</div>
+          ${a.r18_id ? `<div style="font-size: 0.78rem; color: var(--accent-cyan); margin-top: 0.35rem; font-family: monospace;">R18.dev ID: #${a.r18_id}</div>` : ''}
+        </div>
 
-      <div class="drawer-progress-box">
-        <div class="drawer-progress-header">
-          <span>Collection Progress</span>
-          <span>${pct}% (${dl}/${total})</span>
-        </div>
-        <div class="drawer-progress-bar">
-          <div class="drawer-progress-fill" style="width: ${pct}%;"></div>
-        </div>
-      </div>
-
-      <div class="drawer-stats-grid">
-        <div class="drawer-stat-card">
-          <div class="drawer-stat-val">${total}</div>
-          <div class="drawer-stat-label">Total Titles</div>
-        </div>
-        <div class="drawer-stat-card">
-          <div class="drawer-stat-val" style="color: var(--success);">🟢 ${dl}</div>
-          <div class="drawer-stat-label">In Library</div>
-        </div>
-        <div class="drawer-stat-card">
-          <div class="drawer-stat-val" style="color: var(--accent-pink);">🔴 ${missing}</div>
-          <div class="drawer-stat-label">Missing / New</div>
-        </div>
-        <div class="drawer-stat-card">
-          <div class="drawer-stat-val" style="color: var(--primary);">👁️ ${watched}</div>
-          <div class="drawer-stat-label">Watched</div>
-        </div>
-      </div>
-
-      ${makers.length > 0 ? `
-        <div>
-          <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem; text-transform: uppercase;">Studios & Labels</h4>
-          <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
-            ${makers.map(m => `<span class="pill" style="background: rgba(255,255,255,0.06); font-size: 0.78rem; border: 1px solid rgba(255,255,255,0.1);">${escapeHtml(m)}</span>`).join('')}
+        <div class="drawer-progress-box">
+          <div class="drawer-progress-header">
+            <span>Collection Progress</span>
+            <span>${pct}% (${dl}/${total})</span>
+          </div>
+          <div class="drawer-progress-bar">
+            <div class="drawer-progress-fill" style="width: ${pct}%;"></div>
           </div>
         </div>
-      ` : ''}
 
-      <div class="drawer-links-box" style="margin-top: auto; padding-top: 1rem;">
-        <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="justify-content: center; text-decoration: none;">
-          <span>🌐</span> View Official Profile on R18.dev ↗
-        </a>
-        <button class="btn btn-secondary" onclick="window.app.trackTitleToActress('${escapeHtml(a.name)}')">
-          <span>+</span> Track New JAV-ID
-        </button>
-        <button class="btn btn-secondary" onclick="window.app.refreshSingleActress('${escapeHtml(a.name)}', this)">
-          <span>🔄</span> Refresh Releases
-        </button>
-        <button class="btn btn-secondary btn-danger-hover" onclick="window.app.unfollowActress('${escapeHtml(a.name)}')">
-          <span>🗑️</span> Unfollow Actress
-        </button>
-      </div>
-    `;
+        <div class="drawer-stats-grid">
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-val">${total}</div>
+            <div class="drawer-stat-label">Total Titles</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-val" style="color: var(--success);">🟢 ${dl}</div>
+            <div class="drawer-stat-label">In Library</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-val" style="color: var(--accent-pink);">🔴 ${missing}</div>
+            <div class="drawer-stat-label">Missing / New</div>
+          </div>
+          <div class="drawer-stat-card">
+            <div class="drawer-stat-val" style="color: var(--primary);">👁️ ${watched}</div>
+            <div class="drawer-stat-label">Watched</div>
+          </div>
+        </div>
 
-    elements.drawerActressProfile.classList.remove('hidden');
-    elements.drawerProfileBackdrop.classList.remove('hidden');
+        ${makers.length > 0 ? `
+          <div>
+            <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem; text-transform: uppercase;">Studios & Labels</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+              ${makers.map(m => `<span class="pill" style="background: rgba(255,255,255,0.06); font-size: 0.78rem; border: 1px solid rgba(255,255,255,0.1);">${escapeHtml(m)}</span>`).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="drawer-links-box" style="margin-top: auto; padding-top: 1rem;">
+          <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="justify-content: center; text-decoration: none;">
+            <span>🌐</span> View Official Profile on R18.dev ↗
+          </a>
+          <button class="btn btn-secondary" onclick="window.app.trackTitleToActress('${escapeHtml(a.name)}')">
+            <span>+</span> Track New JAV-ID
+          </button>
+          <button class="btn btn-secondary" onclick="window.app.refreshSingleActress('${escapeHtml(a.name)}', this)">
+            <span>🔄</span> Refresh Releases
+          </button>
+          <button class="btn btn-secondary btn-danger-hover" onclick="window.app.unfollowActress('${escapeHtml(a.name)}')">
+            <span>🗑️</span> Unfollow Actress
+          </button>
+        </div>
+      `;
+    }
+
+    elements.drawerActressProfile?.classList.remove('hidden');
+    elements.drawerProfileBackdrop?.classList.remove('hidden');
   }
 
   function closeActressProfileDrawer() {
-    elements.drawerActressProfile.classList.add('hidden');
-    elements.drawerProfileBackdrop.classList.add('hidden');
+    elements.drawerActressProfile?.classList.add('hidden');
+    elements.drawerProfileBackdrop?.classList.add('hidden');
   }
 
   function renderActressHub() {
@@ -2245,6 +2187,206 @@
     }
   }
 
+  async function openActiveActressFolder() {
+    let activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+    if (!activeEntry && state.actresses.length > 0) {
+      activeEntry = state.actresses[0];
+      state.activeActressName = activeEntry.actress.name;
+    }
+    if (!activeEntry) {
+      showToast('Please select an actress first', 'warning');
+      return;
+    }
+    const dl = (activeEntry.releases || []).find(r => r.is_downloaded);
+    const folderToOpen = dl?.organized_folder || dl?.library_path || '';
+    const movieID = dl?.movie_id || '';
+    await openFolder(movieID, folderToOpen, activeEntry.actress.name);
+  }
+
+  async function unfollowActiveActress() {
+    let targetName = state.activeActressName;
+    if (!targetName && state.actresses.length > 0) {
+      targetName = state.actresses[0].actress.name;
+    }
+    if (!targetName) return;
+    if (confirm(`Unfollow ${targetName}?`)) {
+      await unfollowActress(targetName);
+      state.activeActressName = null;
+      await loadActressesData();
+    }
+  }
+
+  function trackTitleActiveActress() {
+    let targetName = state.activeActressName;
+    if (!targetName && state.actresses.length > 0) {
+      targetName = state.actresses[0].actress.name;
+      state.activeActressName = targetName;
+    }
+    if (targetName) {
+      trackTitleToActress(targetName);
+    } else {
+      showToast('Please select or follow an actress first', 'info');
+    }
+  }
+
+  function refreshActiveActress(btn) {
+    let targetName = state.activeActressName;
+    if (!targetName && state.actresses.length > 0) {
+      targetName = state.actresses[0].actress.name;
+      state.activeActressName = targetName;
+    }
+    if (targetName) {
+      refreshSingleActress(targetName, btn);
+    } else {
+      showToast('Please select or follow an actress first', 'info');
+    }
+  }
+
+  async function refreshAllActresses(btn) {
+    if (btn) btn.classList.add('loading-spin');
+    showToast('Refreshing all actress releases... 🔄', 'info');
+    try {
+      await loadActressesData();
+      showToast('All actress releases updated! ✅', 'success');
+    } catch (err) {
+      showToast('Error refreshing releases: ' + err.message, 'danger');
+    } finally {
+      if (btn) btn.classList.remove('loading-spin');
+    }
+  }
+
+  async function followActressFromInput() {
+    const name = elements.inputActressName?.value?.trim();
+    if (!name) {
+      showToast('Please enter an actress name', 'warning');
+      return;
+    }
+    try {
+      showToast(`Adding and following ${name}... ⏳`, 'info');
+      await fetch('/api/actresses/follow', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name })
+      });
+      if (elements.inputActressName) elements.inputActressName.value = '';
+      state.activeActressName = name;
+      showToast(`Followed ${name} ⭐`, 'success');
+      await loadActressesData();
+    } catch (err) {
+      showToast('Error following actress: ' + err.message, 'danger');
+    }
+  }
+
+  function clearSearch() {
+    if (elements.searchInput) elements.searchInput.value = '';
+    state.searchQuery = '';
+    elements.searchClear?.classList.add('hidden');
+    elements.searchInput?.focus();
+    renderMoviesGrid();
+  }
+
+  function setDensity(cols) {
+    if (!cols) return;
+    state.gridCols = cols;
+    localStorage.setItem('r19dev_grid_cols', cols);
+    applyGridDensity(cols);
+  }
+
+  function rescanDirectory() {
+    const current = state.activeDir || '';
+    const newPath = prompt('Enter folder path to scan for JAV files:', current);
+    if (newPath !== null && newPath.trim() !== '') {
+      startScanStream(newPath.trim());
+    }
+  }
+
+  function scrapeAll() {
+    scrapeAllMatched();
+  }
+
+  function startOrganize() {
+    startOrganizeStream();
+  }
+
+  function toggleAutoScroll() {
+    state.logAutoScroll = !state.logAutoScroll;
+    if (state.logAutoScroll) {
+      if (elements.organizerLog) {
+        elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+      }
+      elements.btnResumeScroll?.classList.add('hidden');
+      if (elements.logScrollBadge) {
+        elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
+        elements.logScrollBadge.classList.remove('paused');
+      }
+      elements.btnToggleAutoscroll?.classList.add('active');
+      showToast('Auto-scroll resumed ⬇️', 'info');
+    } else {
+      if (elements.logScrollBadge) {
+        elements.logScrollBadge.textContent = 'Auto-Scroll: PAUSED';
+        elements.logScrollBadge.classList.add('paused');
+      }
+      elements.btnToggleAutoscroll?.classList.remove('active');
+      showToast('Auto-scroll paused ⏸️', 'info');
+    }
+  }
+
+  async function copyOrganizerLog() {
+    const text = elements.organizerLog?.textContent || '';
+    if (!text.trim()) {
+      showToast('No logs to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('📋 Copied console log to clipboard!', 'success');
+    } catch (err) {
+      showToast('Failed to copy: ' + err.message, 'danger');
+    }
+  }
+
+  function clearOrganizerLog() {
+    if (elements.organizerLog) elements.organizerLog.textContent = 'Console cleared.\n';
+    if (elements.btnResumeScroll) elements.btnResumeScroll.classList.add('hidden');
+  }
+
+  function resumeAutoScroll() {
+    state.logAutoScroll = true;
+    if (elements.organizerLog) {
+      elements.organizerLog.scrollTop = elements.organizerLog.scrollHeight;
+    }
+    elements.btnResumeScroll?.classList.add('hidden');
+    if (elements.logScrollBadge) {
+      elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
+      elements.logScrollBadge.classList.remove('paused');
+    }
+    elements.btnToggleAutoscroll?.classList.add('active');
+  }
+
+  async function clearHistory() {
+    if (!confirm('ต้องการล้างประวัติการจัดระเบียบทั้งหมดใช่หรือไม่? (Clear all history?)')) return;
+    try {
+      const res = await fetch('/api/history', { method: 'DELETE' });
+      if (res.ok) {
+        showToast('ล้างประวัติเรียบร้อยแล้ว', 'info');
+        openHistoryModal();
+      }
+    } catch (err) {
+      showToast('ไม่สามารถล้างประวัติได้: ' + err.message, 'danger');
+    }
+  }
+
+  async function copyHistoryLog() {
+    const text = elements.historyLogView?.textContent || '';
+    if (!text.trim()) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('📋 คัดลอกประวัติการทำงานเรียบร้อย', 'success');
+    } catch (err) {
+      showToast('ไม่สามารถคัดลอกได้: ' + err.message, 'danger');
+    }
+  }
+
   function openFolderByEl(el, e) {
     if (e) e.stopPropagation();
     const id = el.getAttribute('data-movie-id') || '';
@@ -2253,25 +2395,61 @@
     openFolder(id, path, actress);
   }
 
-  // Expose global app object for inline handlers
+  // Expose global app object for inline handlers and programmatic control
   window.app = {
+    // Navigation & Layout
+    switchTab,
+    setDensity,
+    rescanDirectory,
+
+    // Library Controls
+    clearSearch,
+    scrapeAll,
+    resetFilters,
+
+    // Modals
     openMovie: openMovieById,
+    closeModal,
     openGallery,
     openLightbox,
+    closeLightbox,
+    openHistoryModal,
+    closeHistoryModal,
+    clearHistory,
+    copyHistoryLog,
+
+    // Movie Detail Actions
     toggleWatched,
     toggleFavorite,
     setRating,
     toggleFollowActress,
-    unfollowActress,
-    trackTitleToActress,
-    refreshSingleActress,
     organizeSingle,
+    copyMovieId,
+
+    // Actress Hub & Chat UI Actions
+    selectActressContact,
+    followActressFromInput,
+    refreshAllActresses,
+    openActressProfileDrawer,
+    closeActressProfileDrawer,
+    unfollowActiveActress,
+    unfollowActress,
+    trackTitleActiveActress,
+    trackTitleToActress,
+    refreshActiveActress,
+    refreshSingleActress,
+    openActiveActressFolder,
+
+    // File Management
     openFolder,
     openFolderEl: openFolderByEl,
-    copyMovieId,
-    selectActressContact,
-    openActressProfileDrawer,
-    closeActressProfileDrawer
+
+    // Organizer Tab
+    startOrganize,
+    toggleAutoScroll,
+    copyOrganizerLog,
+    clearOrganizerLog,
+    resumeAutoScroll
   };
 
   document.addEventListener('DOMContentLoaded', init);

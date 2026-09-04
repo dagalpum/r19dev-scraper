@@ -121,7 +121,15 @@ func (s *Server) Handler() (http.Handler, error) {
 	}
 
 	fileServer := http.FileServer(http.FS(subFS))
-	mux.Handle("/", fileServer)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css") || p == "/" || strings.HasSuffix(p, ".html") {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 
 	return s.loggingMiddleware(mux), nil
 }
@@ -1065,6 +1073,43 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
 				targetPath = cand
 				break
+			}
+		}
+
+		// If exact path not found, search directories case-insensitively and without whitespace
+		if targetPath == "" {
+			normActress := strings.ToLower(strings.ReplaceAll(req.Actress, " ", ""))
+			libDirs := []string{
+				filepath.Join(s.targetDir, "JAV_Library"),
+				s.targetDir,
+				"/Volumes/home/BT/2026/JAV_Library",
+			}
+			for _, libDir := range libDirs {
+				if entries, err := os.ReadDir(libDir); err == nil {
+					for _, entry := range entries {
+						if entry.IsDir() {
+							normEntry := strings.ToLower(strings.ReplaceAll(entry.Name(), " ", ""))
+							if normEntry == normActress || strings.Contains(normEntry, normActress) || strings.Contains(normActress, normEntry) {
+								targetPath = filepath.Join(libDir, entry.Name())
+								break
+							}
+						}
+					}
+				}
+				if targetPath != "" {
+					break
+				}
+			}
+		}
+
+		// Ultimate fallback: if actress has no folder yet, open JAV_Library directory
+		if targetPath == "" {
+			for _, libDir := range []string{filepath.Join(s.targetDir, "JAV_Library"), "/Volumes/home/BT/2026/JAV_Library", s.targetDir} {
+				if fi, err := os.Stat(libDir); err == nil && fi.IsDir() {
+					targetPath = libDir
+					fmt.Printf("ℹ️  [Finder] No specific folder for actress '%s' yet, opening root library: %s\n", req.Actress, libDir)
+					break
+				}
 			}
 		}
 	}

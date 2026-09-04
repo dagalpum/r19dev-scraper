@@ -2590,16 +2590,19 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 9998;
   opacity: 1;
   transition: opacity 0.3s ease;
+  cursor: pointer;
 }
 
 .drawer-backdrop.hidden {
-  display: none;
+  display: none !important;
   opacity: 0;
+  pointer-events: none;
 }
 
 .drawer-profile {
@@ -2607,12 +2610,12 @@ body {
   top: 0;
   right: 0;
   bottom: 0;
-  width: 420px;
-  max-width: 90vw;
+  width: 440px;
+  max-width: 92vw;
   background: #161925;
   border-left: 1px solid var(--border-subtle);
-  box-shadow: -10px 0 35px rgba(0, 0, 0, 0.7);
-  z-index: 1001;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.8);
+  z-index: 9999;
   display: flex;
   flex-direction: column;
   transform: translateX(0);
@@ -2620,6 +2623,7 @@ body {
 }
 
 .drawer-profile.hidden {
+  display: none !important;
   transform: translateX(100%);
   pointer-events: none;
 }

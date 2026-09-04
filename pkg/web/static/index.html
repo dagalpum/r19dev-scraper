@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/vendor/photoswipe.css">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=2.2">
 </head>
 <body>
   <!-- WCAG Skip Link -->
@@ -28,17 +28,17 @@
       </div>
 
       <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
-        <button id="tab-btn-library" class="nav-tab active" data-tab="library" role="tab" aria-selected="true" aria-controls="tab-library">
+        <button id="tab-btn-library" class="nav-tab active" data-tab="library" role="tab" aria-selected="true" aria-controls="tab-library" onclick="window.app.switchTab('library')">
           <span class="tab-icon" aria-hidden="true">📁</span>
           <span>Library</span>
           <span class="badge-count" id="count-library" aria-label="Total files">0</span>
         </button>
-        <button id="tab-btn-actresses" class="nav-tab" data-tab="actresses" role="tab" aria-selected="false" aria-controls="tab-actresses">
+        <button id="tab-btn-actresses" class="nav-tab" data-tab="actresses" role="tab" aria-selected="false" aria-controls="tab-actresses" onclick="window.app.switchTab('actresses')">
           <span class="tab-icon" aria-hidden="true">⭐</span>
           <span>Actresses</span>
           <span class="badge-count" id="count-actresses" aria-label="Followed actresses count">0</span>
         </button>
-        <button id="tab-btn-organizer" class="nav-tab" data-tab="organizer" role="tab" aria-selected="false" aria-controls="tab-organizer">
+        <button id="tab-btn-organizer" class="nav-tab" data-tab="organizer" role="tab" aria-selected="false" aria-controls="tab-organizer" onclick="window.app.switchTab('organizer')">
           <span class="tab-icon" aria-hidden="true">📂</span>
           <span>NAS Organizer</span>
         </button>
@@ -49,7 +49,7 @@
           <span class="dir-icon" aria-hidden="true">📂</span>
           <span class="dir-name" id="label-active-dir">/</span>
         </div>
-        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory" aria-label="Rescan Directory">
+        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory" aria-label="Rescan Directory" onclick="window.app.rescanDirectory()">
           <span class="icon" aria-hidden="true">🔄</span> Rescan
         </button>
       </div>
@@ -98,7 +98,7 @@
               <label for="search-input" class="sr-only">Search library</label>
               <span class="search-icon" aria-hidden="true">🔍</span>
               <input type="text" id="search-input" placeholder="Search by JAV ID, title, actress, studio..." autocomplete="off">
-              <button id="search-clear" class="btn-clear hidden" aria-label="Clear search">×</button>
+              <button id="search-clear" class="btn-clear hidden" aria-label="Clear search" onclick="window.app.clearSearch()">×</button>
             </div>
 
             <div class="sort-box">
@@ -115,19 +115,19 @@
             <!-- Cards Per Row Density Selector -->
             <div class="density-group" role="group" aria-label="Cards per row view density">
               <span class="density-label" id="density-label">Cards:</span>
-              <button class="btn-density" data-cols="1" title="1 card per row (Showcase cover)" aria-label="1 card per row">1</button>
-              <button class="btn-density" data-cols="2" title="2 cards per row (Large cover)" aria-label="2 cards per row">2</button>
-              <button class="btn-density" data-cols="3" title="3 cards per row" aria-label="3 cards per row">3</button>
-              <button class="btn-density" data-cols="4" title="4 cards per row" aria-label="4 cards per row">4</button>
-              <button class="btn-density" data-cols="5" title="5 cards per row" aria-label="5 cards per row">5</button>
-              <button class="btn-density active" data-cols="auto" title="Auto responsive" aria-label="Auto responsive">Auto</button>
+              <button class="btn-density" data-cols="1" title="1 card per row (Showcase cover)" aria-label="1 card per row" onclick="window.app.setDensity(this.dataset.cols)">1</button>
+              <button class="btn-density" data-cols="2" title="2 cards per row (Large cover)" aria-label="2 cards per row" onclick="window.app.setDensity(this.dataset.cols)">2</button>
+              <button class="btn-density" data-cols="3" title="3 cards per row" aria-label="3 cards per row" onclick="window.app.setDensity(this.dataset.cols)">3</button>
+              <button class="btn-density" data-cols="4" title="4 cards per row" aria-label="4 cards per row" onclick="window.app.setDensity(this.dataset.cols)">4</button>
+              <button class="btn-density" data-cols="5" title="5 cards per row" aria-label="5 cards per row" onclick="window.app.setDensity(this.dataset.cols)">5</button>
+              <button class="btn-density active" data-cols="auto" title="Auto responsive" aria-label="Auto responsive" onclick="window.app.setDensity(this.dataset.cols)">Auto</button>
             </div>
 
             <div class="action-buttons">
-              <button id="btn-scrape-all" class="btn btn-primary btn-sm" aria-label="Scrape all matched movies">
+              <button id="btn-scrape-all" class="btn btn-primary btn-sm" aria-label="Scrape all matched movies" onclick="window.app.scrapeAll()">
                 <span class="icon" aria-hidden="true">⚡</span> Scrape All
               </button>
-              <button id="btn-organize-all" class="btn btn-accent btn-sm" aria-label="Batch organize to NAS">
+              <button id="btn-organize-all" class="btn btn-accent btn-sm" aria-label="Batch organize to NAS" onclick="window.app.switchTab('organizer')">
                 <span class="icon" aria-hidden="true">📂</span> Batch Organize
               </button>
             </div>
@@ -179,7 +179,7 @@
                 </select>
               </div>
 
-              <button id="btn-reset-filters" class="btn btn-secondary btn-sm hidden" title="Reset all filters to default">
+              <button id="btn-reset-filters" class="btn btn-secondary btn-sm hidden" title="Reset all filters to default" onclick="window.app.resetFilters()">
                 ✕ Reset
               </button>
             </div>
@@ -218,7 +218,7 @@
                 <span id="chat-friends-count" class="badge-count">0</span>
               </div>
               <div class="chat-sidebar-actions">
-                <button id="btn-refresh-actresses" class="btn-icon-sm" title="Refresh all actress releases">
+                <button id="btn-refresh-actresses" class="btn-icon-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
                   <span class="icon">🔄</span>
                 </button>
               </div>
@@ -231,7 +231,7 @@
 
             <div class="chat-add-friend-box">
               <input type="text" id="input-actress-name" placeholder="+ Add / Follow Actress" />
-              <button id="btn-add-actress" class="btn btn-primary btn-sm">
+              <button id="btn-add-actress" class="btn btn-primary btn-sm" onclick="window.app.followActressFromInput()">
                 <span>+</span> Follow
               </button>
             </div>
@@ -267,13 +267,13 @@
               </div>
 
               <div id="chat-header-controls" class="chat-room-controls hidden">
-                <button id="btn-open-profile-drawer" class="btn btn-secondary btn-sm" title="View Actress Profile & Stats">
+                <button id="btn-open-profile-drawer" class="btn btn-secondary btn-sm" title="View Actress Profile & Stats" onclick="window.app.openActressProfileDrawer()">
                   <span>👤</span> Profile & Stats
                 </button>
                 <a id="link-header-r18" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View Official R18.dev Profile">
                   <span>🌐</span> R18.dev ↗
                 </a>
-                <button id="btn-header-unfollow" class="btn btn-secondary btn-sm btn-danger-hover" title="Unfollow Actress">
+                <button id="btn-header-unfollow" class="btn btn-secondary btn-sm btn-danger-hover" title="Unfollow Actress" onclick="window.app.unfollowActiveActress()">
                   <span>🗑️</span>
                 </button>
               </div>
@@ -291,31 +291,19 @@
             <!-- Bottom Quick Action Bar -->
             <footer id="chat-action-bar" class="chat-action-bar hidden">
               <div class="chat-quick-actions">
-                <button id="btn-chat-track-title" class="btn btn-secondary btn-sm">
+                <button id="btn-chat-track-title" class="btn btn-secondary btn-sm" onclick="window.app.trackTitleActiveActress()">
                   <span class="icon">+</span> Track JAV-ID
                 </button>
-                <button id="btn-chat-refresh" class="btn btn-secondary btn-sm">
+                <button id="btn-chat-refresh" class="btn btn-secondary btn-sm" onclick="window.app.refreshActiveActress(this)">
                   <span class="icon">🔄</span> Refresh Releases
                 </button>
-                <button id="btn-chat-open-folder" class="btn btn-secondary btn-sm">
+                <button id="btn-chat-open-folder" class="btn btn-secondary btn-sm" onclick="window.app.openActiveActressFolder()">
                   <span class="icon">📂</span> Open Folder in Finder
                 </button>
               </div>
             </footer>
           </main>
         </div>
-
-        <!-- SLIDE-OVER PROFILE DRAWER -->
-        <div id="drawer-profile-backdrop" class="drawer-backdrop hidden"></div>
-        <aside id="drawer-actress-profile" class="drawer-profile hidden" aria-label="Actress Profile & Statistics">
-          <div class="drawer-header">
-            <h3>Actress Profile & Stats</h3>
-            <button id="btn-close-drawer" class="btn-icon-sm" aria-label="Close Profile Drawer">✕</button>
-          </div>
-          <div id="drawer-content" class="drawer-body">
-            <!-- Populated via app.js -->
-          </div>
-        </aside>
       </section>
 
       <!-- TAB 3: NAS ORGANIZER -->
@@ -347,7 +335,7 @@
             </div>
 
             <div class="form-actions">
-              <button type="button" id="btn-start-organize" class="btn btn-primary btn-lg">
+              <button type="button" id="btn-start-organize" class="btn btn-primary btn-lg" onclick="window.app.startOrganize()">
                 <span class="icon" aria-hidden="true">🚀</span> Start Organize
               </button>
             </div>
@@ -373,23 +361,23 @@
                 <span id="log-scroll-badge" class="log-badge-auto">Auto-Scroll: ON</span>
               </div>
               <div class="log-header-actions">
-                <button id="btn-toggle-autoscroll" class="btn-log-action active" title="Toggle Auto-Scroll" aria-label="Toggle Auto-Scroll">
+                <button id="btn-toggle-autoscroll" class="btn-log-action active" title="Toggle Auto-Scroll" aria-label="Toggle Auto-Scroll" onclick="window.app.toggleAutoScroll()">
                   <span id="autoscroll-icon">⏸️</span> <span id="autoscroll-text">Auto-Scroll</span>
                 </button>
-                <button id="btn-copy-log" class="btn-log-action" title="Copy Log to Clipboard" aria-label="Copy console log">
+                <button id="btn-copy-log" class="btn-log-action" title="Copy Log to Clipboard" aria-label="Copy console log" onclick="window.app.copyOrganizerLog()">
                   📋 Copy
                 </button>
-                <button id="btn-view-history" class="btn-log-action" title="View past operations history" aria-label="View history">
+                <button id="btn-view-history" class="btn-log-action" title="View past operations history" aria-label="View history" onclick="window.app.openHistoryModal()">
                   📜 History
                 </button>
-                <button id="btn-clear-log" class="btn-log-action btn-clear-log" title="Clear console log" aria-label="Clear console log">
+                <button id="btn-clear-log" class="btn-log-action btn-clear-log" title="Clear console log" aria-label="Clear console log" onclick="window.app.clearOrganizerLog()">
                   🗑️ Clear
                 </button>
               </div>
             </div>
             <div class="log-container">
               <pre id="organizer-log" class="console-log" aria-live="polite">Ready. Click "Start Organize" to preview or process files.</pre>
-              <button id="btn-resume-scroll" class="btn-resume-scroll hidden" title="Scroll to bottom and resume auto-scroll">
+              <button id="btn-resume-scroll" class="btn-resume-scroll hidden" title="Scroll to bottom and resume auto-scroll" onclick="window.app.resumeAutoScroll()">
                 ⬇️ New logs below (Click to resume)
               </button>
             </div>
@@ -399,10 +387,22 @@
 
     </main>
 
+    <!-- SLIDE-OVER PROFILE DRAWER -->
+    <div id="drawer-profile-backdrop" class="drawer-backdrop hidden" onclick="window.app.closeActressProfileDrawer()"></div>
+    <aside id="drawer-actress-profile" class="drawer-profile hidden" aria-label="Actress Profile & Statistics">
+      <div class="drawer-header">
+        <h3>Actress Profile & Stats</h3>
+        <button id="btn-close-drawer" class="btn-icon-sm" aria-label="Close Profile Drawer" onclick="window.app.closeActressProfileDrawer()">✕</button>
+      </div>
+      <div id="drawer-content" class="drawer-body">
+        <!-- Populated via app.js -->
+      </div>
+    </aside>
+
     <!-- MOVIE DETAIL MODAL / INSPECTOR (Full-Width Hero Cover) -->
     <div id="modal-movie" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-movie-title">
       <div class="modal-card">
-        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close dialog">×</button>
+        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close dialog" onclick="window.app.closeModal()">×</button>
 
         <div class="modal-body" id="modal-content">
           <!-- Dynamically populated via app.js -->
@@ -422,8 +422,8 @@
             </div>
           </div>
           <div class="modal-header-actions">
-            <button id="btn-clear-history" class="btn-log-action btn-danger" title="Clear all history">🗑️ Clear All</button>
-            <button id="btn-close-history" class="btn-modal-close" title="Close (Esc)">×</button>
+            <button id="btn-clear-history" class="btn-log-action btn-danger" title="Clear all history" onclick="window.app.clearHistory()">🗑️ Clear All</button>
+            <button id="btn-close-history" class="btn-modal-close" title="Close (Esc)" onclick="window.app.closeHistoryModal()">×</button>
           </div>
         </div>
         <div class="modal-body-history">
@@ -434,7 +434,7 @@
           <div class="history-detail-panel">
             <div class="history-detail-header" id="history-detail-header">
               <span id="history-detail-title">Select an operation to view details</span>
-              <button id="btn-copy-history-log" class="btn-log-action hidden" title="Copy Log">📋 Copy Log</button>
+              <button id="btn-copy-history-log" class="btn-log-action hidden" title="Copy Log" onclick="window.app.copyHistoryLog()">📋 Copy Log</button>
             </div>
             <pre class="console-log history-console-log" id="history-log-view">Select an operation from the left to view its complete audit log.</pre>
           </div>
@@ -444,7 +444,7 @@
 
     <!-- IMAGE LIGHTBOX MODAL -->
     <div id="lightbox" class="lightbox-backdrop hidden" role="dialog" aria-modal="true" aria-label="Image preview">
-      <button id="btn-close-lightbox" class="btn-lightbox-close" aria-label="Close image preview">×</button>
+      <button id="btn-close-lightbox" class="btn-lightbox-close" aria-label="Close image preview" onclick="window.app.closeLightbox()">×</button>
       <img id="lightbox-img" src="" alt="Full Resolution Screenshot" />
       <div id="lightbox-caption" class="lightbox-caption" aria-live="polite"></div>
     </div>
@@ -454,6 +454,6 @@
   </div>
 
   <script src="/vendor/lucide.min.js"></script>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=2.2"></script>
 </body>
 </html>

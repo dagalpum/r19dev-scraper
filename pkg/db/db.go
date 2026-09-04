@@ -22,6 +22,7 @@ type ActressRecord struct {
 	FollowedAt    time.Time  `json:"followed_at"`
 	LastCheckedAt *time.Time `json:"last_checked_at,omitempty"`
 	Notes         string     `json:"notes"`
+	R18ID         int        `json:"r18_id,omitempty"`
 	TotalMovies   int        `json:"total_movies,omitempty"`
 	Downloaded    int        `json:"downloaded,omitempty"`
 	Watched       int        `json:"watched,omitempty"`
@@ -153,7 +154,8 @@ func (d *DB) initSchema() error {
 		image_url TEXT,
 		followed_at DATETIME,
 		last_checked_at DATETIME,
-		notes TEXT
+		notes TEXT,
+		r18_id INTEGER DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS movies (
@@ -220,7 +222,44 @@ func (d *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_operation_created ON operation_history(created_at DESC);
 	`
 	_, err := d.conn.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+	// Safe migration for existing installations
+	_, _ = d.conn.Exec("ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;")
+	_ = d.backfillActressR18IDs()
+	return nil
+}
+
+func (d *DB) backfillActressR18IDs() error {
+	rows, err := d.conn.Query("SELECT actresses_json FROM movies WHERE actresses_json != '' AND actresses_json != '[]'")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type actHelper struct {
+		ID       int    `json:"id"`
+		Name     string `json:"name"`
+		JaName   string `json:"ja_name"`
+	}
+
+	for rows.Next() {
+		var actJSON string
+		if err := rows.Scan(&actJSON); err != nil {
+			continue
+		}
+		var acts []actHelper
+		if err := json.Unmarshal([]byte(actJSON), &acts); err != nil {
+			continue
+		}
+		for _, act := range acts {
+			if act.ID != 0 && act.Name != "" {
+				_, _ = d.conn.Exec("UPDATE actresses SET r18_id = ? WHERE (name = ? COLLATE NOCASE OR ja_name = ?) AND (r18_id IS NULL OR r18_id = 0)", act.ID, act.Name, act.JaName)
+			}
+		}
+	}
+	return nil
 }
 
 // --- Actress Operations ---
@@ -283,7 +322,7 @@ func (d *DB) ListFollowedActresses() ([]ActressRecord, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	rows, err := d.conn.Query("SELECT name, ja_name, image_url, followed_at, last_checked_at, notes FROM actresses ORDER BY name ASC")
+	rows, err := d.conn.Query("SELECT name, ja_name, image_url, followed_at, last_checked_at, notes, COALESCE(r18_id, 0) FROM actresses ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +332,7 @@ func (d *DB) ListFollowedActresses() ([]ActressRecord, error) {
 	for rows.Next() {
 		var a ActressRecord
 		var lastChecked sql.NullTime
-		if err := rows.Scan(&a.Name, &a.JaName, &a.ImageURL, &a.FollowedAt, &lastChecked, &a.Notes); err != nil {
+		if err := rows.Scan(&a.Name, &a.JaName, &a.ImageURL, &a.FollowedAt, &lastChecked, &a.Notes, &a.R18ID); err != nil {
 			return nil, err
 		}
 		if lastChecked.Valid {
@@ -357,6 +396,13 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 		m.ReleaseDate, m.RuntimeMinutes, m.CoverURL, m.PosterURL, m.TrailerURL,
 		string(actressesJSON), string(genresJSON), string(screenshotsJSON), time.Now(),
 	)
+	if err == nil {
+		for _, act := range m.Actresses {
+			if act.ID != 0 && act.Name != "" {
+				_, _ = d.conn.Exec("UPDATE actresses SET r18_id = ? WHERE (name = ? COLLATE NOCASE OR ja_name = ?) AND (r18_id IS NULL OR r18_id = 0)", act.ID, act.Name, act.JaName)
+			}
+		}
+	}
 	return err
 }
 

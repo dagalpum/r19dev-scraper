@@ -99,6 +99,12 @@ r19dev-scraper/
 * The scanner executes `os.Lstat()` on every node; symlinks are filtered out to guarantee immunity from circular loops.
 * Regex matching uses boundary assertions `(?:^|[^a-zA-Z0-9])` instead of standard `\b` to avoid splitting on underscores.
 
+### 4.5 Actress Chat Architecture & R18 ID Management
+* **Interactive Chat Paradigm**: Actress Hub (`#tab-actresses`) is structured as a two-column chat application (Contacts list on left, dialogue stream on right).
+* **Conversational Releases**: Filmography announcements are presented as dialogue messages from the actress with cover jackets, dates, and copy ID buttons, paired with system status bubbles verifying Jellyfin organization paths or unacquired status.
+* **Official R18 Actress URLs**: Links to `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` avoiding the non-existent `/search/` route on R18.dev.
+* **Database Backfill**: `initSchema` executes `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;` and automatically triggers `backfillActressR18IDs()` on startup, extracting R18 actress IDs from cached `movies.actresses_json`.
+
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions

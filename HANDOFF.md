@@ -90,6 +90,10 @@ make test
    All batch/single operations are recorded in SQLite (`operation_history`) with complete console logs, counts, and status badges. The table auto-prunes entries older than 30 days or beyond 100 runs, guaranteeing zero disk clutter.
 6. **Smart Console Log Auto-Scroll & Copy**:
    The web console log pauses auto-scrolling when the user scrolls up, displays a floating resume button, and includes a one-click clipboard copy button.
+7. **Actress Hub Chat UI & Conversational Feed**:
+   Replaces conventional grids with a full-featured messaging app UI. The actress chats her releases chronologically, and the system verifies Jellyfin library status. Unacquired titles feature grayscale 90% covers that restore color on hover.
+8. **R18 ID Auto-Backfill & Profile Drawer**:
+   Stores `r18_id` in SQLite, auto-migrated and backfilled from `movies.actresses_json`. Generates verified R18 actress links (`?id={r18_id}&type=actress`) and powers the slide-over profile drawer with collection completeness statistics.
 
 ---
 
@@ -100,6 +104,9 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Persistent SQLite Database**: Stores user states, ratings, favorites, and organized status.
 - ✅ **NAS Organizer Pipeline**: Automatic atomic move/copy with multi-part consolidation.
 - ✅ **Operation History & Audit Trail**: SQLite-backed with auto-retention and Web UI viewer.
+- ✅ **Interactive Actress Chat UI**: Two-column LINE/Discord-style messaging feed with release cards.
+- ✅ **Slide-Over Profile Drawer**: Stats grid, collection progress bar, and verified R18.dev links.
+- ✅ **Clipboard Copy Ergonomics**: Instant `[📋 Copy ID]` buttons on all release cards and modals.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

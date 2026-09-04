@@ -274,6 +274,7 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 			thumb = "https://pics.dmm.co.jp/mono/actjpgs/" + thumb
 		}
 		movie.Actresses = append(movie.Actresses, Actress{
+			ID:       act.ID,
 			Name:     name,
 			JaName:   act.NameKanji,
 			ImageURL: thumb,

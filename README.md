@@ -15,13 +15,18 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **📊 Real-Time Streaming Progress Bars**: Live Server-Sent Events (SSE) stream progress bars for both **Scanning** (live file discovery & matching) and **NAS Organizing** (step-by-step progress, target path, and live console logs).
 - **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
 
-### ⭐ 2. Actress Hub & Filmography Tracker
-- **Follow & Track**: Follow favorite actresses by English romaji or Japanese kanji name.
-- **New Release Discovery**: Automatically cross-references an actress's complete filmography against your local video files:
-  - 🟢 **Downloaded**: Movie is present in your local disk / NAS library.
-  - 🔴 **Missing / New**: Released or announced titles not yet in your library.
-  - 👁️ **Watched / Unwatched**: Track your watch history.
-  - ⭐ **User Rating**: 1 to 5 star ratings stored in the local SQLite database.
+### ⭐ 2. Actress Hub: Interactive Chat UI & Filmography Tracker
+- **💬 Chat-Style Filmography Timeline**: An immersive messaging interface (LINE / Discord / Telegram style) where your followed actresses announce their releases chronologically:
+  - **Left Contacts Sidebar**: Real-time list of followed actresses with avatars, online status, latest release snippet, and badge count for missing releases. Includes an instant search filter and "+ Follow Actress" friend box.
+  - **Chat Dialogue Stream**: Left bubble shows the actress introducing her release with jacket cover, title, studio, release date, and `[📋 Copy ID]` button. Right bubble shows system responses confirming Jellyfin library status (`✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้ว` with folder path or `⏳ ยังไม่ได้ดาวน์โหลด`).
+  - **Missing Release Styling**: Unacquired titles are styled with a sleek 90% grayscale cover and dashed border, smoothly animating back to full vibrant color on hover.
+  - **Bottom Action Bar**: Quick access buttons for `[+ Track JAV-ID]`, `[🔄 Refresh Releases]`, and `[📂 Open Folder in Finder]`.
+- **👤 Slide-Over Profile & Stats Drawer**:
+  - Detailed actress profile with Japanese Kanji and Romaji names.
+  - **Collection Progress Bar**: Visual percentage bar showing library completeness (e.g. 67% collected).
+  - **Stats Grid**: Comprehensive counters for Total, Downloaded in Library, Missing, Watched, and Favorites.
+  - **Verified R18.dev Links**: Direct links using the official actress ID format: `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` (e.g. `1109487` for Hayasakakanon).
+- **📋 One-Click Copy ID**: Dedicated `[📋 Copy ID]` buttons on every release card and within the movie detail modal for effortless clipboard copying.
 
 ### 📂 3. NAS Directory Organizer & Jellyfin Pipeline
 - Organizes videos into the standardized folder structure:

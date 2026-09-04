@@ -32,6 +32,8 @@
     scanEventSource: null,
     orgEventSource: null,
     logAutoScroll: true,
+    activeActressName: null,
+    actressSearchQuery: '',
   };
 
   // DOM Selectors
@@ -74,8 +76,9 @@
     filterGenre: document.getElementById('filter-genre'),
     filterWatch: document.getElementById('filter-watch'),
     btnResetFilters: document.getElementById('btn-reset-filters'),
-    sortBy: document.getElementById('sort-by'),
-    densityButtons: document.querySelectorAll('.btn-density'),
+    sortSelect: document.getElementById('sort-select'),
+    btnGridShowcase: document.getElementById('btn-grid-showcase'),
+    btnGridDense: document.getElementById('btn-grid-dense'),
     btnScrapeAll: document.getElementById('btn-scrape-all'),
     btnOrganizeAll: document.getElementById('btn-organize-all'),
     statTotal: document.getElementById('stat-total'),
@@ -85,12 +88,35 @@
     moviesGrid: document.getElementById('movies-grid'),
     libraryEmpty: document.getElementById('library-empty'),
 
-    // Actresses
+    // Actress Chat Hub
     inputActressName: document.getElementById('input-actress-name'),
     btnAddActress: document.getElementById('btn-add-actress'),
     btnRefreshActresses: document.getElementById('btn-refresh-actresses'),
-    actressesContainer: document.getElementById('actresses-container'),
+    chatFriendsCount: document.getElementById('chat-friends-count'),
+    chatActressSearch: document.getElementById('chat-actress-search'),
+    chatContactsList: document.getElementById('chat-contacts-list'),
     actressesEmpty: document.getElementById('actresses-empty'),
+
+    chatActiveHeader: document.getElementById('chat-active-header'),
+    chatHeaderAvatar: document.getElementById('chat-header-avatar'),
+    chatHeaderName: document.getElementById('chat-header-name'),
+    chatHeaderJa: document.getElementById('chat-header-ja'),
+    chatHeaderSubtitle: document.getElementById('chat-header-subtitle'),
+    chatHeaderControls: document.getElementById('chat-header-controls'),
+    btnOpenProfileDrawer: document.getElementById('btn-open-profile-drawer'),
+    linkHeaderR18: document.getElementById('link-header-r18'),
+    btnHeaderUnfollow: document.getElementById('btn-header-unfollow'),
+
+    chatMessagesFeed: document.getElementById('chat-messages-feed'),
+    chatActionBar: document.getElementById('chat-action-bar'),
+    btnChatTrackTitle: document.getElementById('btn-chat-track-title'),
+    btnChatRefresh: document.getElementById('btn-chat-refresh'),
+    btnChatOpenFolder: document.getElementById('btn-chat-open-folder'),
+
+    drawerProfileBackdrop: document.getElementById('drawer-profile-backdrop'),
+    drawerActressProfile: document.getElementById('drawer-actress-profile'),
+    btnCloseDrawer: document.getElementById('btn-close-drawer'),
+    drawerContent: document.getElementById('drawer-content'),
 
     // Organizer
     orgSrcDir: document.getElementById('org-src-dir'),
@@ -577,10 +603,18 @@
           body: JSON.stringify({ name: name })
         });
         elements.inputActressName.value = '';
+        state.activeActressName = name;
         showToast(`Followed ${name} ⭐`, 'success');
-        loadActressesData();
+        await loadActressesData();
       } catch (err) {
         showToast('Error following actress: ' + err.message, 'danger');
+      }
+    });
+
+    elements.inputActressName?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        elements.btnAddActress?.click();
       }
     });
 
@@ -588,6 +622,53 @@
       showToast('Refreshing all actress releases... 🔄', 'info');
       await loadActressesData();
       showToast('All actress releases updated! ✅', 'success');
+    });
+
+    elements.chatActressSearch?.addEventListener('input', (e) => {
+      state.actressSearchQuery = (e.target.value || '').trim().toLowerCase();
+      renderActressHub();
+    });
+
+    elements.btnOpenProfileDrawer?.addEventListener('click', () => {
+      const activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+      if (activeEntry) {
+        openActressProfileDrawer(activeEntry);
+      }
+    });
+
+    elements.btnCloseDrawer?.addEventListener('click', closeActressProfileDrawer);
+    elements.drawerProfileBackdrop?.addEventListener('click', closeActressProfileDrawer);
+
+    elements.btnHeaderUnfollow?.addEventListener('click', async () => {
+      if (!state.activeActressName) return;
+      if (confirm(`Unfollow ${state.activeActressName}?`)) {
+        await unfollowActress(state.activeActressName);
+        state.activeActressName = null;
+        await loadActressesData();
+      }
+    });
+
+    elements.btnChatTrackTitle?.addEventListener('click', () => {
+      if (state.activeActressName) {
+        trackTitleToActress(state.activeActressName);
+      }
+    });
+
+    elements.btnChatRefresh?.addEventListener('click', (e) => {
+      if (state.activeActressName) {
+        refreshSingleActress(state.activeActressName, e.currentTarget);
+      }
+    });
+
+    elements.btnChatOpenFolder?.addEventListener('click', () => {
+      const activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+      if (!activeEntry) return;
+      const dl = (activeEntry.releases || []).find(r => r.is_downloaded);
+      if (dl && dl.movie_id) {
+        openFolder(dl.movie_id);
+      } else {
+        showToast(`No downloaded videos yet for ${state.activeActressName}`, 'warning');
+      }
     });
   }
 
@@ -1241,6 +1322,10 @@
       <div class="modal-body">
         <div class="modal-info">
           <h2 id="modal-movie-title">${escapeHtml(meta?.title || movie.files[0]?.name || 'No title')}</h2>
+          <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem;">
+            <span class="card-id" style="font-size: 0.95rem; font-weight: 700;">${escapeHtml(id)}</span>
+            <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-radius: 6px;" onclick="window.app.copyMovieId('${escapeHtml(id)}', event)" title="Copy ${escapeHtml(id)}">📋 Copy ID</button>
+          </div>
           <div class="ja-title">${escapeHtml(meta?.original_title || '')}</div>
 
           ${isOrganized ? `
@@ -1452,87 +1537,336 @@
   }
 
   // =========================================================================
-  // Actress Hub Rendering
+  // Actress Chat UI Rendering
   // =========================================================================
+  function copyMovieId(id, e) {
+    if (e) e.stopPropagation();
+    if (!id) return;
+    navigator.clipboard.writeText(id).then(() => {
+      showToast(`Copied ${id} to clipboard! 📋`, 'success');
+    }).catch(() => {
+      showToast(`Failed to copy ${id}`, 'danger');
+    });
+  }
+
+  function selectActressContact(name) {
+    state.activeActressName = name;
+    renderActressHub();
+  }
+
+  function openActressProfileDrawer(entry) {
+    if (!entry) return;
+    const a = entry.actress;
+    const releases = entry.releases || [];
+    const total = entry.total || releases.length;
+    const dl = entry.downloaded || 0;
+    const missing = entry.missing || 0;
+    const watched = entry.watched || 0;
+    const favs = entry.favorites || 0;
+    const pct = total > 0 ? Math.round((dl / total) * 100) : 0;
+
+    const r18Url = a.r18_id
+      ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
+      : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
+
+    const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+
+    // Extract unique studios/makers from releases
+    const makers = [...new Set(releases.map(r => r.maker).filter(Boolean))];
+
+    elements.drawerContent.innerHTML = `
+      <div class="drawer-hero">
+        <img class="drawer-hero-avatar" src="${avatar}" alt="Avatar of ${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+        <h2>${escapeHtml(a.name)}</h2>
+        <div class="drawer-ja">${escapeHtml(a.ja_name || '')}</div>
+        ${a.r18_id ? `<div style="font-size: 0.78rem; color: var(--accent-cyan); margin-top: 0.35rem; font-family: monospace;">R18.dev ID: #${a.r18_id}</div>` : ''}
+      </div>
+
+      <div class="drawer-progress-box">
+        <div class="drawer-progress-header">
+          <span>Collection Progress</span>
+          <span>${pct}% (${dl}/${total})</span>
+        </div>
+        <div class="drawer-progress-bar">
+          <div class="drawer-progress-fill" style="width: ${pct}%;"></div>
+        </div>
+      </div>
+
+      <div class="drawer-stats-grid">
+        <div class="drawer-stat-card">
+          <div class="drawer-stat-val">${total}</div>
+          <div class="drawer-stat-label">Total Titles</div>
+        </div>
+        <div class="drawer-stat-card">
+          <div class="drawer-stat-val" style="color: var(--success);">🟢 ${dl}</div>
+          <div class="drawer-stat-label">In Library</div>
+        </div>
+        <div class="drawer-stat-card">
+          <div class="drawer-stat-val" style="color: var(--accent-pink);">🔴 ${missing}</div>
+          <div class="drawer-stat-label">Missing / New</div>
+        </div>
+        <div class="drawer-stat-card">
+          <div class="drawer-stat-val" style="color: var(--primary);">👁️ ${watched}</div>
+          <div class="drawer-stat-label">Watched</div>
+        </div>
+      </div>
+
+      ${makers.length > 0 ? `
+        <div>
+          <h4 style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.6rem; text-transform: uppercase;">Studios & Labels</h4>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+            ${makers.map(m => `<span class="pill" style="background: rgba(255,255,255,0.06); font-size: 0.78rem; border: 1px solid rgba(255,255,255,0.1);">${escapeHtml(m)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      <div class="drawer-links-box" style="margin-top: auto; padding-top: 1rem;">
+        <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="justify-content: center; text-decoration: none;">
+          <span>🌐</span> View Official Profile on R18.dev ↗
+        </a>
+        <button class="btn btn-secondary" onclick="window.app.trackTitleToActress('${escapeHtml(a.name)}')">
+          <span>+</span> Track New JAV-ID
+        </button>
+        <button class="btn btn-secondary" onclick="window.app.refreshSingleActress('${escapeHtml(a.name)}', this)">
+          <span>🔄</span> Refresh Releases
+        </button>
+        <button class="btn btn-secondary btn-danger-hover" onclick="window.app.unfollowActress('${escapeHtml(a.name)}')">
+          <span>🗑️</span> Unfollow Actress
+        </button>
+      </div>
+    `;
+
+    elements.drawerActressProfile.classList.remove('hidden');
+    elements.drawerProfileBackdrop.classList.remove('hidden');
+  }
+
+  function closeActressProfileDrawer() {
+    elements.drawerActressProfile.classList.add('hidden');
+    elements.drawerProfileBackdrop.classList.add('hidden');
+  }
+
   function renderActressHub() {
-    elements.actressesContainer.innerHTML = '';
+    if (!elements.chatContactsList) return;
+
+    elements.chatFriendsCount.textContent = state.actresses.length;
+    elements.countActresses.textContent = state.actresses.length;
+
+    // Filter actresses by search
+    let list = state.actresses;
+    if (state.actressSearchQuery) {
+      const q = state.actressSearchQuery;
+      list = list.filter(entry => {
+        const name = (entry.actress.name || '').toLowerCase();
+        const ja = (entry.actress.ja_name || '').toLowerCase();
+        return name.includes(q) || ja.includes(q);
+      });
+    }
+
     elements.actressesEmpty.classList.toggle('hidden', state.actresses.length > 0);
 
-    state.actresses.forEach(entry => {
+    // If no active actress is selected, default to the first one or Hayasakakanon if available
+    if (!state.activeActressName && state.actresses.length > 0) {
+      const haya = state.actresses.find(e => e.actress.name.toLowerCase().includes('hayasaka'));
+      state.activeActressName = haya ? haya.actress.name : state.actresses[0].actress.name;
+    }
+
+    // 1. Render Left Sidebar Contacts
+    elements.chatContactsList.innerHTML = '';
+    list.forEach(entry => {
       const a = entry.actress;
       const releases = entry.releases || [];
-      const section = document.createElement('section');
-      section.className = 'actress-section';
-      section.setAttribute('aria-labelledby', `actress-title-${escapeHtml(a.name)}`);
-
+      const isActive = a.name === state.activeActressName;
       const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
 
-      let releasesHtml = '';
+      // Latest release snippet
+      let snippet = 'No releases recorded';
       if (releases.length > 0) {
-        releasesHtml = `
-          <div class="movies-grid grid-auto" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
-            ${releases.map(rel => {
-              const isMissing = !rel.is_downloaded;
-              const statusPill = isMissing
-                ? '<span class="pill pill-missing">🔴 Missing / New</span>'
-                : '<span class="pill pill-downloaded">🟢 Downloaded</span>';
-              const watched = rel.is_watched ? ' • 👁️ Watched' : '';
-              return `
-                <div class="movie-card ${isMissing ? 'movie-card-missing' : ''}" style="padding: 0.8rem; cursor: pointer;" tabindex="0" role="article" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openMovie('${escapeHtml(rel.movie_id)}');}">
-                  <img src="${rel.cover_url || '/placeholder.png'}" class="${isMissing ? 'cover-missing' : ''}" alt="Cover for ${escapeHtml(rel.movie_id)}" style="width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: var(--radius-sm); margin-bottom: 0.6rem;" />
-                  <div style="font-weight: 700; color: #fff; font-size: 0.9rem;">${escapeHtml(rel.movie_id)}</div>
-                  <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(rel.title)}</div>
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">
-                    ${statusPill}
-                    <span style="color: var(--text-muted);">${escapeHtml(rel.release_date || '')}${watched}</span>
-                  </div>
+        const latest = releases[0];
+        snippet = `${latest.movie_id} (${latest.release_date || 'Recent'})`;
+      }
+
+      const item = document.createElement('div');
+      item.className = `chat-contact-item ${isActive ? 'active' : ''}`;
+      item.setAttribute('role', 'listitem');
+      item.tabIndex = 0;
+      item.onclick = () => selectActressContact(a.name);
+      item.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectActressContact(a.name);
+        }
+      };
+
+      item.innerHTML = `
+        <div class="chat-avatar-wrapper">
+          <img class="chat-avatar-img" src="${avatar}" alt="Avatar of ${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+          <span class="status-dot online"></span>
+        </div>
+        <div class="chat-contact-info">
+          <div class="chat-contact-top">
+            <span class="chat-contact-name">${escapeHtml(a.name)}<span class="chat-contact-ja">${escapeHtml(a.ja_name || '')}</span></span>
+            ${entry.missing > 0 ? `<span class="chat-badge-missing" title="${entry.missing} titles missing">${entry.missing} New</span>` : ''}
+          </div>
+          <div class="chat-contact-snippet">${escapeHtml(snippet)}</div>
+        </div>
+      `;
+
+      elements.chatContactsList.appendChild(item);
+    });
+
+    // 2. Render Active Chat Feed & Header
+    const activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+    renderActiveActressChat(activeEntry);
+  }
+
+  function renderActiveActressChat(entry) {
+    if (!entry) {
+      elements.chatHeaderAvatar.src = '/placeholder.png';
+      elements.chatHeaderName.textContent = 'Select an Actress';
+      elements.chatHeaderJa.textContent = '';
+      elements.chatHeaderSubtitle.textContent = 'Select a contact on the left to view release timeline';
+      elements.chatHeaderControls.classList.add('hidden');
+      elements.chatActionBar.classList.add('hidden');
+      elements.chatMessagesFeed.innerHTML = `
+        <div class="chat-welcome-placeholder">
+          <div class="welcome-icon">💬</div>
+          <h3>Welcome to Actress Release Chat</h3>
+          <p>Select an actress on the left to see her releases, download status, and Jellyfin history!</p>
+        </div>
+      `;
+      return;
+    }
+
+    const a = entry.actress;
+    const releases = [...(entry.releases || [])];
+    const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+
+    // Update Header
+    elements.chatHeaderAvatar.src = avatar;
+    elements.chatHeaderName.textContent = a.name;
+    elements.chatHeaderJa.textContent = a.ja_name || '';
+    elements.chatHeaderSubtitle.textContent = `${entry.total} titles tracked • 🟢 ${entry.downloaded} Downloaded • 🔴 ${entry.missing} Missing`;
+    elements.chatHeaderControls.classList.remove('hidden');
+    elements.chatActionBar.classList.remove('hidden');
+
+    const r18Url = a.r18_id
+      ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
+      : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
+    elements.linkHeaderR18.href = r18Url;
+
+    if (releases.length === 0) {
+      elements.chatMessagesFeed.innerHTML = `
+        <div class="chat-welcome-placeholder">
+          <div class="welcome-icon">🎬</div>
+          <h3>No releases tracked yet for ${escapeHtml(a.name)}</h3>
+          <p>Click "+ Track JAV-ID" below to add her releases, or refresh from database.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Sort releases chronologically ascending (oldest to newest) for conversational flow
+    releases.sort((x, y) => (x.release_date || '').localeCompare(y.release_date || ''));
+
+    let feedHtml = '';
+    let lastDateGroup = '';
+
+    releases.forEach((rel, idx) => {
+      const relDate = rel.release_date || 'Unknown Date';
+      const dateGroup = relDate.slice(0, 7); // YYYY-MM
+      if (dateGroup !== lastDateGroup) {
+        feedHtml += `
+          <div class="chat-date-divider">
+            <span class="chat-date-badge">🗓️ Release Month: ${escapeHtml(dateGroup)}</span>
+          </div>
+        `;
+        lastDateGroup = dateGroup;
+      }
+
+      const isMissing = !rel.is_downloaded;
+      const isOrganized = Boolean(rel.organized_folder);
+      const isStaging = rel.is_downloaded && !isOrganized;
+
+      // 1. Actress Message Bubble (Announcement with Cover and Copy Button)
+      feedHtml += `
+        <div class="chat-msg-row actress">
+          <img class="chat-msg-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+          <div class="chat-bubble">
+            <div class="chat-bubble-text">
+              📢 สวัสดีค่ะ! ผลงานเรื่อง <strong>${escapeHtml(rel.movie_id)}</strong> วางจำหน่ายเมื่อวันที่ ${escapeHtml(rel.release_date || '-')} ค่ะ ฝากติดตามด้วยนะคะ! ✨
+            </div>
+            <div class="chat-embedded-card">
+              <div class="chat-card-cover-box ${isMissing ? 'missing' : ''}" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')">
+                <img src="${rel.cover_url || '/placeholder.png'}" alt="Cover ${escapeHtml(rel.movie_id)}" />
+              </div>
+              <div class="chat-card-body">
+                <div class="chat-card-id-row">
+                  <span class="chat-card-id">${escapeHtml(rel.movie_id)}</span>
+                  <button class="btn-copy-id" onclick="window.app.copyMovieId('${escapeHtml(rel.movie_id)}', event)" title="Copy ${escapeHtml(rel.movie_id)}">
+                    📋 Copy ID
+                  </button>
                 </div>
-              `;
-            }).join('')}
+                <div class="chat-card-title">${escapeHtml(rel.title)}</div>
+                <div class="chat-card-meta">
+                  <span>${escapeHtml(rel.maker || 'Studio')}</span>
+                  <button class="chat-btn-inspect" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')">
+                    🔍 ดูรายละเอียด
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // 2. User / System Response Bubble (Library & Jellyfin Status)
+      let userStatusHtml = '';
+      if (isOrganized) {
+        userStatusHtml = `
+          <div class="user-status-box">
+            <div class="user-status-title" style="color: var(--success);">
+              <span>✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้วครับ!</span>
+            </div>
+            <div class="user-status-path">📁 ${escapeHtml(rel.organized_folder)}</div>
+          </div>
+        `;
+      } else if (isStaging) {
+        userStatusHtml = `
+          <div class="user-status-box">
+            <div class="user-status-title" style="color: var(--warning);">
+              <span>📥 ดาวน์โหลดไฟล์แล้ว (รอ Organize เข้า Jellyfin)</span>
+            </div>
+            <div class="user-status-path">📁 ${escapeHtml(rel.library_path)}</div>
           </div>
         `;
       } else {
-        releasesHtml = '<p style="color: var(--text-muted); font-size: 0.9rem;">No releases recorded in database yet.</p>';
+        userStatusHtml = `
+          <div class="user-status-box">
+            <div class="user-status-title" style="color: var(--accent-pink);">
+              <span>⏳ ยังไม่มีไฟล์ในคลังครับ</span>
+            </div>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">
+              ยังไม่ได้ดาวน์โหลดลงเครื่อง สามารถกด Copy ID ด้านบนไปค้นหาได้ครับ
+            </div>
+          </div>
+        `;
       }
 
-      section.innerHTML = `
-        <div class="actress-profile-bar">
-          <div class="actress-info-left">
-            <img class="actress-avatar-lg" src="${avatar}" alt="Avatar of ${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
-            <div class="actress-names">
-              <h3 id="actress-title-${escapeHtml(a.name)}">${escapeHtml(a.name)}</h3>
-              <div class="ja-name">${escapeHtml(a.ja_name || '')}</div>
-            </div>
-          </div>
-          <div style="display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;">
-            <div class="actress-stats-pills">
-              <span class="pill pill-downloaded">🟢 ${entry.downloaded} Downloaded</span>
-              <span class="pill pill-missing">🔴 ${entry.missing} Missing</span>
-              <span class="pill pill-watched">👁️ ${entry.watched} Watched</span>
-            </div>
-            <a href="https://r18.dev/search/?search=${encodeURIComponent(a.name)}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View ${escapeHtml(a.name)} on R18.dev" style="text-decoration: none; display: inline-flex; align-items: center; gap: 0.35rem;">
-              <span>🌐</span> R18.dev ↗
-            </a>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.trackTitleToActress('${escapeHtml(a.name)}')" title="Track a missing or new JAV-ID for ${escapeHtml(a.name)}">
-              <span class="icon">+</span> Track Title
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.refreshSingleActress('${escapeHtml(a.name)}', this)" title="Refresh releases for ${escapeHtml(a.name)}">
-              <span class="icon">🔄</span> Refresh
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.unfollowActress('${escapeHtml(a.name)}')">
-              🗑️ Unfollow
-            </button>
+      feedHtml += `
+        <div class="chat-msg-row user">
+          <div class="chat-bubble">
+            ${userStatusHtml}
           </div>
         </div>
-        ${releasesHtml}
       `;
-
-      elements.actressesContainer.appendChild(section);
     });
 
-    if (window.lucide) {
-      window.lucide.createIcons();
-    }
+    elements.chatMessagesFeed.innerHTML = feedHtml;
+
+    // Smooth scroll chat to bottom
+    setTimeout(() => {
+      elements.chatMessagesFeed.scrollTop = elements.chatMessagesFeed.scrollHeight;
+    }, 50);
   }
 
   // =========================================================================
@@ -1879,7 +2213,11 @@
     trackTitleToActress,
     refreshSingleActress,
     organizeSingle,
-    openFolder
+    openFolder,
+    copyMovieId,
+    selectActressContact,
+    openActressProfileDrawer,
+    closeActressProfileDrawer
   };
 
   document.addEventListener('DOMContentLoaded', init);

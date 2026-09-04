@@ -207,34 +207,115 @@
         </div>
       </section>
 
-      <!-- TAB 2: ACTRESS HUB & NEW RELEASES -->
+      <!-- TAB 2: ACTRESS CHAT HUB -->
       <section id="tab-actresses" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-actresses">
-        <div class="actress-header">
-          <div class="actress-header-info">
-            <h2>⭐ Followed Actresses</h2>
-            <p>Track favorite actresses and discover new releases versus your local library.</p>
+        <div class="actress-chat-layout">
+          <!-- LEFT: Contacts Sidebar (Friends List) -->
+          <aside class="chat-sidebar">
+            <div class="chat-sidebar-header">
+              <div class="chat-sidebar-title">
+                <h3>💬 Actresses & Friends</h3>
+                <span id="chat-friends-count" class="badge-count">0</span>
+              </div>
+              <div class="chat-sidebar-actions">
+                <button id="btn-refresh-actresses" class="btn-icon-sm" title="Refresh all actress releases">
+                  <span class="icon">🔄</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="chat-search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="chat-actress-search" placeholder="Search actresses..." />
+            </div>
+
+            <div class="chat-add-friend-box">
+              <input type="text" id="input-actress-name" placeholder="+ Add / Follow Actress" />
+              <button id="btn-add-actress" class="btn btn-primary btn-sm">
+                <span>+</span> Follow
+              </button>
+            </div>
+
+            <!-- Contacts List -->
+            <div id="chat-contacts-list" class="chat-contacts-list" role="list">
+              <!-- Dynamically populated contacts -->
+            </div>
+
+            <div id="actresses-empty" class="chat-empty-sidebar hidden">
+              <p>No followed actresses yet.<br>Type a name above to add!</p>
+            </div>
+          </aside>
+
+          <!-- RIGHT: Chat Room / Feed -->
+          <main class="chat-main-panel">
+            <!-- Header of active conversation -->
+            <header id="chat-active-header" class="chat-room-header">
+              <div class="chat-room-actress-info">
+                <div class="chat-avatar-wrapper">
+                  <img id="chat-header-avatar" src="/placeholder.png" alt="Avatar" class="chat-avatar-img" />
+                  <span class="status-dot online" title="Active"></span>
+                </div>
+                <div class="chat-header-names">
+                  <div class="chat-name-row">
+                    <h3 id="chat-header-name">Select an Actress</h3>
+                    <span id="chat-header-ja" class="chat-ja-name"></span>
+                  </div>
+                  <div id="chat-header-subtitle" class="chat-status-subtitle">
+                    Select a contact from the left to view release timeline
+                  </div>
+                </div>
+              </div>
+
+              <div id="chat-header-controls" class="chat-room-controls hidden">
+                <button id="btn-open-profile-drawer" class="btn btn-secondary btn-sm" title="View Actress Profile & Stats">
+                  <span>👤</span> Profile & Stats
+                </button>
+                <a id="link-header-r18" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View Official R18.dev Profile">
+                  <span>🌐</span> R18.dev ↗
+                </a>
+                <button id="btn-header-unfollow" class="btn btn-secondary btn-sm btn-danger-hover" title="Unfollow Actress">
+                  <span>🗑️</span>
+                </button>
+              </div>
+            </header>
+
+            <!-- Scrollable Messages Feed -->
+            <div id="chat-messages-feed" class="chat-messages-feed">
+              <div class="chat-welcome-placeholder">
+                <div class="welcome-icon">💬</div>
+                <h3>Welcome to Actress Release Chat</h3>
+                <p>Select an actress on the left to see her releases, download status, and Jellyfin history!</p>
+              </div>
+            </div>
+
+            <!-- Bottom Quick Action Bar -->
+            <footer id="chat-action-bar" class="chat-action-bar hidden">
+              <div class="chat-quick-actions">
+                <button id="btn-chat-track-title" class="btn btn-secondary btn-sm">
+                  <span class="icon">+</span> Track JAV-ID
+                </button>
+                <button id="btn-chat-refresh" class="btn btn-secondary btn-sm">
+                  <span class="icon">🔄</span> Refresh Releases
+                </button>
+                <button id="btn-chat-open-folder" class="btn btn-secondary btn-sm">
+                  <span class="icon">📂</span> Open Folder in Finder
+                </button>
+              </div>
+            </footer>
+          </main>
+        </div>
+
+        <!-- SLIDE-OVER PROFILE DRAWER -->
+        <div id="drawer-profile-backdrop" class="drawer-backdrop hidden"></div>
+        <aside id="drawer-actress-profile" class="drawer-profile hidden" aria-label="Actress Profile & Statistics">
+          <div class="drawer-header">
+            <h3>Actress Profile & Stats</h3>
+            <button id="btn-close-drawer" class="btn-icon-sm" aria-label="Close Profile Drawer">✕</button>
           </div>
-
-          <div class="actress-hub-controls">
-            <button id="btn-refresh-actresses" class="btn btn-secondary" title="Refresh all actress releases">
-              <span class="icon" aria-hidden="true">🔄</span> Refresh All
-            </button>
-            <input type="text" id="input-actress-name" placeholder="Add Actress Name (e.g. Kanna Seto)" />
-            <button id="btn-add-actress" class="btn btn-primary">
-              <span class="icon" aria-hidden="true">+</span> Follow
-            </button>
+          <div id="drawer-content" class="drawer-body">
+            <!-- Populated via app.js -->
           </div>
-        </div>
-
-        <div id="actresses-container" class="actresses-container" role="feed" aria-label="Followed actresses list">
-          <!-- Dynamically populated via app.js -->
-        </div>
-
-        <div id="actresses-empty" class="empty-state hidden">
-          <div class="empty-icon" aria-hidden="true">⭐</div>
-          <h3>No actresses followed yet</h3>
-          <p>Click the "⭐ Follow" button on any movie card or type an actress name above to track new releases.</p>
-        </div>
+        </aside>
       </section>
 
       <!-- TAB 3: NAS ORGANIZER -->

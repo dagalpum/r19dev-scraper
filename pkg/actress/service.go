@@ -13,17 +13,19 @@ import (
 
 // ReleaseItem holds filmography release details with download, watch, and rating status.
 type ReleaseItem struct {
-	MovieID       string `json:"movie_id"`
-	Title         string `json:"title"`
-	OriginalTitle string `json:"original_title"`
-	Maker         string `json:"maker"`
-	ReleaseDate   string `json:"release_date"`
-	CoverURL      string `json:"cover_url"`
-	IsDownloaded  bool   `json:"is_downloaded"`
-	IsWatched     bool   `json:"is_watched"`
-	UserRating    int    `json:"user_rating"`
-	IsFavorite    bool   `json:"is_favorite"`
-	LibraryPath   string `json:"library_path,omitempty"`
+	MovieID         string `json:"movie_id"`
+	Title           string `json:"title"`
+	OriginalTitle   string `json:"original_title"`
+	Maker           string `json:"maker"`
+	ReleaseDate     string `json:"release_date"`
+	CoverURL        string `json:"cover_url"`
+	IsDownloaded    bool   `json:"is_downloaded"`
+	IsWatched       bool   `json:"is_watched"`
+	UserRating      int    `json:"user_rating"`
+	IsFavorite      bool   `json:"is_favorite"`
+	LibraryPath     string `json:"library_path,omitempty"`
+	OrganizedFolder string `json:"organized_folder,omitempty"`
+	OrganizedVideo  string `json:"organized_video,omitempty"`
 }
 
 // ActressSummary aggregates release statistics for a followed actress.
@@ -103,14 +105,29 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	// Update last checked timestamp
 	_ = s.database.UpdateActressLastChecked(actressName)
 
+	// Load actress info from DB if available
+	actRec := db.ActressRecord{
+		Name: actressName,
+	}
+	if followed, err := s.database.ListFollowedActresses(); err == nil {
+		for _, a := range followed {
+			if strings.EqualFold(a.Name, actressName) {
+				actRec = a
+				break
+			}
+		}
+	}
+
 	// Query movies containing the actress name in actresses_json
 	query := `
 	SELECT m.id, m.title, m.original_title, m.maker, m.release_date, m.cover_url, m.actresses_json,
 	       COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0), COALESCE(u.is_favorite, 0),
-	       MAX(lf.file_path)
+	       MAX(lf.file_path),
+	       MAX(om.target_folder), MAX(om.target_video)
 	FROM movies m
 	LEFT JOIN user_state u ON m.id = u.movie_id
 	LEFT JOIN library_files lf ON m.id = lf.movie_id
+	LEFT JOIN organized_movies om ON m.id = om.movie_id
 	WHERE m.actresses_json LIKE ? COLLATE NOCASE
 	GROUP BY m.id
 	ORDER BY m.release_date DESC
@@ -131,10 +148,13 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		var r ReleaseItem
 		var actJSON string
 		var libPath sql.NullString
+		var orgFolder sql.NullString
+		var orgVideo sql.NullString
 		if err := rows.Scan(
 			&r.MovieID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL, &actJSON,
 			&r.IsWatched, &r.UserRating, &r.IsFavorite,
 			&libPath,
+			&orgFolder, &orgVideo,
 		); err != nil {
 			return nil, err
 		}
@@ -143,6 +163,12 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			r.IsDownloaded = true
 			r.LibraryPath = libPath.String
 			downloadedCount++
+		}
+		if orgFolder.Valid {
+			r.OrganizedFolder = orgFolder.String
+		}
+		if orgVideo.Valid {
+			r.OrganizedVideo = orgVideo.String
 		}
 		if r.IsWatched {
 			watchedCount++
@@ -155,9 +181,7 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	}
 
 	summary := &ActressSummary{
-		Actress: db.ActressRecord{
-			Name: actressName,
-		},
+		Actress:    actRec,
 		Releases:   releases,
 		Total:      len(releases),
 		Downloaded: downloadedCount,

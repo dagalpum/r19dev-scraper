@@ -96,12 +96,15 @@ The matcher converts irregular filenames into normalized JAV IDs.
 
 * **Storage Engine**: Pure Go SQLite (`modernc.org/sqlite` without CGO), stored at `~/.cache/r19dev/r19dev.db` (Linux) or `~/Library/Caches/r19dev/r19dev.db` (macOS).
 * **Schema & Relations**:
-  - `actresses`: Tracked performers with Japanese/Romaji names, follower status, and notes.
+  - `actresses`: Tracked performers with Japanese/Romaji names, `r18_id INTEGER DEFAULT 0` for direct R18.dev links, follower status, and notes.
   - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, actresses, genres, screenshots).
   - `user_state`: User watch state (`is_watched`), ratings (1–5 ⭐), and favorites (`is_favorite`).
   - `library_files`: Scanned file catalog with size, part number, and destination paths.
   - `organized_movies`: Maps `movie_id` to `target_folder` and `target_video` for instant status detection and One-Click Finder access.
   - `operation_history`: Audit trail for all organize and scrape runs storing execution metadata, success/fail metrics, and complete console output.
+* **Auto-Migration & R18 ID Backfill**:
+  - Automatically migrates existing databases on boot: `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;`.
+  - Runs `backfillActressR18IDs()` on startup to inspect `movies.actresses_json` and automatically populate `r18_id` for followed actresses without requiring manual DB updates.
 * **Auto-Retention & Clutter Prevention**:
   - Automatically prunes records older than 30 days: `DELETE FROM operation_history WHERE created_at < datetime('now', '-30 days')`.
   - Automatically enforces a 100-run ceiling: `DELETE FROM operation_history WHERE id NOT IN (SELECT id FROM operation_history ORDER BY id DESC LIMIT 100)`.
@@ -135,6 +138,16 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - **Smart Auto-Scroll**: Listens to viewport scroll position; scrolling up pauses auto-scroll (`Auto-Scroll: PAUSED`) and reveals a floating resume button. Scrolling to the bottom resumes auto-scroll automatically.
   - **Clipboard Copy**: Direct copy button copies raw console output with toast confirmation.
   - **History Integration**: Header button opens SQLite Operation History modal with instant log inspection and audit trail review.
+
+### 3.8 Actress Hub: Chat UI & Filmography Engine
+
+* **Chat Interface Architecture**:
+  - Replaces traditional grid cards with an interactive LINE / Discord / Telegram style two-column messaging app layout.
+  - **Left Sidebar**: Real-time list of followed actresses with avatars, online status, latest release snippet, missing releases count badge, instant search filter, and quick follow friend box.
+  - **Conversation Feed**: Left bubble features the actress announcing her release with jacket cover, JAV-ID, title, studio, release date, and `[📋 Copy ID]` button. Right bubble features system response displaying Jellyfin organized path or unacquired status.
+  - **Grayscale Effect for Missing Items**: Covers of unacquired movies are rendered with a 90% grayscale filter and dashed border, transitioning smoothly to full color on hover.
+  - **Slide-Over Profile Drawer**: Toggles smoothly from the right edge with avatar, Romaji/Kanji names, R18 ID, collection completeness progress bar, and comprehensive stats (Total, Downloaded, Missing, Watched, Favorites).
+  - **Official R18.dev URLs**: Uses the verified actress URL structure `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` rather than broken search endpoints.
 
 ---
 

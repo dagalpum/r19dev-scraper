@@ -4,6 +4,7 @@ import "time"
 
 // Actress represents performer metadata.
 type Actress struct {
+	ID       int    `json:"id,omitempty"`        // R18.dev / DMM Actress ID (e.g. 1109487)
 	Name     string `json:"name"`                // Romaji / English Name (e.g. "Sakura Miura")
 	JaName   string `json:"ja_name,omitempty"`   // Kanji / Japanese Name (e.g. "水卜さくら")
 	ImageURL string `json:"image_url,omitempty"` // Actress thumbnail

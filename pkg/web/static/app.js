@@ -217,17 +217,17 @@
   }
 
   function setupSearchAndFilters() {
-    elements.searchInput.addEventListener('input', (e) => {
+    elements.searchInput?.addEventListener('input', (e) => {
       state.searchQuery = e.target.value.trim().toLowerCase();
-      elements.searchClear.classList.toggle('hidden', state.searchQuery === '');
+      elements.searchClear?.classList.toggle('hidden', state.searchQuery === '');
       renderMoviesGrid();
     });
 
-    elements.searchClear.addEventListener('click', () => {
-      elements.searchInput.value = '';
+    elements.searchClear?.addEventListener('click', () => {
+      if (elements.searchInput) elements.searchInput.value = '';
       state.searchQuery = '';
-      elements.searchClear.classList.add('hidden');
-      elements.searchInput.focus();
+      elements.searchClear?.classList.add('hidden');
+      elements.searchInput?.focus();
       renderMoviesGrid();
     });
 
@@ -260,12 +260,12 @@
       resetFilters();
     });
 
-    elements.sortBy.addEventListener('change', (e) => {
+    elements.sortSelect?.addEventListener('change', (e) => {
       state.sort = e.target.value;
       renderMoviesGrid();
     });
 
-    elements.btnRescan.addEventListener('click', () => {
+    elements.btnRescan?.addEventListener('click', () => {
       startScanStream(state.activeDir);
     });
 
@@ -1376,7 +1376,7 @@
                   <code class="folder-banner-path" title="${escapeHtml(state.organizedFolders[id] || '')}">${escapeHtml(state.organizedFolders[id] || 'Organized in JAV_Library')}</code>
                 </div>
               </div>
-              <button class="btn btn-secondary btn-sm btn-open-folder" onclick="window.app.openFolder('${id}', '${escapeHtml(state.organizedFolders[id] || '')}')">
+              <button class="btn btn-secondary btn-sm btn-open-folder" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(state.organizedFolders[id] || '')}" onclick="window.app.openFolderEl(this, event)">
                 <i data-lucide="external-link"></i> Open in Finder
               </button>
             </div>
@@ -1405,7 +1405,7 @@
             </button>
 
             ${isOrganized ? `
-              <button class="btn btn-secondary" onclick="window.app.openFolder('${id}', '${escapeHtml(state.organizedFolders[id] || '')}')">
+              <button class="btn btn-secondary" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(state.organizedFolders[id] || '')}" onclick="window.app.openFolderEl(this, event)">
                 📂 Open Folder
               </button>
               <button class="btn btn-outline-secondary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Re-run Jellyfin organize">
@@ -1865,11 +1865,11 @@
           <div class="user-status-box">
             <div class="user-status-title" style="color: var(--success); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
               <span>✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้วครับ!</span>
-              <button class="btn btn-secondary btn-sm" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.organized_folder || '')}')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; cursor: pointer; white-space: nowrap;">
+              <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(rel.movie_id)}" data-path="${escapeHtml(rel.organized_folder || '')}" onclick="window.app.openFolderEl(this, event)" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; cursor: pointer; white-space: nowrap;">
                 📂 Open in Finder
               </button>
             </div>
-            <div class="user-status-path" style="cursor: pointer;" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.organized_folder || '')}')" title="Click to open in Finder">📁 ${escapeHtml(rel.organized_folder)}</div>
+            <div class="user-status-path" style="cursor: pointer;" data-movie-id="${escapeHtml(rel.movie_id)}" data-path="${escapeHtml(rel.organized_folder || '')}" onclick="window.app.openFolderEl(this, event)" title="Click to open in Finder">📁 ${escapeHtml(rel.organized_folder)}</div>
           </div>
         `;
       } else if (isStaging) {
@@ -1877,11 +1877,11 @@
           <div class="user-status-box">
             <div class="user-status-title" style="color: var(--warning); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
               <span>📥 ดาวน์โหลดไฟล์แล้ว (รอ Organize เข้า Jellyfin)</span>
-              <button class="btn btn-secondary btn-sm" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.library_path || '')}')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; cursor: pointer; white-space: nowrap;">
+              <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(rel.movie_id)}" data-path="${escapeHtml(rel.library_path || '')}" onclick="window.app.openFolderEl(this, event)" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; cursor: pointer; white-space: nowrap;">
                 📂 Open in Finder
               </button>
             </div>
-            <div class="user-status-path" style="cursor: pointer;" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.library_path || '')}')" title="Click to open in Finder">📁 ${escapeHtml(rel.library_path)}</div>
+            <div class="user-status-path" style="cursor: pointer;" data-movie-id="${escapeHtml(rel.movie_id)}" data-path="${escapeHtml(rel.library_path || '')}" onclick="window.app.openFolderEl(this, event)" title="Click to open in Finder">📁 ${escapeHtml(rel.library_path)}</div>
           </div>
         `;
       } else {
@@ -2245,6 +2245,14 @@
     }
   }
 
+  function openFolderByEl(el, e) {
+    if (e) e.stopPropagation();
+    const id = el.getAttribute('data-movie-id') || '';
+    const path = el.getAttribute('data-path') || '';
+    const actress = el.getAttribute('data-actress') || '';
+    openFolder(id, path, actress);
+  }
+
   // Expose global app object for inline handlers
   window.app = {
     openMovie: openMovieById,
@@ -2259,6 +2267,7 @@
     refreshSingleActress,
     organizeSingle,
     openFolder,
+    openFolderEl: openFolderByEl,
     copyMovieId,
     selectActressContact,
     openActressProfileDrawer,

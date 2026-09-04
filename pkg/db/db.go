@@ -259,7 +259,7 @@ func (d *DB) backfillActressR18IDs() error {
 			}
 		}
 	}
-	return nil
+	return rows.Err()
 }
 
 // --- Actress Operations ---
@@ -648,7 +648,7 @@ func (d *DB) GetOrganizedMap() (map[string]bool, error) {
 			result[strings.ToUpper(id)] = true
 		}
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
 // IsOrganized checks if a movie ID has been organized into Jellyfin NAS.
@@ -704,7 +704,7 @@ func (d *DB) GetOrganizedFolderMap() (map[string]string, error) {
 			result[strings.ToUpper(id)] = folder
 		}
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
 // --- Operation History / Log Audit Operations ---
@@ -769,7 +769,7 @@ func (d *DB) GetOperationHistory(limit int, withLogs bool) ([]OperationRecord, e
 			records = append(records, rec)
 		}
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
 // GetOperationDetail returns a single operation record with full log_text.

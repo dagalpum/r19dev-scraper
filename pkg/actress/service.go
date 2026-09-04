@@ -179,6 +179,9 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 
 		releases = append(releases, r)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
 	summary := &ActressSummary{
 		Actress:    actRec,

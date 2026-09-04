@@ -630,9 +630,15 @@
     });
 
     elements.btnOpenProfileDrawer?.addEventListener('click', () => {
-      const activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+      let activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+      if (!activeEntry && state.actresses.length > 0) {
+        activeEntry = state.actresses[0];
+        state.activeActressName = activeEntry.actress.name;
+      }
       if (activeEntry) {
         openActressProfileDrawer(activeEntry);
+      } else {
+        showToast('Please select or follow an actress first', 'info');
       }
     });
 
@@ -649,26 +655,45 @@
     });
 
     elements.btnChatTrackTitle?.addEventListener('click', () => {
-      if (state.activeActressName) {
-        trackTitleToActress(state.activeActressName);
+      let targetName = state.activeActressName;
+      if (!targetName && state.actresses.length > 0) {
+        targetName = state.actresses[0].actress.name;
+        state.activeActressName = targetName;
+      }
+      if (targetName) {
+        trackTitleToActress(targetName);
+      } else {
+        showToast('Please select or follow an actress first', 'info');
       }
     });
 
     elements.btnChatRefresh?.addEventListener('click', (e) => {
-      if (state.activeActressName) {
-        refreshSingleActress(state.activeActressName, e.currentTarget);
+      let targetName = state.activeActressName;
+      if (!targetName && state.actresses.length > 0) {
+        targetName = state.actresses[0].actress.name;
+        state.activeActressName = targetName;
+      }
+      if (targetName) {
+        refreshSingleActress(targetName, e.currentTarget);
+      } else {
+        showToast('Please select or follow an actress first', 'info');
       }
     });
 
-    elements.btnChatOpenFolder?.addEventListener('click', () => {
-      const activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
-      if (!activeEntry) return;
-      const dl = (activeEntry.releases || []).find(r => r.is_downloaded);
-      if (dl && dl.movie_id) {
-        openFolder(dl.movie_id);
-      } else {
-        showToast(`No downloaded videos yet for ${state.activeActressName}`, 'warning');
+    elements.btnChatOpenFolder?.addEventListener('click', async () => {
+      let activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
+      if (!activeEntry && state.actresses.length > 0) {
+        activeEntry = state.actresses[0];
+        state.activeActressName = activeEntry.actress.name;
       }
+      if (!activeEntry) {
+        showToast('Please select an actress first', 'warning');
+        return;
+      }
+      const dl = (activeEntry.releases || []).find(r => r.is_downloaded);
+      const folderToOpen = dl?.organized_folder || dl?.library_path || '';
+      const movieID = dl?.movie_id || '';
+      await openFolder(movieID, folderToOpen, activeEntry.actress.name);
     });
   }
 
@@ -922,6 +947,20 @@
       const data = await res.json();
       state.actresses = data.actresses || [];
       elements.countActresses.textContent = state.actresses.length;
+
+      // Populate organized folders & status from all actress releases
+      state.actresses.forEach(entry => {
+        (entry.releases || []).forEach(rel => {
+          if (rel.organized_folder) {
+            state.organizedFolders[rel.movie_id] = rel.organized_folder;
+            state.organizedStatus[rel.movie_id] = true;
+          } else if (rel.is_downloaded && rel.library_path) {
+            state.organizedFolders[rel.movie_id] = rel.library_path;
+            state.organizedStatus[rel.movie_id] = true;
+          }
+        });
+      });
+
       renderActressHub();
     } catch (err) {
       console.error('Failed to load actresses:', err);
@@ -1824,19 +1863,25 @@
       if (isOrganized) {
         userStatusHtml = `
           <div class="user-status-box">
-            <div class="user-status-title" style="color: var(--success);">
+            <div class="user-status-title" style="color: var(--success); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
               <span>✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้วครับ!</span>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.organized_folder || '')}')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; cursor: pointer; white-space: nowrap;">
+                📂 Open in Finder
+              </button>
             </div>
-            <div class="user-status-path">📁 ${escapeHtml(rel.organized_folder)}</div>
+            <div class="user-status-path" style="cursor: pointer;" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.organized_folder || '')}')" title="Click to open in Finder">📁 ${escapeHtml(rel.organized_folder)}</div>
           </div>
         `;
       } else if (isStaging) {
         userStatusHtml = `
           <div class="user-status-box">
-            <div class="user-status-title" style="color: var(--warning);">
+            <div class="user-status-title" style="color: var(--warning); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
               <span>📥 ดาวน์โหลดไฟล์แล้ว (รอ Organize เข้า Jellyfin)</span>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.library_path || '')}')" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; cursor: pointer; white-space: nowrap;">
+                📂 Open in Finder
+              </button>
             </div>
-            <div class="user-status-path">📁 ${escapeHtml(rel.library_path)}</div>
+            <div class="user-status-path" style="cursor: pointer;" onclick="window.app.openFolder('${escapeHtml(rel.movie_id)}', '${escapeHtml(rel.library_path || '')}')" title="Click to open in Finder">📁 ${escapeHtml(rel.library_path)}</div>
           </div>
         `;
       } else {
@@ -2115,14 +2160,14 @@
     };
   }
 
-  async function openFolder(id, path) {
+  async function openFolder(id, path, actressName) {
     const targetFolder = path || state.organizedFolders[id] || '';
     showToast('📂 กำลังเปิดโฟลเดอร์ใน Finder...', 'info');
     try {
       const res = await fetch('/api/open-folder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ movie_id: id, path: targetFolder })
+        body: JSON.stringify({ movie_id: id, path: targetFolder, actress: actressName })
       });
       const data = await res.json();
       if (!res.ok) {

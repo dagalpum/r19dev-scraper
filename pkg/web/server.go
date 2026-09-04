@@ -123,7 +123,56 @@ func (s *Server) Handler() (http.Handler, error) {
 	fileServer := http.FileServer(http.FS(subFS))
 	mux.Handle("/", fileServer)
 
-	return mux, nil
+	return s.loggingMiddleware(mux), nil
+}
+
+// responseWriterWrapper wraps http.ResponseWriter to capture HTTP status codes for logging.
+type responseWriterWrapper struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriterWrapper) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriterWrapper) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// loggingMiddleware provides continuous, colorized HTTP access logs in the terminal.
+func (s *Server) loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		wrapped := &responseWriterWrapper{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		duration := time.Since(start)
+
+		// Omit noisy vendor static assets unless error
+		if strings.HasPrefix(r.URL.Path, "/vendor/") && wrapped.statusCode < 400 {
+			return
+		}
+
+		color := "\033[32m" // Green
+		if wrapped.statusCode >= 300 && wrapped.statusCode < 400 {
+			color = "\033[36m" // Cyan
+		} else if wrapped.statusCode >= 400 && wrapped.statusCode < 500 {
+			color = "\033[33m" // Yellow
+		} else if wrapped.statusCode >= 500 {
+			color = "\033[31m" // Red
+		}
+		reset := "\033[0m"
+
+		fmt.Printf("[%s] %s%d%s %-6s %s (%v)\n",
+			time.Now().Format("15:04:05"),
+			color, wrapped.statusCode, reset,
+			r.Method, r.URL.Path,
+			duration.Round(time.Millisecond),
+		)
+	})
 }
 
 // Start runs the HTTP listener on the configured port.
@@ -990,6 +1039,7 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Path    string `json:"path"`
 		MovieID string `json:"movie_id"`
+		Actress string `json:"actress"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, "invalid request body", http.StatusBadRequest)
@@ -1004,36 +1054,62 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fallback to searching by Actress name
+	if targetPath == "" && req.Actress != "" {
+		candidates := []string{
+			filepath.Join(s.targetDir, "JAV_Library", req.Actress),
+			filepath.Join(s.targetDir, req.Actress),
+			filepath.Join("/Volumes/home/BT/2026/JAV_Library", req.Actress),
+		}
+		for _, cand := range candidates {
+			if fi, err := os.Stat(cand); err == nil && fi.IsDir() {
+				targetPath = cand
+				break
+			}
+		}
+	}
+
 	// Fallback to searching in JAV_Library if not in DB
 	if targetPath == "" && req.MovieID != "" {
-		libDir := filepath.Join(s.targetDir, "JAV_Library")
-		if entries, err := os.ReadDir(libDir); err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() {
-					subPath := filepath.Join(libDir, entry.Name())
-					if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
-						for _, sub := range subEntries {
-							if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), req.MovieID) {
-								targetPath = filepath.Join(subPath, sub.Name())
-								break
+		candidates := []string{
+			filepath.Join(s.targetDir, "JAV_Library"),
+			s.targetDir,
+			"/Volumes/home/BT/2026/JAV_Library",
+		}
+		for _, libDir := range candidates {
+			if entries, err := os.ReadDir(libDir); err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() {
+						subPath := filepath.Join(libDir, entry.Name())
+						if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
+							for _, sub := range subEntries {
+								if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), req.MovieID) {
+									targetPath = filepath.Join(subPath, sub.Name())
+									break
+								}
 							}
 						}
 					}
+					if targetPath != "" {
+						break
+					}
 				}
-				if targetPath != "" {
-					break
-				}
+			}
+			if targetPath != "" {
+				break
 			}
 		}
 	}
 
 	if targetPath == "" {
+		fmt.Printf("⚠️  [Finder] Folder path not found for movie_id: '%s', actress: '%s', path: '%s'\n", req.MovieID, req.Actress, req.Path)
 		writeJSONError(w, "folder path not found for movie", http.StatusNotFound)
 		return
 	}
 
 	// Verify target exists
 	if fi, err := os.Stat(targetPath); err != nil {
+		fmt.Printf("⚠️  [Finder] Path not found on filesystem: %s (%v)\n", targetPath, err)
 		writeJSONError(w, fmt.Sprintf("path not found: %v", err), http.StatusNotFound)
 		return
 	} else if !fi.IsDir() {
@@ -1041,10 +1117,12 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := OpenFolder(targetPath); err != nil {
+		fmt.Printf("❌ [Finder] Error opening folder: %v\n", err)
 		writeJSONError(w, fmt.Sprintf("failed to open folder: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	fmt.Printf("📂 [Finder] Successfully opened in Finder: %s\n", targetPath)
 	writeJSON(w, map[string]any{"success": true, "path": targetPath})
 }
 
@@ -1059,7 +1137,7 @@ func OpenFolder(path string) error {
 	default:
 		cmd = exec.Command("xdg-open", path)
 	}
-	return cmd.Start()
+	return cmd.Run()
 }
 
 // OpenBrowser opens the given URL in the user's default web browser.

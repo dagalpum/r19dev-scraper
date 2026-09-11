@@ -35,11 +35,13 @@ def normalize_id(dvd_id, content_id):
         return cleaned
 
     cid = content_id.lower().strip()
-    # Strip common DMM special edition / maker prefixes
+    # Strip common DMM special edition / maker / event prefixes
     cid = re.sub(r"^h_\d+", "", cid)      # e.g. h_346rebdb1046 -> rebdb1046
+    cid = re.sub(r"^k[ac]9", "", cid)     # online autograph session tickets e.g. ka9oae308, kc9oae308
     cid = re.sub(r"^k9", "", cid)         # limited edition e.g. k9snos209 -> snos209
     cid = re.sub(r"^9(?=[a-z]{2,5}\d+)", "", cid) # blu-ray e.g. 9ofje638 -> ofje638
-    cid = re.sub(r"^tk(?=[a-z]{3,5}\d+)", "", cid) # FANZA special e.g. tkprwf016 -> prwf016
+    cid = re.sub(r"^tk(?=[a-z]{3,5}\d+)", "", cid) # FANZA special e.g. tkprwf016, tkoae291
+    cid = re.sub(r"^4(?=oae\d+)", "", cid) # Aircontrol 4oae244 -> oae244
     cid = re.sub(r"^[db]_", "", cid)
     cid = re.sub(r"tk\d*$", "", cid)
 

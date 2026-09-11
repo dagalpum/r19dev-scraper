@@ -2505,13 +2505,74 @@ body {
   z-index: 5;
 }
 
+/* Missing Release Poster Card: Grayscale 95% & Dashed Border */
+.collection-poster-card.is-missing {
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: #0d121e;
+}
+
+.collection-poster-card.is-missing .poster-img {
+  filter: grayscale(0.95) contrast(0.88) brightness(0.9);
+  opacity: 0.78;
+  transition: filter 0.35s ease, opacity 0.35s ease, transform 0.4s ease;
+}
+
+.collection-poster-card.is-missing:hover,
+.collection-poster-card.is-missing:focus-within {
+  border-color: rgba(99, 102, 241, 0.65);
+  border-style: solid;
+}
+
+.collection-poster-card.is-missing:hover .poster-img {
+  filter: grayscale(0) contrast(1) brightness(1);
+  opacity: 1;
+}
+
+.collection-poster-card.is-missing .poster-id-badge {
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.88);
+}
+
+.collection-poster-card.is-missing:hover .poster-id-badge {
+  color: #f472b6;
+  border-color: rgba(244, 114, 182, 0.45);
+}
+
+/* In-Library Poster Card: Vibrant Accent Border & Mint Badge */
+.collection-poster-card.in-library {
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.collection-poster-card.in-library:hover {
+  border-color: rgba(16, 185, 129, 0.85);
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.65), 0 0 20px rgba(16, 185, 129, 0.25);
+}
+
+.collection-poster-card.in-library .poster-id-badge {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.45);
+  background: rgba(6, 78, 59, 0.65);
+}
+
+/* Staging Poster Card: Amber Badge */
+.collection-poster-card.in-staging {
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.collection-poster-card.in-staging .poster-id-badge {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(120, 53, 15, 0.65);
+}
+
 /* Poster Image - Focused on Right Half (Front Cover Jacket) */
 .poster-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: right center; /* Shifts horizontally to display the right half (front jacket cover) */
-  transition: transform 0.4s ease;
+  transition: transform 0.4s ease, filter 0.35s ease, opacity 0.35s ease;
 }
 
 .collection-poster-card:hover .poster-img {
@@ -2544,37 +2605,6 @@ body {
   font-size: 0.95rem;
 }
 
-/* Top Bookmark Ribbons (Like Reference Screenshot) */
-.poster-ribbon {
-  position: absolute;
-  top: 0;
-  left: 10px;
-  z-index: 3;
-  width: 28px;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 800;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
-  transition: transform 0.2s ease;
-}
-
-.poster-ribbon.in-library {
-  background: linear-gradient(180deg, #10b981 0%, #059669 100%);
-}
-
-.poster-ribbon.missing {
-  background: linear-gradient(180deg, #f43f5e 0%, #be123c 100%);
-}
-
-.poster-ribbon.staging {
-  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
-}
-
 /* Bottom Metadata Gradient Overlay */
 .poster-info-overlay {
   position: absolute;
@@ -2593,44 +2623,23 @@ body {
 .poster-badges-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0.35rem;
 }
 
 .poster-id-badge {
   font-family: var(--font-mono, monospace);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 800;
   color: #f472b6;
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(15, 23, 42, 0.88);
   border: 1px solid rgba(244, 114, 182, 0.35);
-  padding: 0.12rem 0.45rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 4px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   backdrop-filter: blur(4px);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.poster-status-tag {
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
-  text-transform: uppercase;
-}
-
-.poster-status-tag.in-library {
-  background: rgba(16, 185, 129, 0.25);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.4);
-}
-
-.poster-status-tag.missing {
-  background: rgba(244, 63, 94, 0.2);
-  color: #fb7185;
-  border: 1px solid rgba(244, 63, 94, 0.35);
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .poster-title {
@@ -2716,6 +2725,318 @@ body {
 .poster-btn-secondary:hover {
   background: rgba(255, 255, 255, 0.22);
   transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Actress Dedicated Vertical Grid & Directory Styles
+   ========================================================================== */
+.collection-vertical-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 1.25rem;
+  padding: 0.5rem 0 2.5rem 0;
+}
+
+.collection-vertical-grid .collection-poster-card {
+  width: 100%;
+  height: 285px;
+  flex: none;
+}
+
+.actress-grid-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.85rem 1.25rem;
+  background: rgba(20, 26, 41, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  backdrop-filter: blur(8px);
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.toolbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.toolbar-actress-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.toolbar-progress-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.25rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.toolbar-progress-fraction {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: #34d399;
+  font-size: 0.85rem;
+}
+
+.toolbar-progress-track {
+  width: 65px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.toolbar-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #6366f1);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.toolbar-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.grid-filter-pill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.grid-filter-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.grid-filter-pill.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+}
+
+.grid-filter-pill .pill-count {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.grid-empty-state {
+  grid-column: 1 / -1;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+}
+
+.grid-empty-state .empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.75rem;
+  opacity: 0.6;
+}
+
+.grid-empty-state h4 {
+  color: #fff;
+  font-size: 1.1rem;
+  margin-bottom: 0.35rem;
+}
+
+.grid-empty-state p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Followed Actresses Directory Section (All Actresses View) */
+.collection-directory-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2.2rem;
+}
+
+.directory-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+
+.directory-section-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.directory-section-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0.2rem 0 0 0;
+}
+
+.directory-section-badge {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+}
+
+.actresses-directory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.actress-dir-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  background: #141a29;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.actress-dir-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 16px rgba(99, 102, 241, 0.2);
+  background: #172033;
+}
+
+.actress-dir-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+.actress-dir-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.actress-dir-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.actress-dir-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actress-dir-ja {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.actress-dir-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.actress-dir-fraction {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  color: #34d399;
+}
+
+.actress-dir-progress-track {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.actress-dir-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #6366f1);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.actress-dir-pct {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  min-width: 28px;
+  text-align: right;
+}
+
+.actress-dir-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.actress-dir-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+}
+
+.actress-dir-pill.in-lib {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.actress-dir-pill.missing {
+  background: rgba(244, 114, 182, 0.12);
+  color: #f472b6;
+  border: 1px solid rgba(244, 114, 182, 0.25);
 }
 
 /* ==========================================================================

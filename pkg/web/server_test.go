@@ -31,11 +31,11 @@ func TestWebServerEndpoints(t *testing.T) {
 	srv, err := NewServer(Config{
 		TargetDir: tempDir,
 		Port:      8080,
+		DB:        d,
 	})
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
-	srv.db = d
 
 	handler, err := srv.Handler()
 	if err != nil {

@@ -7,12 +7,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/dagalp/r19dev-scraper/pkg/jellyfin"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
 )
+
+var (
+	dbInstanceMu sync.RWMutex
+	dbInstance   *db.DB
+)
+
+// SetDB allows setting an explicit database instance (e.g., during tests).
+func SetDB(d *db.DB) {
+	dbInstanceMu.Lock()
+	defer dbInstanceMu.Unlock()
+	dbInstance = d
+}
+
+func getDB() *db.DB {
+	dbInstanceMu.RLock()
+	defer dbInstanceMu.RUnlock()
+	if dbInstance != nil {
+		return dbInstance
+	}
+	d, _ := db.Default()
+	return d
+}
 
 // OrganizeResult tracks the outcome of an organize operation.
 type OrganizeResult struct {
@@ -161,9 +184,9 @@ func OrganizeMatchWithProgress(ctx context.Context, match *matcher.MatchResult, 
 	if reporter != nil {
 		reporter("save_db", 6, 6, "กำลังบันทึกสถานะลงฐานข้อมูล SQLite...")
 	}
-	if defaultDB, dErr := db.Default(); dErr == nil && defaultDB != nil {
-		_ = defaultDB.SaveMovie(movie)
-		_ = defaultDB.UpsertLibraryFile(db.LibraryFileRecord{
+	if activeDB := getDB(); activeDB != nil {
+		_ = activeDB.SaveMovie(movie)
+		_ = activeDB.UpsertLibraryFile(db.LibraryFileRecord{
 			FilePath:      plan.TargetVideo,
 			MovieID:       movie.ID,
 			SizeBytes:     match.File.Size,

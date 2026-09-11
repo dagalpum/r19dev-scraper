@@ -374,20 +374,20 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 		actresses_json, genres_json, screenshots_json, scraped_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
-		combined_id = excluded.combined_id,
-		title = excluded.title,
-		original_title = excluded.original_title,
-		maker = excluded.maker,
-		label = excluded.label,
-		director = excluded.director,
-		release_date = excluded.release_date,
-		runtime_minutes = excluded.runtime_minutes,
-		cover_url = excluded.cover_url,
-		poster_url = excluded.poster_url,
-		trailer_url = excluded.trailer_url,
-		actresses_json = excluded.actresses_json,
-		genres_json = excluded.genres_json,
-		screenshots_json = excluded.screenshots_json,
+		combined_id = CASE WHEN excluded.combined_id != '' THEN excluded.combined_id ELSE movies.combined_id END,
+		title = CASE WHEN excluded.title != '' THEN excluded.title ELSE movies.title END,
+		original_title = CASE WHEN excluded.original_title != '' THEN excluded.original_title ELSE movies.original_title END,
+		maker = CASE WHEN excluded.maker != '' THEN excluded.maker ELSE movies.maker END,
+		label = CASE WHEN excluded.label != '' THEN excluded.label ELSE movies.label END,
+		director = CASE WHEN excluded.director != '' THEN excluded.director ELSE movies.director END,
+		release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE movies.release_date END,
+		runtime_minutes = CASE WHEN excluded.runtime_minutes > 0 THEN excluded.runtime_minutes ELSE movies.runtime_minutes END,
+		cover_url = CASE WHEN excluded.cover_url != '' THEN excluded.cover_url ELSE movies.cover_url END,
+		poster_url = CASE WHEN excluded.poster_url != '' THEN excluded.poster_url ELSE movies.poster_url END,
+		trailer_url = CASE WHEN excluded.trailer_url != '' THEN excluded.trailer_url ELSE movies.trailer_url END,
+		actresses_json = CASE WHEN excluded.actresses_json != '' AND excluded.actresses_json != '[]' THEN excluded.actresses_json ELSE movies.actresses_json END,
+		genres_json = CASE WHEN excluded.genres_json != '' AND excluded.genres_json != '[]' THEN excluded.genres_json ELSE movies.genres_json END,
+		screenshots_json = CASE WHEN excluded.screenshots_json != '' AND excluded.screenshots_json != '[]' THEN excluded.screenshots_json ELSE movies.screenshots_json END,
 		scraped_at = excluded.scraped_at;
 	`
 

@@ -207,9 +207,53 @@
         </div>
       </section>
 
-      <!-- TAB 2: ACTRESS CHAT HUB -->
+      <!-- TAB 2: ACTRESS HUB (DUAL MODE: MOVIE COLLECTION & CHAT TIMELINE) -->
       <section id="tab-actresses" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-actresses">
-        <div class="actress-chat-layout">
+        <!-- TOP VIEW MODE CONTROL BAR -->
+        <div class="actress-view-bar">
+          <div class="actress-mode-segmented" role="tablist" aria-label="Actress View Mode">
+            <button id="btn-mode-collection" class="btn-mode-pill active" role="tab" aria-selected="true" onclick="window.app.setActressViewMode('collection')">
+              <span class="mode-pill-icon">🎬</span>
+              <span class="mode-pill-label">Movie Collection</span>
+            </button>
+            <button id="btn-mode-chat" class="btn-mode-pill" role="tab" aria-selected="false" onclick="window.app.setActressViewMode('chat')">
+              <span class="mode-pill-icon">💬</span>
+              <span class="mode-pill-label">Chat Timeline</span>
+            </button>
+          </div>
+
+          <div class="actress-view-actions">
+            <button id="btn-hub-refresh" class="btn btn-secondary btn-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
+              <span class="icon">🔄</span> Refresh All
+            </button>
+            <button id="btn-hub-add" class="btn btn-primary btn-sm" title="Follow new actress" onclick="window.app.promptAddActress()">
+              <span class="icon">+</span> Follow Actress
+            </button>
+          </div>
+        </div>
+
+        <!-- VIEW 1: MOVIE COLLECTION (STREAMING SHELVES) -->
+        <div id="actress-collection-view" class="actress-collection-view">
+          <!-- Actress Filter Chips Bar -->
+          <div class="collection-filter-bar">
+            <div id="collection-actress-chips" class="collection-chips-scroll" role="tablist" aria-label="Filter by actress">
+              <!-- Dynamically populated chips -->
+            </div>
+          </div>
+
+          <!-- Hero Overview Banner for Active Actress or Entire Collection -->
+          <div id="collection-actress-hero" class="collection-hero-banner">
+            <!-- Dynamically populated hero -->
+          </div>
+
+          <!-- Shelves Container (Netflix/Stremio horizontal carousels) -->
+          <div id="collection-shelves-container" class="collection-shelves-container">
+            <!-- Dynamically populated shelves -->
+          </div>
+        </div>
+
+        <!-- VIEW 2: CHAT TIMELINE (2-COLUMN MESSAGING LAYOUT) -->
+        <div id="actress-chat-view" class="actress-chat-layout hidden">
           <!-- LEFT: Contacts Sidebar (Friends List) -->
           <aside class="chat-sidebar">
             <div class="chat-sidebar-header">
@@ -324,7 +368,7 @@
 
             <div class="form-group">
               <label for="org-dest-root">Jellyfin Destination Root (NAS Library)</label>
-              <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/JAV_Library" required />
+              <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/BT/organized" required />
             </div>
 
             <div class="form-options">

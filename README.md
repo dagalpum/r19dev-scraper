@@ -15,30 +15,33 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **📊 Real-Time Streaming Progress Bars**: Live Server-Sent Events (SSE) stream progress bars for both **Scanning** (live file discovery & matching) and **NAS Organizing** (step-by-step progress, target path, and live console logs).
 - **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
 
-### ⭐ 2. Actress Hub: Interactive Chat UI & Filmography Tracker
-- **💬 Chat-Style Filmography Timeline**: An immersive messaging interface (LINE / Discord / Telegram style) where your followed actresses announce their releases chronologically:
-  - **Left Contacts Sidebar**: Real-time list of followed actresses with avatars, online status, latest release snippet, and badge count for missing releases. Includes an instant search filter and "+ Follow Actress" friend box.
-  - **Chat Dialogue Stream**: Left bubble shows the actress introducing her release with jacket cover, title, studio, release date, and `[📋 Copy ID]` button. Right bubble shows system responses confirming Jellyfin library status (`✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้ว` with folder path or `⏳ ยังไม่ได้ดาวน์โหลด`).
-  - **Missing Release Styling**: Unacquired titles are styled with a sleek 90% grayscale cover and dashed border, smoothly animating back to full vibrant color on hover.
-  - **Bottom Action Bar**: Quick access buttons for `[+ Track JAV-ID]`, `[🔄 Refresh Releases]`, and `[📂 Open Folder in Finder]`.
+### ⭐ 2. Actress Hub: Dual-Mode Filmography Tracker & Chat UI
+- **🎛️ Dual-Mode Switcher (Chat vs. Collection Showcase)**:
+  - **💬 Chat Timeline Mode**: An immersive messaging interface (LINE / Discord / Telegram style) where your followed actresses announce their releases chronologically:
+    - **Left Contacts Sidebar**: Real-time list of followed actresses with avatars, online status, latest release snippet, and badge count for missing releases. Includes an instant search filter and "+ Follow Actress" friend box.
+    - **Chat Dialogue Stream**: Left bubble shows the actress introducing her release with jacket cover, title, studio, release date, and `[📋 Copy ID]` button. Right bubble shows system responses confirming Jellyfin library status (`✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้ว` with folder path or `⏳ ยังไม่ได้ดาวน์โหลด`).
+    - **Missing Release Styling**: Unacquired titles are styled with a sleek 90% grayscale cover and dashed border, smoothly animating back to full vibrant color on hover.
+    - **Bottom Action Bar**: Quick access buttons for `[+ Track JAV-ID]`, `[🔄 Refresh Releases]`, and `[📂 Open Folder in Finder]`.
+  - **🎬 Movie Collection Mode**: A visual cover showcase featuring full-bleed movie posters, status ribbons (`✓ In Library`, `📥 Staging`, `★ Missing`), release dates, studio chips, direct folder path indicators, and instant inspection cards.
 - **👤 Slide-Over Profile & Stats Drawer**:
   - Detailed actress profile with Japanese Kanji and Romaji names.
   - **Collection Progress Bar**: Visual percentage bar showing library completeness (e.g. 67% collected).
   - **Stats Grid**: Comprehensive counters for Total, Downloaded in Library, Missing, Watched, and Favorites.
   - **Verified R18.dev Links**: Direct links using the official actress ID format: `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` (e.g. `1109487` for Hayasakakanon).
+- **📂 Native Finder / File Manager Integration**: Dedicated `[📂 Open in Finder]` buttons in the header, message bubbles, collection cards, and detail modal to instantly open actress or title folders on disk.
 - **📋 One-Click Copy ID**: Dedicated `[📋 Copy ID]` buttons on every release card and within the movie detail modal for effortless clipboard copying.
 
 ### 📂 3. NAS Directory Organizer & Jellyfin Pipeline
 - Organizes videos into the standardized folder structure:
   ```
-  {Destination}/{Actress_English_Name}/{JAV-ID} {English_Title}/
+  /Volumes/home/BT/organized/{Actress_English_Name}/{JAV-ID} {English_Title}/
   ```
   - **English Naming Priority**: Folders prioritize English/Romaji names for both Actresses and Titles, seamlessly falling back to Japanese only if English metadata is unavailable.
   - **Filesystem Safety**: Names are safely capped at 180 bytes with UTF-8 boundary validation to prevent OS filesystem `ENAMETOOLONG` errors (255-byte `NAME_MAX`).
 - **Consolidation**: Consolidates multi-part videos (e.g. `SNOS-038-cd1.mp4`, `SNOS-038-cd2.mp4`) into single unified Jellyfin movie entries.
 - **Jellyfin Metadata (.nfo)**: Generates official Kodi/Jellyfin Movie NFO XML with title, original title, plot, studio, release date, runtime, actresses with thumbnail URLs, genres, watched status, and user ratings.
 - **Standalone `movie.html`**: Generates a responsive, standalone dark-mode summary page with embedded actress cards and sample screenshots for offline browsing.
-- **High-Res Assets**: Downloads full-resolution `poster.jpg` (cover jacket), `fanart.jpg` (backdrop), and all sample gallery screenshots into `extrafanart/`.
+- **High-Res Assets & Resilient Serving**: Downloads full-resolution `poster.jpg` (cover jacket), `fanart.jpg` (backdrop), and all sample gallery screenshots into `extrafanart/`. The web server features a multi-tier fallback for `/api/images/{id}` (RAM cache $\rightarrow$ local organized disk poster $\rightarrow$ remote DMM/R18 fetch) ensuring posters are always displayed.
 - **One-Click Reveal in Finder / File Manager**: Click `[📂 Open in Finder]` directly on any card or modal to immediately reveal the organized files in macOS Finder, Windows Explorer, or Linux.
 - **Safe Dry-Run Mode**: Supports `--dry-run` to preview all target folder moves and asset creations safely before applying changes.
 
@@ -100,10 +103,10 @@ make build
 ### 5. NAS Directory Organize via CLI
 ```bash
 # Safe preview without moving files (Dry-Run)
-./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/2026/JAV_Library --dry-run
+./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized --dry-run
 
 # Execute organization and asset generation
-./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/2026/JAV_Library
+./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized
 ```
 
 ---
@@ -111,7 +114,7 @@ make build
 ## 📂 NAS Jellyfin Directory Structure
 
 ```
-/Volumes/home/BT/2026/JAV_Library/
+/Volumes/home/BT/organized/
 └── Kanna Seto/                                            # English / Romaji Actress Name
     └── SNOS-038 AV Debut 1st Anniversary Work.../         # JAV-ID + English Title (capped at 180 bytes)
         ├── SNOS-038.mp4                                   # Video file (or -cd1.mp4, -cd2.mp4)

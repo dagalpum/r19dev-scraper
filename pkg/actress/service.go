@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -159,22 +161,53 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			return nil, err
 		}
 
-		if libPath.Valid && libPath.String != "" {
-			r.IsDownloaded = true
-			r.LibraryPath = libPath.String
-			downloadedCount++
-		}
-		if orgFolder.Valid {
+		if orgFolder.Valid && orgFolder.String != "" {
 			r.OrganizedFolder = orgFolder.String
 		}
-		if orgVideo.Valid {
+		if orgVideo.Valid && orgVideo.String != "" {
 			r.OrganizedVideo = orgVideo.String
+		}
+		if libPath.Valid && libPath.String != "" {
+			r.LibraryPath = libPath.String
+		}
+
+		// Check if organized folder exists in default organized library (/Volumes/home/BT/organized) if not in DB
+		if r.OrganizedFolder == "" && r.MovieID != "" {
+			candidates := []string{
+				filepath.Join("/Volumes/home/BT/organized", actressName),
+				filepath.Join("/Volumes/home/BT/organized", actRec.Name),
+			}
+			for _, actDir := range candidates {
+				if entries, err := os.ReadDir(actDir); err == nil {
+					for _, entry := range entries {
+						if entry.IsDir() && strings.Contains(strings.ToUpper(entry.Name()), strings.ToUpper(r.MovieID)) {
+							foundPath := filepath.Join(actDir, entry.Name())
+							r.OrganizedFolder = foundPath
+							// Cache to database organized_movies
+							_ = s.database.SetOrganized(r.MovieID, foundPath, "")
+							break
+						}
+					}
+				}
+				if r.OrganizedFolder != "" {
+					break
+				}
+			}
+		}
+
+		// A movie is downloaded/present if it has an organized folder, organized video, or library file
+		if r.OrganizedFolder != "" || r.OrganizedVideo != "" || r.LibraryPath != "" {
+			r.IsDownloaded = true
+			downloadedCount++
 		}
 		if r.IsWatched {
 			watchedCount++
 		}
 		if r.IsFavorite {
 			favCount++
+		}
+		if r.CoverURL == "" && r.MovieID != "" {
+			r.CoverURL = "/api/images/" + r.MovieID
 		}
 
 		releases = append(releases, r)

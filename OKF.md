@@ -102,6 +102,10 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - `library_files`: Scanned file catalog with size, part number, and destination paths.
   - `organized_movies`: Maps `movie_id` to `target_folder` and `target_video` for instant status detection and One-Click Finder access.
   - `operation_history`: Audit trail for all organize and scrape runs storing execution metadata, success/fail metrics, and complete console output.
+* **Safe Updates & Data Integrity**:
+  - `SaveMovie` employs guarded `ON CONFLICT(id) DO UPDATE SET` clauses using SQL `CASE WHEN excluded.<field> != '' THEN excluded.<field> ELSE movies.<field> END` for `cover_url`, `poster_url`, `trailer_url`, `title`, and metadata arrays. This guarantees partial saves, mock objects, or network dropouts never overwrite existing rich metadata with empty strings.
+* **Test Isolation (`SetDB`)**:
+  - `pkg/organizer` and `pkg/web` allow overriding the active database via `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` so test suites run against isolated temporary databases without mutating `~/Library/Caches/r19dev/r19dev.db`.
 * **Auto-Migration & R18 ID Backfill**:
   - Automatically migrates existing databases on boot: `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;`.
   - Runs `backfillActressR18IDs()` on startup to inspect `movies.actresses_json` and automatically populate `r18_id` for followed actresses without requiring manual DB updates.
@@ -114,11 +118,12 @@ The matcher converts irregular filenames into normalized JAV IDs.
 
 * **Directory Layout & Priority**:
   ```
-  <Destination_Root>/<Actress_Name>/<JAV-ID Sanitized_Title>/
+  /Volumes/home/BT/organized/<Actress_Name>/<JAV-ID Sanitized_Title>/
   ```
   1. **Actress Name**: English/Romaji name preferred. Falls back to Japanese Kanji if English is empty; defaults to `Unknown Actress` if neither exists.
   2. **Movie Title**: English title preferred. Falls back to Original Japanese Title if English is empty; defaults to `JAV-ID` if neither exists.
   3. **Multi-Part Consolidation**: All parts of the same movie are moved into the same destination directory as `<JAV-ID>-cd1.mp4`, `<JAV-ID>-cd2.mp4` per Jellyfin multi-disc specifications.
+* **Default Destination**: Defaults to `/Volumes/home/BT/organized` across both backend services and frontend inputs.
 * **Filesystem Boundary Safety (ENAMETOOLONG Prevention)**:
   - `SanitizeFilename` strips invalid OS characters (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`) and collapses whitespace.
   - **180-Byte Hard Limit**: Truncates names strictly at $\le 180$ bytes without splitting UTF-8 multi-byte runes, preventing `ENAMETOOLONG` errors on APFS, ext4, NTFS, and SMB shares (where `NAME_MAX` is 255 bytes).
@@ -126,11 +131,15 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - `<JAV-ID>.nfo`: Full XML metadata with premiered date, year, actors, plot, MPAA rating, and unique IDs.
   - `movie.html`: Standalone offline dark-mode HTML summary page with gallery lightbox.
   - Asset Downloader: Full jacket cover (`poster.jpg`), backdrop (`fanart.jpg`), and sample screenshots (`extrafanart/fanart{N}.jpg`).
-* **One-Click Reveal**: Backend `POST /api/open-folder` invokes native file managers (`open` on macOS Finder, `explorer` on Windows, `xdg-open` on Linux).
+* **One-Click Reveal**: Backend `POST /api/open-folder` invokes native file managers (`open` on macOS Finder, `explorer` on Windows, `xdg-open` on Linux) with direct resolution for both actress folders and specific movie directories.
 
 ### 3.7 Web Studio Architecture (`pkg/web`)
 
 * **Single Binary Embedding**: Frontend assets (`index.html`, `style.css`, `app.js`, `vendor/lucide.min.js`) embedded via `embed.FS`.
+* **Multi-Tier Image Endpoint (`/api/images/{id}`)**:
+  - Layer 1: In-memory cache check (`cache.Default().GetImage(id)`).
+  - Layer 2: Disk scan in organized folder (`poster.jpg`, `fanart.jpg`, `cover.jpg`) via SQLite `organized_movies` record or `/Volumes/home/BT/organized/*/*{id}*`.
+  - Layer 3: Remote fetch via upgraded DMM URL using `scraper.DefaultUA` and `Referer: https://r18.dev/`, dynamically cached into RAM.
 * **Real-Time Streaming (SSE)**:
   - Streaming endpoints: `/api/scan/stream`, `/api/organize/stream`, `/api/scrape/stream`.
   - **Connection Timeout Handling**: Removed 60s `WriteTimeout` on global `http.Server`. Active SSE handlers clear write deadlines via `rc := http.NewResponseController(w); rc.SetWriteDeadline(time.Time{})` and employ an extended 30-minute context timeout.
@@ -139,15 +148,15 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - **Clipboard Copy**: Direct copy button copies raw console output with toast confirmation.
   - **History Integration**: Header button opens SQLite Operation History modal with instant log inspection and audit trail review.
 
-### 3.8 Actress Hub: Chat UI & Filmography Engine
+### 3.8 Actress Hub: Chat UI & Dual-Mode Filmography Engine
 
-* **Chat Interface Architecture**:
-  - Replaces traditional grid cards with an interactive LINE / Discord / Telegram style two-column messaging app layout.
-  - **Left Sidebar**: Real-time list of followed actresses with avatars, online status, latest release snippet, missing releases count badge, instant search filter, and quick follow friend box.
-  - **Conversation Feed**: Left bubble features the actress announcing her release with jacket cover, JAV-ID, title, studio, release date, and `[📋 Copy ID]` button. Right bubble features system response displaying Jellyfin organized path or unacquired status.
-  - **Grayscale Effect for Missing Items**: Covers of unacquired movies are rendered with a 90% grayscale filter and dashed border, transitioning smoothly to full color on hover.
-  - **Slide-Over Profile Drawer**: Toggles smoothly from the right edge with avatar, Romaji/Kanji names, R18 ID, collection completeness progress bar, and comprehensive stats (Total, Downloaded, Missing, Watched, Favorites).
-  - **Official R18.dev URLs**: Uses the verified actress URL structure `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` rather than broken search endpoints.
+* **Dual-Mode Presentation**:
+  - **💬 Chat Timeline Mode**: Two-column messaging view (LINE/Discord style) with contacts list on left and chronological release stream on right. Dialogue bubbles feature actress announcement with jacket cover, release date, and `[📋 Copy ID]`, paired with system responses indicating Jellyfin status (`✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้ว` or `⏳ ยังไม่ได้ดาวน์โหลด`).
+  - **🎬 Movie Collection Mode**: Visual poster showcase with full-bleed cards, status ribbons (`✓ In Library`, `📥 Staging`, `★ Missing`), release dates, studio tags, and direct inspection links.
+* **Slide-Over Profile Drawer**:
+  - Smooth sliding drawer from the right edge with avatar, Romaji/Kanji names, verified R18 ID links (`https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress`), collection completeness progress bar, and comprehensive stats (Total, Downloaded, Missing, Watched, Favorites).
+* **Native Finder Controls**:
+  - One-click `[📂 Open in Finder]` buttons in header, chat cards, collection cards, and detail modal.
 
 ---
 
@@ -161,4 +170,7 @@ The matcher converts irregular filenames into normalized JAV IDs.
 | **Long-Running Organize Stream** | Connection closed at 60s | Global `WriteTimeout` removed, `SetWriteDeadline(time.Time{})` applied on SSE response controller. |
 | **Multi-Part Video (CD1/CD2)** | Sibling parts in directory | Consolidated into a single Jellyfin folder with `-cd1.mp4`, `-cd2.mp4` naming. |
 | **Network Failure during Scrape** | 503 / DNS / Timeout | UI displays clear warning badge in the detail panel with retry hint or manual ID override. |
+| **Missing Remote Cover URL** | Empty `cover_url` in DB | `/api/images/{id}` automatically checks disk for `poster.jpg` / `fanart.jpg` and serves high-res local image. |
+| **Unit Test Database Pollution** | Mock data wipes real DB | Isolated temporary SQLite DB passed via `organizer.SetDB()` and `web.Config{DB}`, preventing production DB mutation. |
+| **Partial Metadata Overwrite** | Empty fields on re-save | `SaveMovie` SQL uses `CASE WHEN excluded.* != ''` preserving existing covers, titles, and metadata. |
 | **Symlink Recursion** | Cyclic links in NAS | Skipped unconditionally at `os.Lstat` evaluation phase. |

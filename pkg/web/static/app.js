@@ -34,6 +34,8 @@
     logAutoScroll: true,
     activeActressName: null,
     actressSearchQuery: '',
+    actressViewMode: localStorage.getItem('r19dev_actress_view_mode') || 'collection',
+    collectionFilterActress: 'all',
   };
 
   // DOM Selectors
@@ -88,6 +90,17 @@
     statScraped: document.getElementById('stat-scraped'),
     moviesGrid: document.getElementById('movies-grid'),
     libraryEmpty: document.getElementById('library-empty'),
+
+    // Actress Hub (Dual Mode: Collection & Chat)
+    btnModeCollection: document.getElementById('btn-mode-collection'),
+    btnModeChat: document.getElementById('btn-mode-chat'),
+    btnHubRefresh: document.getElementById('btn-hub-refresh'),
+    btnHubAdd: document.getElementById('btn-hub-add'),
+    actressCollectionView: document.getElementById('actress-collection-view'),
+    actressChatView: document.getElementById('actress-chat-view'),
+    collectionActressChips: document.getElementById('collection-actress-chips'),
+    collectionActressHero: document.getElementById('collection-actress-hero'),
+    collectionShelvesContainer: document.getElementById('collection-shelves-container'),
 
     // Actress Chat Hub
     inputActressName: document.getElementById('input-actress-name'),
@@ -598,6 +611,11 @@
   }
 
   function setupActressHub() {
+    elements.btnModeCollection?.addEventListener('click', () => setActressViewMode('collection'));
+    elements.btnModeChat?.addEventListener('click', () => setActressViewMode('chat'));
+    elements.btnHubRefresh?.addEventListener('click', (e) => refreshAllActresses(e.currentTarget));
+    elements.btnHubAdd?.addEventListener('click', promptAddActress);
+
     elements.btnAddActress?.addEventListener('click', followActressFromInput);
 
     elements.inputActressName?.addEventListener('keydown', (e) => {
@@ -682,6 +700,19 @@
     return [...groups.values(), ...unmatched];
   }
 
+  function getDefaultOrganizedDestination(activeDir) {
+    if (!activeDir) return '/Volumes/home/BT/organized';
+    if (activeDir.startsWith('/Volumes/home/BT')) {
+      return '/Volumes/home/BT/organized';
+    }
+    const parts = activeDir.replace(/\\/g, '/').split('/').filter(Boolean);
+    if (parts.length > 1) {
+      parts.pop();
+      return '/' + parts.join('/') + '/organized';
+    }
+    return activeDir + '/organized';
+  }
+
   // =========================================================================
   // Live Streaming Progress (Scan & Organize)
   // =========================================================================
@@ -729,7 +760,7 @@
         elements.labelActiveDir.textContent = state.activeDir;
         elements.orgSrcDir.value = state.activeDir;
         if (!elements.orgDestRoot.value) {
-          elements.orgDestRoot.value = state.activeDir + '/JAV_Library';
+          elements.orgDestRoot.value = getDefaultOrganizedDestination(state.activeDir);
         }
 
         if (data.metadata) Object.assign(state.metadata, data.metadata);
@@ -1191,7 +1222,7 @@
     const id = movie.id || 'UNMATCHED';
     const uState = state.userStates[id] || {};
     const isOrganized = Boolean(state.organizedStatus[id]);
-    const coverUrl = meta?.cover_url || meta?.poster_url || '';
+    const coverUrl = meta?.cover_url || meta?.poster_url || (id !== 'UNMATCHED' ? '/api/images/' + id : '');
 
     // Multi-part files list
     let multipartHtml = '';
@@ -1303,7 +1334,7 @@
                 <span class="folder-banner-icon">📁</span>
                 <div class="folder-banner-text">
                   <span class="folder-banner-label">Jellyfin Destination Folder:</span>
-                  <code class="folder-banner-path" title="${escapeHtml(state.organizedFolders[id] || '')}">${escapeHtml(state.organizedFolders[id] || 'Organized in JAV_Library')}</code>
+                  <code class="folder-banner-path" title="${escapeHtml(state.organizedFolders[id] || '')}">${escapeHtml(state.organizedFolders[id] || 'Organized in Library')}</code>
                 </div>
               </div>
               <button class="btn btn-secondary btn-sm btn-open-folder" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(state.organizedFolders[id] || '')}" onclick="window.app.openFolderEl(this, event)">
@@ -1626,7 +1657,403 @@
     elements.drawerProfileBackdrop?.classList.add('hidden');
   }
 
+  // =========================================================================
+  // Actress Hub Dual View & Streaming Shelves
+  // =========================================================================
+  function setActressViewMode(mode) {
+    if (!mode) mode = 'collection';
+    state.actressViewMode = mode;
+    localStorage.setItem('r19dev_actress_view_mode', mode);
+    applyActressViewMode();
+    if (mode === 'collection') {
+      renderActressCollection();
+    } else {
+      renderChatView();
+    }
+  }
+
+  function applyActressViewMode() {
+    const isCollection = state.actressViewMode === 'collection';
+
+    elements.btnModeCollection?.classList.toggle('active', isCollection);
+    elements.btnModeCollection?.setAttribute('aria-selected', String(isCollection));
+    elements.btnModeChat?.classList.toggle('active', !isCollection);
+    elements.btnModeChat?.setAttribute('aria-selected', String(!isCollection));
+
+    elements.actressCollectionView?.classList.toggle('hidden', !isCollection);
+    elements.actressChatView?.classList.toggle('hidden', isCollection);
+  }
+
+  function filterCollectionActress(name) {
+    state.collectionFilterActress = name || 'all';
+    if (name && name !== 'all') {
+      state.activeActressName = name;
+    }
+    renderActressCollection();
+  }
+
+  function scrollShelf(shelfId, direction) {
+    const track = document.getElementById(shelfId);
+    if (!track) return;
+    const distance = track.clientWidth * 0.75;
+    track.scrollBy({
+      left: direction * distance,
+      behavior: 'smooth'
+    });
+  }
+
+  async function promptAddActress() {
+    const name = window.prompt('Enter actress name to follow (e.g. Hayasaka Kanon, Yua Mikami):');
+    if (!name || !name.trim()) return;
+    try {
+      showToast(`Following ${name.trim()}...`, 'info');
+      const res = await fetch(`/api/actresses/follow?name=${encodeURIComponent(name.trim())}`, { method: 'POST' });
+      if (res.ok) {
+        showToast(`Successfully followed ${name.trim()}! Fetching releases...`, 'success');
+        await loadActressesData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(err.error || 'Failed to follow actress', 'danger');
+      }
+    } catch (e) {
+      showToast(`Error: ${e.message}`, 'danger');
+    }
+  }
+
+  function createPosterCardHtml(rel) {
+    const id = rel.movie_id || '';
+    const meta = state.metadata[id];
+    const isOrganized = Boolean(rel.organized_folder) || Boolean(state.organizedFolders[id]);
+    const isStaging = !isOrganized && (rel.is_downloaded || Boolean(state.organizedStatus[id]));
+
+    let ribbonHtml = '';
+    let statusTagHtml = '';
+    if (isOrganized) {
+      ribbonHtml = '<div class="poster-ribbon in-library" title="Organized in Jellyfin">✓</div>';
+      statusTagHtml = '<span class="poster-status-tag in-library">In Library</span>';
+    } else if (isStaging) {
+      ribbonHtml = '<div class="poster-ribbon staging" title="Downloaded (In Staging)">📥</div>';
+      statusTagHtml = '<span class="poster-status-tag" style="background: rgba(245,158,11,0.25); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4);">Staging</span>';
+    } else {
+      ribbonHtml = '<div class="poster-ribbon missing" title="Missing / Wishlist">★</div>';
+      statusTagHtml = '<span class="poster-status-tag missing">Missing</span>';
+    }
+
+    const coverUrl = rel.cover_url || rel.poster_url || meta?.cover_url || meta?.poster_url || (id ? '/api/images/' + id : '');
+    const title = meta?.title || rel.title || id;
+    const maker = meta?.maker || rel.maker || '';
+    const date = rel.release_date || meta?.release_date || '';
+    const folderPath = rel.organized_folder || rel.library_path || state.organizedFolders[id] || '';
+
+    const imgHtml = coverUrl ?
+      `<img class="poster-img" src="${coverUrl}" alt="${escapeHtml(id)}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+       <div class="poster-fallback" style="display: none;">
+         <div class="poster-fallback-icon">🎬</div>
+         <div class="poster-fallback-id">${escapeHtml(id)}</div>
+       </div>` :
+      `<div class="poster-fallback">
+         <div class="poster-fallback-icon">🎬</div>
+         <div class="poster-fallback-id">${escapeHtml(id)}</div>
+       </div>`;
+
+    return `
+      <div class="collection-poster-card" onclick="window.app.openMovieById('${escapeHtml(id)}')">
+        ${ribbonHtml}
+        ${imgHtml}
+        <div class="poster-info-overlay">
+          <div class="poster-badges-row">
+            <span class="poster-id-badge">${isOrganized ? '💽 ' : (isStaging ? '📥 ' : '')}${escapeHtml(id)}</span>
+            ${statusTagHtml}
+          </div>
+          <h4 class="poster-title" title="${escapeHtml(title)}">${escapeHtml(title)}</h4>
+          <div class="poster-sub">
+            <span>${escapeHtml(maker || 'R18.dev')}</span>
+            <span>${escapeHtml(date)}</span>
+          </div>
+        </div>
+        <div class="poster-hover-actions">
+          <button class="poster-btn-action poster-btn-primary" onclick="event.stopPropagation(); window.app.openMovieById('${escapeHtml(id)}')">
+            <span>▶</span> Details
+          </button>
+          <button class="poster-btn-action poster-btn-secondary" onclick="event.stopPropagation(); window.app.copyMovieId('${escapeHtml(id)}', event)">
+            <span>📋</span> Copy ID
+          </button>
+          ${folderPath ? `
+            <button class="poster-btn-action poster-btn-secondary" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(folderPath)}" onclick="window.app.openFolderEl(this, event)">
+              <span>📂</span> Finder
+            </button>
+          ` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  function createShelfHtml(shelfId, title, icon, count, cardsHtml) {
+    return `
+      <section class="movie-shelf" aria-labelledby="shelf-title-${shelfId}">
+        <div class="shelf-header">
+          <div class="shelf-title-group">
+            <h3 id="shelf-title-${shelfId}" class="shelf-title">
+              <span>${icon}</span>
+              <span>${escapeHtml(title)}</span>
+            </h3>
+            <span class="shelf-count">${count}</span>
+          </div>
+          <div class="shelf-nav-controls">
+            <button class="shelf-nav-btn shelf-nav-prev" aria-label="Scroll left" onclick="window.app.scrollShelf('${shelfId}', -1)">‹</button>
+            <button class="shelf-nav-btn shelf-nav-next" aria-label="Scroll right" onclick="window.app.scrollShelf('${shelfId}', 1)">›</button>
+          </div>
+        </div>
+        <div id="${shelfId}" class="shelf-track" role="region" aria-label="${escapeHtml(title)} shelf">
+          ${cardsHtml && cardsHtml.length > 0 ? cardsHtml.join('') : '<div class="shelf-empty-state">No releases in this category yet.</div>'}
+        </div>
+      </section>
+    `;
+  }
+
+  function renderActressCollection() {
+    if (!elements.collectionShelvesContainer) return;
+
+    if (!state.actresses || state.actresses.length === 0) {
+      if (elements.collectionActressChips) elements.collectionActressChips.innerHTML = '';
+      if (elements.collectionActressHero) {
+        elements.collectionActressHero.innerHTML = `
+          <div style="text-align: center; padding: 2.5rem 1.5rem; color: var(--text-muted);">
+            <div style="font-size: 2.8rem; margin-bottom: 0.6rem;">🌟</div>
+            <h3 style="color: #fff; margin-bottom: 0.5rem; font-size: 1.2rem;">No Followed Actresses Yet</h3>
+            <p style="margin-bottom: 1.25rem; font-size: 0.9rem;">Follow your favorite actresses to browse their streaming collections and track missing releases!</p>
+            <button class="btn btn-primary" onclick="window.app.promptAddActress()">+ Follow Actress</button>
+          </div>
+        `;
+      }
+      elements.collectionShelvesContainer.innerHTML = '';
+      return;
+    }
+
+    // 1. Render Filter Chips
+    const isAll = state.collectionFilterActress === 'all';
+    let chipsHtml = `
+      <button class="collection-chip ${isAll ? 'active' : ''}" onclick="window.app.filterCollectionActress('all')">
+        <span>🌟</span>
+        <span>All Actresses</span>
+        <span class="chip-badge">${state.actresses.length}</span>
+      </button>
+    `;
+
+    state.actresses.forEach(entry => {
+      const a = entry.actress;
+      const isChipActive = !isAll && state.collectionFilterActress === a.name;
+      const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+      const relCount = entry.releases ? entry.releases.length : 0;
+      chipsHtml += `
+        <button class="collection-chip ${isChipActive ? 'active' : ''}" onclick="window.app.filterCollectionActress('${escapeHtml(a.name)}')">
+          <img class="chip-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+          <span>${escapeHtml(a.name)}</span>
+          <span class="chip-badge">${relCount}</span>
+        </button>
+      `;
+    });
+    if (elements.collectionActressChips) {
+      elements.collectionActressChips.innerHTML = chipsHtml;
+    }
+
+    // 2. Render Hero Overview Banner & 3. Shelves
+    if (isAll) {
+      let totalTitles = 0;
+      let totalDownloaded = 0;
+      let totalMissing = 0;
+      state.actresses.forEach(entry => {
+        totalTitles += entry.total || (entry.releases ? entry.releases.length : 0);
+        totalDownloaded += entry.downloaded || 0;
+        totalMissing += entry.missing || 0;
+      });
+      const overallPct = totalTitles > 0 ? Math.round((totalDownloaded / totalTitles) * 100) : 0;
+
+      if (elements.collectionActressHero) {
+        elements.collectionActressHero.innerHTML = `
+          <div class="collection-hero-content">
+            <div class="hero-profile-group">
+              <div class="hero-avatar-wrapper">
+                <div style="width: 100%; height: 100%; border-radius: 50%; background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; box-shadow: 0 0 16px rgba(99, 102, 241, 0.4);">
+                  🎬
+                </div>
+              </div>
+              <div class="hero-titles">
+                <div class="hero-name-row">
+                  <h2 class="hero-name">All Followed Actresses</h2>
+                </div>
+                <div class="hero-meta-pills">
+                  <span class="hero-stat-pill">👥 ${state.actresses.length} Actresses</span>
+                  <span class="hero-stat-pill">📦 ${totalTitles} Releases Tracked</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-progress-group">
+              <div class="hero-progress-labels">
+                <span class="hero-progress-label">Total Collection Progress</span>
+                <span class="hero-progress-pct">${overallPct}% (${totalDownloaded} / ${totalTitles})</span>
+              </div>
+              <div class="hero-progress-track">
+                <div class="hero-progress-bar" style="width: ${overallPct}%;"></div>
+              </div>
+              <div class="hero-stats-mini">
+                <span class="hero-stat-green">🟢 ${totalDownloaded} in library</span>
+                <span class="hero-stat-red">🔴 ${totalMissing} missing</span>
+              </div>
+            </div>
+
+            <div class="hero-actions-group">
+              <button class="btn btn-secondary btn-sm" onclick="window.app.refreshAllActresses(this)">
+                <span class="icon">🔄</span> Refresh All
+              </button>
+              <button class="btn btn-primary btn-sm" onclick="window.app.promptAddActress()">
+                <span class="icon">+</span> Follow Actress
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      // Collect deduplicated releases across all actresses
+      const allReleasesMap = new Map();
+      state.actresses.forEach(entry => {
+        (entry.releases || []).forEach(rel => {
+          if (!allReleasesMap.has(rel.movie_id)) {
+            allReleasesMap.set(rel.movie_id, rel);
+          }
+        });
+      });
+      const allReleases = Array.from(allReleasesMap.values());
+
+      // Shelf 1: Recent releases
+      const recentReleases = [...allReleases].sort((a, b) => (b.release_date || '').localeCompare(a.release_date || '')).slice(0, 25);
+      const recentCards = recentReleases.map(createPosterCardHtml);
+
+      // Shelf 2: In Library / Ready to watch
+      const libraryReleases = allReleases.filter(r => r.organized_folder || r.library_path || r.is_downloaded || state.organizedStatus[r.movie_id]).sort((a, b) => (b.release_date || '').localeCompare(a.release_date || ''));
+      const libraryCards = libraryReleases.map(createPosterCardHtml);
+
+      let shelvesHtml = '';
+      shelvesHtml += createShelfHtml('shelf-recent-all', 'Recent Releases Across All Actresses', '🔥', recentReleases.length, recentCards);
+      shelvesHtml += createShelfHtml('shelf-library-all', 'In Library / Ready to Watch in Jellyfin', '🟢', libraryReleases.length, libraryCards);
+
+      // Dedicated shelf for each actress
+      state.actresses.forEach((entry, idx) => {
+        const a = entry.actress;
+        const rels = [...(entry.releases || [])].sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
+        const cards = rels.map(createPosterCardHtml);
+        const shelfId = `shelf-actress-${idx}`;
+        const pct = entry.total > 0 ? Math.round((entry.downloaded / entry.total) * 100) : 0;
+        shelvesHtml += createShelfHtml(shelfId, `${a.name} (${pct}% collected • ${rels.length} titles)`, '💃', rels.length, cards);
+      });
+
+      elements.collectionShelvesContainer.innerHTML = shelvesHtml;
+
+    } else {
+      // Specific Actress Selected
+      const activeEntry = state.actresses.find(e => e.actress.name === state.collectionFilterActress) || state.actresses[0];
+      const a = activeEntry.actress;
+      const releases = activeEntry.releases || [];
+      const total = activeEntry.total || releases.length;
+      const dl = activeEntry.downloaded || 0;
+      const missing = activeEntry.missing || 0;
+      const pct = total > 0 ? Math.round((dl / total) * 100) : 0;
+      const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+
+      const r18Url = a.r18_id
+        ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
+        : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
+
+      if (elements.collectionActressHero) {
+        elements.collectionActressHero.innerHTML = `
+          <div class="collection-hero-content">
+            <div class="hero-profile-group">
+              <div class="hero-avatar-wrapper">
+                <img class="hero-avatar-img" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+              </div>
+              <div class="hero-titles">
+                <div class="hero-name-row">
+                  <h2 class="hero-name">${escapeHtml(a.name)}</h2>
+                  <span class="hero-ja-name">${escapeHtml(a.ja_name || '')}</span>
+                </div>
+                <div class="hero-meta-pills">
+                  ${a.r18_id ? `<span class="hero-id-pill">#${a.r18_id}</span>` : ''}
+                  <span class="hero-stat-pill">📦 ${total} Titles</span>
+                  <span class="hero-stat-pill hero-stat-green">🟢 ${dl} In Library</span>
+                  <span class="hero-stat-pill hero-stat-red">🔴 ${missing} Missing</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="hero-progress-group">
+              <div class="hero-progress-labels">
+                <span class="hero-progress-label">Actress Filmography Progress</span>
+                <span class="hero-progress-pct">${pct}% (${dl} / ${total})</span>
+              </div>
+              <div class="hero-progress-track">
+                <div class="hero-progress-bar" style="width: ${pct}%;"></div>
+              </div>
+              <div class="hero-stats-mini">
+                <span class="hero-stat-green">🟢 ${dl} downloaded</span>
+                <span class="hero-stat-red">🔴 ${missing} missing</span>
+              </div>
+            </div>
+
+            <div class="hero-actions-group">
+              <button class="btn btn-secondary btn-sm" title="View Actress Profile & Stats" onclick="window.app.openActressProfileDrawer()">
+                <span>👤</span> Profile & Stats
+              </button>
+              <button class="btn btn-secondary btn-sm" title="Open Actress folder in Finder" onclick="window.app.openActiveActressFolder()">
+                <span class="icon">📂</span> Open Finder
+              </button>
+              <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View Official R18.dev Profile">
+                <span>🌐</span> R18.dev ↗
+              </a>
+              <button class="btn btn-secondary btn-sm" title="Track a new JAV-ID for this actress" onclick="window.app.trackTitleActiveActress()">
+                <span class="icon">+</span> Track JAV-ID
+              </button>
+              <button class="btn btn-secondary btn-sm" title="Refresh releases" onclick="window.app.refreshActiveActress(this)">
+                <span class="icon">🔄</span> Refresh
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      // Group into In Library vs Missing
+      const inLibraryReleases = [];
+      const missingReleases = [];
+      releases.forEach(rel => {
+        const isOrganized = Boolean(rel.organized_folder) || Boolean(state.organizedFolders[rel.movie_id]);
+        const isStaging = !isOrganized && (rel.is_downloaded || Boolean(state.organizedStatus[rel.movie_id]));
+        if (isOrganized || isStaging) {
+          inLibraryReleases.push(rel);
+        } else {
+          missingReleases.push(rel);
+        }
+      });
+
+      inLibraryReleases.sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
+      missingReleases.sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
+      const allChronological = [...releases].sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
+
+      let shelvesHtml = '';
+      shelvesHtml += createShelfHtml('shelf-actress-in-library', 'In Library / Ready to Watch in Jellyfin', '🟢', inLibraryReleases.length, inLibraryReleases.map(createPosterCardHtml));
+      shelvesHtml += createShelfHtml('shelf-actress-missing', 'Missing Releases / Wishlist', '🔴', missingReleases.length, missingReleases.map(createPosterCardHtml));
+      shelvesHtml += createShelfHtml('shelf-actress-all', 'Complete Filmography (Chronological)', '🗓️', allChronological.length, allChronological.map(createPosterCardHtml));
+
+      elements.collectionShelvesContainer.innerHTML = shelvesHtml;
+    }
+  }
+
   function renderActressHub() {
+    applyActressViewMode();
+    renderChatView();
+    renderActressCollection();
+  }
+
+  function renderChatView() {
     if (!elements.chatContactsList) return;
 
     elements.chatFriendsCount.textContent = state.actresses.length;
@@ -1778,7 +2205,7 @@
             </div>
             <div class="chat-embedded-card">
               <div class="chat-card-cover-box ${isMissing ? 'missing' : ''}" onclick="window.app.openMovie('${escapeHtml(rel.movie_id)}')">
-                <img src="${rel.cover_url || '/placeholder.png'}" alt="Cover ${escapeHtml(rel.movie_id)}" />
+                <img src="${rel.cover_url || (rel.movie_id ? '/api/images/' + rel.movie_id : '/placeholder.png')}" alt="Cover ${escapeHtml(rel.movie_id)}" onerror="this.onerror=null; this.src='/placeholder.png';" />
               </div>
               <div class="chat-card-body">
                 <div class="chat-card-id-row">
@@ -2052,7 +2479,7 @@
     const movie = state.groupedMovies.find(m => m.id === id);
     if (!movie) return;
 
-    const dest = elements.orgDestRoot.value.trim() || (state.activeDir + '/JAV_Library');
+    const dest = elements.orgDestRoot.value.trim() || getDefaultOrganizedDestination(state.activeDir);
     showOpProgress('📂', `กำลังจัดระเบียบ ${id}`, '0 / 6', 5, `กำลังเริ่มจัดระเบียบ ${id} สำหรับ Jellyfin...`);
     showToast(`Organizing ${id} for Jellyfin...`, 'info');
 
@@ -2082,7 +2509,7 @@
             const cur = state.groupedMovies.find(m => m.id === id);
             if (cur) renderModalContent(cur, state.metadata[id]);
           }
-          showOpProgress('✅', `จัดระเบียบ ${id} สำเร็จ!`, '6 / 6', 100, `บันทึกที่: ${data.target_folder || 'JAV_Library'}`);
+          showOpProgress('✅', `จัดระเบียบ ${id} สำเร็จ!`, '6 / 6', 100, `บันทึกที่: ${data.target_folder || 'organized'}`);
           showToast(`✅ จัดระเบียบ ${id} เรียบร้อยแล้ว!`, 'success');
         } else {
           showOpProgress('❌', `จัดระเบียบ ${id} ไม่สำเร็จ`, '6 / 6', 100, `ข้อผิดพลาด: ${data.error || 'Unknown error'}`);
@@ -2425,6 +2852,13 @@
     toggleFollowActress,
     organizeSingle,
     copyMovieId,
+
+    // Actress Hub: Dual View (Collection & Chat)
+    setActressViewMode,
+    filterCollectionActress,
+    scrollShelf,
+    promptAddActress,
+    openMovieById,
 
     // Actress Hub & Chat UI Actions
     selectActressContact,

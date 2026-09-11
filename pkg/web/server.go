@@ -46,6 +46,7 @@ type Config struct {
 	TargetDir string
 	Port      int
 	Language  string
+	DB        *db.DB
 }
 
 // NewServer initializes a new Web Server instance.
@@ -74,9 +75,15 @@ func NewServer(cfg Config) (*Server, error) {
 	scClient.SetLanguage(cfg.Language)
 	scClient.SetCache(cache.Default())
 
-	database, err := db.Default()
-	if err != nil {
-		return nil, err
+	var database *db.DB
+	if cfg.DB != nil {
+		database = cfg.DB
+	} else {
+		var dErr error
+		database, dErr = db.Default()
+		if dErr != nil {
+			return nil, dErr
+		}
 	}
 
 	actSvc := actress.New(database, scClient)
@@ -360,11 +367,73 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 1. Check in-memory image cache
 	if imgBytes, found := cache.Default().GetImage(id); found && len(imgBytes) > 0 {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		_, _ = w.Write(imgBytes)
 		return
+	}
+
+	// 2. Check local disk in organized folder from database
+	if s.db != nil {
+		if targetFolder, _, err := s.db.GetOrganizedDetails(id); err == nil && targetFolder != "" {
+			for _, candidate := range []string{"poster.jpg", "fanart.jpg", "cover.jpg"} {
+				p := filepath.Join(targetFolder, candidate)
+				if b, err := os.ReadFile(p); err == nil && len(b) > 0 {
+					_ = cache.Default().SetImage(id, b)
+					w.Header().Set("Content-Type", "image/jpeg")
+					w.Header().Set("Cache-Control", "public, max-age=86400")
+					_, _ = w.Write(b)
+					return
+				}
+			}
+		}
+	}
+
+	// 3. Fallback: Search organized directories on disk
+	if defaultOrg := defaultOrganizedDir(s.targetDir); defaultOrg != "" {
+		matches, _ := filepath.Glob(filepath.Join(defaultOrg, "*", "*"+id+"*", "poster.jpg"))
+		if len(matches) > 0 {
+			if b, err := os.ReadFile(matches[0]); err == nil && len(b) > 0 {
+				_ = cache.Default().SetImage(id, b)
+				w.Header().Set("Content-Type", "image/jpeg")
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				_, _ = w.Write(b)
+				return
+			}
+		}
+	}
+
+	// 4. Fallback: Fetch from remote cover_url if available in database
+	if s.db != nil {
+		if mov, err := s.db.GetMovie(id); err == nil && mov != nil {
+			fetchURL := mov.CoverURL
+			if fetchURL == "" {
+				fetchURL = mov.PosterURL
+			}
+			if fetchURL != "" {
+				upgradedURL := jellyfin.UpgradeDMMImageURL(fetchURL)
+				req, reqErr := http.NewRequestWithContext(r.Context(), http.MethodGet, upgradedURL, nil)
+				if reqErr == nil {
+					req.Header.Set("User-Agent", scraper.DefaultUA)
+					req.Header.Set("Referer", "https://r18.dev/")
+					client := &http.Client{Timeout: 10 * time.Second}
+					resp, doErr := client.Do(req)
+					if doErr == nil && resp.StatusCode == http.StatusOK {
+						defer resp.Body.Close()
+						imgData, rErr := io.ReadAll(resp.Body)
+						if rErr == nil && len(imgData) > 0 {
+							_ = cache.Default().SetImage(id, imgData)
+							w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+							w.Header().Set("Cache-Control", "public, max-age=86400")
+							_, _ = w.Write(imgData)
+							return
+						}
+					}
+				}
+			}
+		}
 	}
 
 	http.NotFound(w, r)
@@ -431,6 +500,19 @@ func (s *Server) handleActressReleases(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"actresses": summaries})
 }
 
+func defaultOrganizedDir(targetDir string) string {
+	if fi, err := os.Stat("/Volumes/home/BT/organized"); err == nil && fi.IsDir() {
+		return "/Volumes/home/BT/organized"
+	}
+	if strings.HasPrefix(targetDir, "/Volumes/home/BT") {
+		return "/Volumes/home/BT/organized"
+	}
+	if targetDir != "" && targetDir != "." {
+		return filepath.Join(filepath.Dir(targetDir), "organized")
+	}
+	return "/Volumes/home/BT/organized"
+}
+
 func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -449,8 +531,7 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Destination == "" {
-		writeJSONError(w, "destination path is required", http.StatusBadRequest)
-		return
+		req.Destination = defaultOrganizedDir(s.targetDir)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
@@ -620,10 +701,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	targetMovieID := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("movie_id")))
 
 	if destDir == "" {
-		errData, _ := json.Marshal(map[string]any{"error": "destination is required"})
-		fmt.Fprintf(w, "event: error\ndata: %s\n\n", errData)
-		flusher.Flush()
-		return
+		destDir = defaultOrganizedDir(s.targetDir)
 	}
 
 	rc := http.NewResponseController(w)
@@ -996,7 +1074,13 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 		}
 	}
 
-	checkDest := filepath.Join(targetDir, "JAV_Library")
+	checkDirs := []string{
+		"/Volumes/home/BT/organized",
+		filepath.Join(filepath.Dir(targetDir), "organized"),
+		filepath.Join(targetDir, "organized"),
+		filepath.Join(targetDir, "JAV_Library"),
+	}
+
 	for _, m := range matches {
 		if m.ID == "" || (organizedMap[m.ID] && folderMap[m.ID] != "") {
 			continue
@@ -1012,25 +1096,35 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 			}
 			continue
 		}
-		// If JAV_Library has this ID
-		if entries, err := os.ReadDir(checkDest); err == nil {
-			for _, entry := range entries {
-				if entry.IsDir() {
-					subPath := filepath.Join(checkDest, entry.Name())
-					if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
-						for _, sub := range subEntries {
-							if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), m.ID) {
-								foundFolder := filepath.Join(subPath, sub.Name())
-								organizedMap[m.ID] = true
-								folderMap[m.ID] = foundFolder
-								if database != nil {
-									_ = database.SetOrganized(m.ID, foundFolder, "")
+		// If checkDirs has this ID
+		found := false
+		for _, checkDest := range checkDirs {
+			if entries, err := os.ReadDir(checkDest); err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() {
+						subPath := filepath.Join(checkDest, entry.Name())
+						if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
+							for _, sub := range subEntries {
+								if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), m.ID) {
+									foundFolder := filepath.Join(subPath, sub.Name())
+									organizedMap[m.ID] = true
+									folderMap[m.ID] = foundFolder
+									if database != nil {
+										_ = database.SetOrganized(m.ID, foundFolder, "")
+									}
+									found = true
+									break
 								}
-								break
 							}
 						}
 					}
+					if found {
+						break
+					}
 				}
+			}
+			if found {
+				break
 			}
 		}
 	}
@@ -1065,8 +1159,11 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	// Fallback to searching by Actress name
 	if targetPath == "" && req.Actress != "" {
 		candidates := []string{
-			filepath.Join(s.targetDir, "JAV_Library", req.Actress),
+			filepath.Join("/Volumes/home/BT/organized", req.Actress),
+			filepath.Join(filepath.Dir(s.targetDir), "organized", req.Actress),
+			filepath.Join(s.targetDir, "organized", req.Actress),
 			filepath.Join(s.targetDir, req.Actress),
+			filepath.Join(s.targetDir, "JAV_Library", req.Actress),
 			filepath.Join("/Volumes/home/BT/2026/JAV_Library", req.Actress),
 		}
 		for _, cand := range candidates {
@@ -1080,9 +1177,11 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 		if targetPath == "" {
 			normActress := strings.ToLower(strings.ReplaceAll(req.Actress, " ", ""))
 			libDirs := []string{
+				"/Volumes/home/BT/organized",
+				filepath.Join(filepath.Dir(s.targetDir), "organized"),
+				filepath.Join(s.targetDir, "organized"),
 				filepath.Join(s.targetDir, "JAV_Library"),
 				s.targetDir,
-				"/Volumes/home/BT/2026/JAV_Library",
 			}
 			for _, libDir := range libDirs {
 				if entries, err := os.ReadDir(libDir); err == nil {
@@ -1102,9 +1201,9 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Ultimate fallback: if actress has no folder yet, open JAV_Library directory
+		// Ultimate fallback: if actress has no folder yet, open organized directory
 		if targetPath == "" {
-			for _, libDir := range []string{filepath.Join(s.targetDir, "JAV_Library"), "/Volumes/home/BT/2026/JAV_Library", s.targetDir} {
+			for _, libDir := range []string{"/Volumes/home/BT/organized", filepath.Join(filepath.Dir(s.targetDir), "organized"), filepath.Join(s.targetDir, "organized"), s.targetDir} {
 				if fi, err := os.Stat(libDir); err == nil && fi.IsDir() {
 					targetPath = libDir
 					fmt.Printf("ℹ️  [Finder] No specific folder for actress '%s' yet, opening root library: %s\n", req.Actress, libDir)
@@ -1114,12 +1213,14 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Fallback to searching in JAV_Library if not in DB
+	// Fallback to searching in organized dirs if not in DB
 	if targetPath == "" && req.MovieID != "" {
 		candidates := []string{
+			"/Volumes/home/BT/organized",
+			filepath.Join(filepath.Dir(s.targetDir), "organized"),
+			filepath.Join(s.targetDir, "organized"),
 			filepath.Join(s.targetDir, "JAV_Library"),
 			s.targetDir,
-			"/Volumes/home/BT/2026/JAV_Library",
 		}
 		for _, libDir := range candidates {
 			if entries, err := os.ReadDir(libDir); err == nil {

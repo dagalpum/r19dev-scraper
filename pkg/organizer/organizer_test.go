@@ -25,6 +25,14 @@ func TestOrganizeMatch(t *testing.T) {
 	destRoot := filepath.Join(tempDir, "dest")
 	_ = os.MkdirAll(srcDir, 0o755)
 
+	testDB, err := db.Open(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("failed to open test DB: %v", err)
+	}
+	defer testDB.Close()
+	SetDB(testDB)
+	defer SetDB(nil)
+
 	// Create dummy video files
 	video1 := filepath.Join(srcDir, "hhd800.com@SNOS-038.mp4")
 	_ = os.WriteFile(video1, []byte("dummy video content"), 0o644)

@@ -105,6 +105,20 @@ r19dev-scraper/
 * **Official R18 Actress URLs**: Links to `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` avoiding the non-existent `/search/` route on R18.dev.
 * **Database Backfill**: `initSchema` executes `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;` and automatically triggers `backfillActressR18IDs()` on startup, extracting R18 actress IDs from cached `movies.actresses_json`.
 
+### 4.6 Dual-Mode Filmography Presentation & Native Finder Integration
+* **Mode Toggle**: Users can switch fluidly between **Chat Mode 💬** (dialogue stream with unacquired grayscale effects) and **Movie Collection Mode 🎬** (full-bleed poster grid with status ribbons for `In Library`, `Staging`, and `Missing`).
+* **Profile Drawer**: Slide-over drawer presenting detailed Kanji/Romaji names, collection progress bar, and comprehensive collection metrics.
+* **Native Finder Controls**: Direct endpoints (`POST /api/open-folder`) trigger native OS file managers (`open` on macOS Finder, `explorer` on Windows, `xdg-open` on Linux) to reveal exact actress or title folders under `/Volumes/home/BT/organized`.
+
+### 4.7 Multi-Tier Image Serving Architecture (`/api/images/{id}`)
+* **Tier 1 (RAM Cache)**: Instant lookup in `cache.Default().GetImage(id)`.
+* **Tier 2 (Local Disk)**: Reads `poster.jpg`, `fanart.jpg`, or `cover.jpg` from the organized directory (via `organized_movies` or directory glob `/Volumes/home/BT/organized/*/*{id}*`), caching in RAM.
+* **Tier 3 (Network Scrape Fallback)**: Automatically downloads the jacket cover via upgraded DMM URLs using proper browser referrers, caches in RAM, and serves seamlessly.
+
+### 4.8 Safe DB Updates & Test Environment Isolation
+* **Safe Upserts**: `SaveMovie` employs SQL `CASE WHEN excluded.<field> != '' THEN excluded.<field> ELSE movies.<field> END` to ensure partial movie records never erase existing cover URLs, titles, or metadata arrays.
+* **Test Isolation**: `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` allow test suites to run against temporary SQLite databases without polluting `~/Library/Caches/r19dev/r19dev.db`.
+
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions

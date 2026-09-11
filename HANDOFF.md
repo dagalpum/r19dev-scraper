@@ -3,7 +3,7 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.2.0`  
+**Current Version**: `v1.3.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
 **Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary Web UI Studio, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
 
@@ -58,20 +58,20 @@ make test
 ### 4.3 Running the Application
 ```bash
 # 1. Web UI Studio (Recommended)
-./bin/r19dev web /path/to/jav/library
+./bin/r19dev web /Volumes/home/BT/2026
 
 # 2. Interactive TUI Mode
-./bin/r19dev tui /path/to/jav/library
+./bin/r19dev tui /Volumes/home/BT/2026
 
 # 3. CLI Scan Mode (Standard / JSON)
-./bin/r19dev scan /path/to/jav/library --json
+./bin/r19dev scan /Volumes/home/BT/2026 --json
 
 # 4. CLI Organize Mode (Dry-Run / Live)
-./bin/r19dev organize /path/to/source /path/to/destination --dry-run
-./bin/r19dev organize /path/to/source /path/to/destination
+./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized --dry-run
+./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized
 
 # 5. Direct Scraper Query
-./bin/r19dev scrape MIDA-517
+./bin/r19dev scrape SNOS-038
 ```
 
 ---
@@ -81,7 +81,7 @@ make test
 1. **Boundary-Safe Regular Expressions**:
    The matcher uses `(?:^|[^a-zA-Z0-9])` boundary assertions instead of standard `\b` to avoid splitting on underscores in filenames.
 2. **English Naming Priority with Japanese Fallback**:
-   Destination folders follow `{Destination}/{Actress_English_Name}/{JAV-ID} {English_Title}/`. Both actress names and movie titles prioritize English metadata, gracefully falling back to Japanese only if English is missing.
+   Destination folders follow `/Volumes/home/BT/organized/{Actress_English_Name}/{JAV-ID} {English_Title}/`. Both actress names and movie titles prioritize English metadata, gracefully falling back to Japanese only if English is missing.
 3. **Filesystem Safety & ENAMETOOLONG Prevention**:
    Filenames and folder names are sanitized and strictly capped at $\le 180$ bytes along UTF-8 rune boundaries, preventing OS filesystem crashes (`ENAMETOOLONG`) on APFS, ext4, NTFS, and SMB shares (where max component length is 255 bytes).
 4. **SSE Streaming without WriteTimeout**:
@@ -90,10 +90,18 @@ make test
    All batch/single operations are recorded in SQLite (`operation_history`) with complete console logs, counts, and status badges. The table auto-prunes entries older than 30 days or beyond 100 runs, guaranteeing zero disk clutter.
 6. **Smart Console Log Auto-Scroll & Copy**:
    The web console log pauses auto-scrolling when the user scrolls up, displays a floating resume button, and includes a one-click clipboard copy button.
-7. **Actress Hub Chat UI & Conversational Feed**:
-   Replaces conventional grids with a full-featured messaging app UI. The actress chats her releases chronologically, and the system verifies Jellyfin library status. Unacquired titles feature grayscale 90% covers that restore color on hover.
+7. **Actress Hub Dual-Mode (Chat vs. Collection Showcase)**:
+   Toggle between **Chat Mode 💬** (dialogue stream with unacquired grayscale effects and status response bubbles) and **Movie Collection Mode 🎬** (full-bleed poster grid with status ribbons for `In Library`, `Staging`, and `Missing`).
 8. **R18 ID Auto-Backfill & Profile Drawer**:
    Stores `r18_id` in SQLite, auto-migrated and backfilled from `movies.actresses_json`. Generates verified R18 actress links (`?id={r18_id}&type=actress`) and powers the slide-over profile drawer with collection completeness statistics.
+9. **Native File Manager Integration**:
+   One-click `[📂 Open in Finder]` buttons in header, chat cards, collection cards, and detail modal via `/api/open-folder`.
+10. **Organized Library Consolidation**:
+    All 23 actress folders consolidated under `/Volumes/home/BT/organized`, set as the permanent default across backend and frontend.
+11. **Safe Database Updates & Test Isolation**:
+    Guarded `SaveMovie` SQL upsert prevents partial records from wiping existing metadata, and unit tests use isolated temporary databases via `organizer.SetDB()` and `web.Config{DB}`.
+12. **Multi-Tier Image Endpoint (`/api/images/{id}`)**:
+    Combines in-memory cache, local organized disk poster lookup, and remote DMM fetch fallback to guarantee reliable poster display under all network and offline conditions.
 
 ---
 
@@ -104,9 +112,12 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Persistent SQLite Database**: Stores user states, ratings, favorites, and organized status.
 - ✅ **NAS Organizer Pipeline**: Automatic atomic move/copy with multi-part consolidation.
 - ✅ **Operation History & Audit Trail**: SQLite-backed with auto-retention and Web UI viewer.
-- ✅ **Interactive Actress Chat UI**: Two-column LINE/Discord-style messaging feed with release cards.
+- ✅ **Interactive Actress Chat UI & Dual View**: Chat timeline mode and Movie Collection showcase.
 - ✅ **Slide-Over Profile Drawer**: Stats grid, collection progress bar, and verified R18.dev links.
-- ✅ **Clipboard Copy Ergonomics**: Instant `[📋 Copy ID]` buttons on all release cards and modals.
+- ✅ **Native Finder Integration**: Instant reveal in macOS Finder / OS file manager.
+- ✅ **Organized Library Default**: Standardized destination at `/Volumes/home/BT/organized`.
+- ✅ **Safe Metadata Upserts & Test DB Isolation**: Guarantees zero production database corruption.
+- ✅ **Multi-Tier Image Serving Pipeline**: Complete resilience with disk fallback.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

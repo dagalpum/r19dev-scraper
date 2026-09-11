@@ -2915,37 +2915,48 @@ body {
 
 .actresses-directory-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.25rem;
 }
 
 .actress-dir-card {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.9rem 1rem;
+  gap: 1.25rem;
+  padding: 1.1rem 1.25rem;
   background: #141a29;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  border-radius: 16px;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
+  min-height: 155px;
+  position: relative;
+  overflow: hidden;
 }
 
 .actress-dir-card:hover {
-  transform: translateY(-3px);
-  border-color: rgba(99, 102, 241, 0.6);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 16px rgba(99, 102, 241, 0.2);
-  background: #172033;
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.65);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(99, 102, 241, 0.25);
+  background: #182236;
 }
 
 .actress-dir-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
+  width: 125px;
+  height: 125px;
+  border-radius: 14px;
   object-fit: cover;
+  object-position: center top;
   flex-shrink: 0;
   border: 2px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  transition: transform 0.35s ease, border-color 0.3s ease;
+}
+
+.actress-dir-card:hover .actress-dir-avatar {
+  transform: scale(1.04);
+  border-color: rgba(99, 102, 241, 0.7);
 }
 
 .actress-dir-body {
@@ -2953,47 +2964,48 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  justify-content: center;
+  gap: 0.55rem;
 }
 
 .actress-dir-header {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.15rem;
 }
 
 .actress-dir-name {
-  font-size: 0.95rem;
-  font-weight: 700;
+  font-size: 1.15rem;
+  font-weight: 800;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.25;
 }
 
 .actress-dir-ja {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
-  flex-shrink: 0;
 }
 
 .actress-dir-progress-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.78rem;
+  gap: 0.65rem;
+  font-size: 0.85rem;
 }
 
 .actress-dir-fraction {
   font-family: var(--font-mono, monospace);
   font-weight: 700;
   color: #34d399;
+  font-size: 0.95rem;
 }
 
 .actress-dir-progress-track {
   flex: 1;
-  height: 6px;
+  height: 8px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 999px;
   overflow: hidden;
@@ -3007,24 +3019,25 @@ body {
 }
 
 .actress-dir-pct {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
   font-weight: 600;
-  min-width: 28px;
+  min-width: 32px;
   text-align: right;
 }
 
 .actress-dir-badges {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .actress-dir-pill {
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  padding: 0.12rem 0.45rem;
-  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
 }
 
 .actress-dir-pill.in-lib {

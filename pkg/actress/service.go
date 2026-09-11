@@ -122,7 +122,7 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 
 	// Query movies containing the actress name in actresses_json
 	query := `
-	SELECT m.id, m.title, m.original_title, m.maker, m.release_date, m.cover_url, m.actresses_json,
+	SELECT m.id, COALESCE(m.title, m.id), COALESCE(m.original_title, ''), COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''), COALESCE(m.actresses_json, '[]'),
 	       COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0), COALESCE(u.is_favorite, 0),
 	       MAX(lf.file_path),
 	       MAX(om.target_folder), MAX(om.target_video)

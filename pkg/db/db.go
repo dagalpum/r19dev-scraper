@@ -1079,6 +1079,11 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		OR title LIKE '%チェキ付き%'
 		OR title LIKE '%チェキ付%'
 		OR title LIKE '%チェキセット%'
+		OR id LIKE 'KCKC%'
+		OR id LIKE 'MLTN%'
+		OR title LIKE '%カチコチTV%'
+		OR title LIKE '%未公開映像収録%'
+		OR title LIKE '%ディレクターズカット%'
 	)
 	AND id NOT IN (SELECT movie_id FROM user_state)
 	AND id NOT IN (SELECT movie_id FROM library_files)

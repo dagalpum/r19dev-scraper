@@ -158,7 +158,7 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	}
 	defer rows.Close()
 
-	var releases []ReleaseItem
+	var rawReleases []ReleaseItem
 	downloadedCount := 0
 	watchedCount := 0
 	favCount := 0
@@ -247,14 +247,34 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			r.IsDownloaded = true
 		}
 
-		// Filter out promotional/set duplicates (e.g. C9FWAY095, E9FWAY095, S9FWAY095, Special Offers tag) and photobooks
+		var parsedActs []any
+		if actJSON != "" && actJSON != "[]" {
+			_ = json.Unmarshal([]byte(actJSON), &parsedActs)
+		}
+		actCount := len(parsedActs)
+
+		// Filter out promotional/set duplicates, variety shows, director cut re-issues, and multi-actress omnibus
 		if !r.IsDownloaded && !r.IsWatched && !r.IsFavorite {
-			if IsPromotionalOrDuplicateVariant(r.MovieID, r.Title, r.CoverURL, r.Genres) {
+			if IsPromotionalOrDuplicateVariant(r.MovieID, r.Title, r.CoverURL, r.Genres, actCount) {
 				continue
 			}
 		}
 
-		// Tally genre frequencies for genuine releases only
+		if r.CoverURL == "" && r.MovieID != "" {
+			r.CoverURL = "/api/images/" + r.MovieID
+		}
+
+		rawReleases = append(rawReleases, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Group 2: Deduplicate multi-format SKU duplicates (e.g. PPPD-485 vs PPP-485, EBDB-998 vs EBD-1013)
+	releases := deduplicateReleases(rawReleases)
+
+	// Tally statistics and genres from deduplicated releases
+	for _, r := range releases {
 		for _, g := range r.Genres {
 			g = strings.TrimSpace(g)
 			if g != "" && !isPromotionalGenre(g) {
@@ -272,9 +292,6 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		if r.IsFavorite {
 			favCount++
 		}
-		if r.CoverURL == "" && r.MovieID != "" {
-			r.CoverURL = "/api/images/" + r.MovieID
-		}
 
 		if r.ReleaseDate != "" {
 			if latestDate == "" || r.ReleaseDate > latestDate {
@@ -284,11 +301,6 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 				debutDate = r.ReleaseDate
 			}
 		}
-
-		releases = append(releases, r)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 
 	topGenres := make([]GenreCount, 0)
@@ -340,12 +352,63 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 	return results, nil
 }
 
-var promoSkuRegex = regexp.MustCompile(`^(?:[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}\d+)`)
+var (
+	promoSkuRegex         = regexp.MustCompile(`^(?:[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}\d+)`)
+	multiBodyRegex        = regexp.MustCompile(`\d+体(?:\d+分)?`)
+	titleDedupeCleanRegex = regexp.MustCompile(`(?i)【.*?】|（.*?）|\(.*?\)|\[.*?\]|ブルーレイエディション|ディレクターズカット版?|未公開映像収録(?:のプレミアムエディション)?|2枚組|[_\s\-]`)
+)
+
+func normalizeTitleForDedupe(title string) string {
+	t := titleDedupeCleanRegex.ReplaceAllString(title, "")
+	return strings.ToLower(strings.TrimSpace(t))
+}
+
+// deduplicateReleases keeps downloaded copies first, and collapses unowned multi-format duplicate SKUs
+// (e.g. PPPD-485 vs PPP-485, BOMN-169 vs BOM-169, EBDB-998 vs EBD-1013).
+func deduplicateReleases(items []ReleaseItem) []ReleaseItem {
+	var result []ReleaseItem
+	seenDownloaded := make(map[string]bool)
+
+	// First pass: mark all normalized titles that have a downloaded / tracked copy
+	for _, item := range items {
+		if item.IsDownloaded || item.IsWatched || item.IsFavorite {
+			cleanT := normalizeTitleForDedupe(item.Title)
+			if len(cleanT) >= 6 {
+				seenDownloaded[cleanT] = true
+			}
+		}
+	}
+
+	seenUnowned := make(map[string]bool)
+	for _, item := range items {
+		// Always keep downloaded, watched, or favorited items
+		if item.IsDownloaded || item.IsWatched || item.IsFavorite {
+			result = append(result, item)
+			continue
+		}
+
+		cleanT := normalizeTitleForDedupe(item.Title)
+		if len(cleanT) >= 6 {
+			// Skip duplicate unowned SKU if a version is already downloaded
+			if seenDownloaded[cleanT] {
+				continue
+			}
+			// Skip duplicate unowned SKU if another unowned release for this movie is already listed
+			if seenUnowned[cleanT] {
+				continue
+			}
+			seenUnowned[cleanT] = true
+		}
+		result = append(result, item)
+	}
+	return result
+}
 
 // IsPromotionalOrDuplicateVariant checks if a release is a duplicate promotional bundle,
 // online event ticket, set product SKU (e.g. C9FWAY095, E9FWAY095, S9FWAY095, L9MIDA438, Special Offers tag),
-// non-video digital photobook / magazine, or multi-actress compilation / omnibus (e.g. Compilation tag, 総集編).
-func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []string) bool {
+// non-video digital photobook / magazine, variety talk show (KCKC-), re-issue director's cut,
+// or multi-actress omnibus compilation (excluding official anniversary crossover films).
+func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []string, actressCount ...int) bool {
 	upperID := strings.ToUpper(strings.TrimSpace(movieID))
 	tl := strings.ToLower(title)
 
@@ -359,7 +422,18 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		}
 	}
 
-	// 2. Tag / Genre checks (R18 / DMM categories)
+	// 2. Variety talk show series (non-AV talk content, e.g. KCKC- / カチコチTV)
+	if strings.HasPrefix(upperID, "KCKC") || strings.HasPrefix(upperID, "MLTN") ||
+		strings.Contains(title, "カチコチTV") || strings.Contains(title, "カチコチ") {
+		return true
+	}
+
+	// 3. Re-issue Director's Cut / Remaster duplicates (e.g. SSIS-160 to SSIS-165)
+	if strings.Contains(title, "未公開映像収録") || strings.Contains(title, "ディレクターズカット") {
+		return true
+	}
+
+	// 4. Tag / Genre checks (R18 / DMM categories)
 	for _, g := range genres {
 		gNorm := strings.ToLower(strings.TrimSpace(g))
 		if gNorm == "special offers and set products" ||
@@ -382,12 +456,12 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		}
 	}
 
-	// 3. Promotional SKU prefixes: C9, E9, S9, N9, L9, K9, KA9, KC9, TK9, 9 followed by letters
+	// 5. Promotional SKU prefixes: C9, E9, S9, N9, L9, K9, KA9, KC9, TK9, 9 followed by letters
 	if promoSkuRegex.MatchString(upperID) {
 		return true
 	}
 
-	// 4. Title markers (Online autograph sessions, bundle promotions, goods sets, omnibus/compilations)
+	// 6. Title markers (Online autograph sessions, bundle promotions, goods sets, Cheki sets, compilations)
 	if strings.Contains(title, "オンラインサイン会") ||
 		strings.Contains(title, "購入特典付き") ||
 		strings.Contains(title, "購入特典付") ||
@@ -403,6 +477,42 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		strings.Contains(title, "オムニバス") ||
 		strings.Contains(title, "傑作選") {
 		return true
+	}
+
+	// 7. Multi-actress omnibus compilation checks (Group 1)
+	// Exemption for Group 5: Official anniversary crossover harem works are genuine productions, not clip omnibus
+	isAnniversary := strings.Contains(title, "周年") ||
+		strings.Contains(tl, "anniversary") ||
+		strings.Contains(title, "記念作品") ||
+		strings.Contains(title, "創立")
+
+	if !isAnniversary {
+		actCount := 0
+		if len(actressCount) > 0 {
+			actCount = actressCount[0]
+		}
+
+		// Mega multi-actress omnibus (e.g. MKCK-417 with 74 actresses, RBB-279 with 49 actresses)
+		if actCount >= 20 {
+			return true
+		}
+
+		// Multi-actress (>= 5) with Over 4 Hours tag or long minute titles
+		if actCount >= 5 {
+			for _, g := range genres {
+				if strings.EqualFold(strings.TrimSpace(g), "over 4 hours") {
+					return true
+				}
+			}
+			if strings.Contains(tl, "600min") || strings.Contains(tl, "480分") || strings.Contains(tl, "300分") {
+				return true
+			}
+		}
+
+		// Multi-body title patterns (e.g. RKI-114: 50体480分) or 600min omnibus
+		if multiBodyRegex.MatchString(title) || strings.Contains(tl, "600min") {
+			return true
+		}
 	}
 
 	return false

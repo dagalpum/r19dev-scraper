@@ -112,6 +112,17 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		{"S209AJMEM00081", "S1 Campaign 2025 Special Photo Book", "", []string{"Collection Of Photographs"}, true},
 		{"MIDE-999", "人気女優 240分 総集編", "", nil, true},
 		{"CAWD-123", "オムニバス 傑作選", "", nil, true},
+		// Group 3: Non-AV Variety show
+		{"KCKC-210", "カチコチTV #210", "", nil, true},
+		// Cheki / Limited goods bundle
+		{"EBDB-1051", "Julia18 チェキ付き", "", nil, true},
+		// Group 4: Director cut / Remaster re-issues
+		{"SSIS-160", "未公開映像収録のプレミアムエディション！ディレクターズカット版 新人NO.1STYLE 河北彩花AVデビュー", "", nil, true},
+		// Group 1: Multi-body / Multi-actress omnibus
+		{"RKI-114", "THE AV WORLD SPECIAL このカ・ラ・ダ超絶品。 50体480分", "", nil, true},
+		{"MKCK-417", "Body Specialized For SEX 600min", "", []string{"Over 4 Hours"}, true},
+		// Group 5: Anniversary crossover works MUST NOT be filtered!
+		{"SONE-566", "S1 20th Anniversary Is The Strongest Tag Team Work", "", []string{"Harem"}, false},
 	}
 
 	for _, tc := range testCases {
@@ -137,7 +148,7 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 	svc := New(d, nil)
 	_ = svc.Follow("Rui Shido", "紫堂るい", "")
 
-	// Save genuine release
+	// Save genuine solo release
 	_ = d.SaveMovie(&scraper.Movie{
 		ID:          "FWAY-095",
 		Title:       "Everyone Loves Boobs. Shido Rui",
@@ -146,34 +157,60 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		Genres:      []string{"Beautiful Tits", "Slender", "Exclusive Distribution", "Featured Actress", "4K", "Documentary", "Hi-Def"},
 	})
 
-	// Save promotional duplicates
+	// Save Group 5: Official anniversary crossover film (MUST be preserved!)
 	_ = d.SaveMovie(&scraper.Movie{
-		ID:          "C9FWAY095",
-		Title:       "【FANZA限定】紫堂るい 3本購入特典付き",
-		ReleaseDate: "2025-06-03",
+		ID:          "SONE-566",
+		Title:       "S1 20th Anniversary Is The Strongest Tag Team Work In The History Of AV",
+		ReleaseDate: "2025-08-01",
+		Actresses:   []scraper.Actress{{Name: "Rui Shido"}, {Name: "Other Actress 1"}, {Name: "Other Actress 2"}, {Name: "Other Actress 3"}, {Name: "Other Actress 4"}},
+		Genres:      []string{"Harem", "Beautiful Girl"},
+	})
+
+	// Save Group 2: Duplicate SKU variants (PPP-485 vs PPPD-485) - must be deduplicated to 1!
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:          "PPP-485",
+		Title:       "乳エステ通い妻 紫堂るい",
+		ReleaseDate: "2025-04-01",
 		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
-		Genres:      []string{"Special Offers And Set Products"},
+		Genres:      []string{"Slender"},
 	})
 	_ = d.SaveMovie(&scraper.Movie{
-		ID:          "E9FWAY095",
-		Title:       "【FANZA限定】紫堂るい 2本購入特典付き",
-		ReleaseDate: "2025-06-03",
+		ID:          "PPPD-485",
+		Title:       "乳エステ通い妻 紫堂るい",
+		ReleaseDate: "2025-04-01",
 		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
-		Genres:      []string{"Special Offers And Set Products"},
+		Genres:      []string{"Slender"},
 	})
+
+	// Save Group 3: Variety talk show (must be filtered!)
 	_ = d.SaveMovie(&scraper.Movie{
-		ID:          "S9FWAY095",
-		Title:       "【FANZA限定】【オンラインサイン会】紫堂るい 1本購入特典付き",
-		ReleaseDate: "2025-06-03",
+		ID:          "KCKC-210",
+		Title:       "カチコチTV #210",
+		ReleaseDate: "2025-05-01",
 		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
 	})
-	// Save unowned compilation / omnibus recut
+
+	// Save Group 4: Director's cut re-issue (must be filtered!)
 	_ = d.SaveMovie(&scraper.Movie{
-		ID:          "MKCK-429",
-		Title:       "Soft-Breast Sex 50",
+		ID:          "SSIS-160",
+		Title:       "未公開映像収録のプレミアムエディション！ディレクターズカット版 新人NO.1STYLE",
+		ReleaseDate: "2025-05-02",
+		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
+	})
+
+	// Save unowned compilation / omnibus recuts (must be filtered!)
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:          "MKCK-417",
+		Title:       "Body Specialized For SEX 600min",
 		ReleaseDate: "2025-07-01",
-		Actresses:   []scraper.Actress{{Name: "Rui Shido"}, {Name: "Other Actress"}},
-		Genres:      []string{"Compilation", "Big Tits"},
+		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
+		Genres:      []string{"Over 4 Hours"},
+	})
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:          "RKI-114",
+		Title:       "THE AV WORLD SPECIAL このカ・ラ・ダ超絶品。 50体480分",
+		ReleaseDate: "2025-07-02",
+		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
 	})
 
 	summary, err := svc.GetActressSummary(context.Background(), "Rui Shido")
@@ -181,23 +218,20 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		t.Fatalf("GetActressSummary failed: %v", err)
 	}
 
-	// Must contain ONLY 1 genuine release (FWAY-095), C9/E9/S9/MKCK-429 filtered out!
-	if summary.Total != 1 {
-		t.Errorf("Expected exactly 1 genuine release, got %d (releases: %+v)", summary.Total, summary.Releases)
-	}
-	if len(summary.Releases) != 1 || summary.Releases[0].MovieID != "FWAY-095" {
-		t.Errorf("Expected release FWAY-095, got %+v", summary.Releases)
+	// Must contain ONLY 3 genuine releases:
+	// 1. FWAY-095 (Solo)
+	// 2. SONE-566 (Anniversary preserved)
+	// 3. PPP-485 (Deduplicated with PPPD-485)
+	if summary.Total != 3 {
+		t.Errorf("Expected exactly 3 genuine releases, got %d (releases: %+v)", summary.Total, summary.Releases)
 	}
 
-	// Top genres must only contain genuine acting themes (Beautiful Tits, Slender), NOT technical specs or promotional tags
+	// Top genres must only contain genuine acting themes (Beautiful Tits, Slender, Harem, etc.), NOT technical specs
 	for _, g := range summary.TopGenres {
 		switch g.Genre {
 		case "Special Offers And Set Products", "Compilation", "Exclusive Distribution", "Featured Actress", "4K", "Documentary", "Hi-Def":
 			t.Errorf("Top genres should not contain non-acting/technical genre %q: %+v", g.Genre, summary.TopGenres)
 		}
-	}
-	if len(summary.TopGenres) != 2 {
-		t.Errorf("Expected exactly 2 genuine genres (Beautiful Tits, Slender), got %d: %+v", len(summary.TopGenres), summary.TopGenres)
 	}
 }
 

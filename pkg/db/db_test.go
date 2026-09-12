@@ -178,4 +178,92 @@ func TestDBOperations(t *testing.T) {
 	}
 }
 
+func TestSyncWithBackupCandidates(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "r19dev_sync_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	localPath := filepath.Join(tempDir, "local.db")
+	backupPath := filepath.Join(tempDir, "nas_backup.db")
+
+	// 1. Create a mock NAS backup DB with an operation record
+	nasDB, err := Open(backupPath)
+	if err != nil {
+		t.Fatalf("failed to create nasDB: %v", err)
+	}
+	_, err = nasDB.AddOperationHistory("organize", "/dest", 5, 5, 0, false, "Initial NAS organize")
+	if err != nil {
+		t.Fatalf("failed to add operation to nasDB: %v", err)
+	}
+	_ = nasDB.Close()
+
+	// Scenario 1: Local DB does not exist -> Should restore from NAS backup
+	res := SyncWithBackupCandidates(localPath, []string{backupPath})
+	if res.Action != SyncActionRestored {
+		t.Errorf("Expected SyncActionRestored, got %v (%s)", res.Action, res.Message)
+	}
+	if _, err := os.Stat(localPath); err != nil {
+		t.Fatalf("Expected restored local DB to exist: %v", err)
+	}
+
+	// Verify restored DB content
+	localDB, err := Open(localPath)
+	if err != nil {
+		t.Fatalf("failed to open restored localDB: %v", err)
+	}
+	hist, _ := localDB.GetOperationHistory(10, false)
+	if len(hist) != 1 || hist[0].Operation != "organize" {
+		t.Errorf("Restored DB missing expected history: %+v", hist)
+	}
+
+	// Scenario 2: Local DB has newer activity -> Should NOT sync from older NAS backup
+	time.Sleep(10 * time.Millisecond) // Ensure timestamp strictly advances
+	_, err = localDB.ToggleWatched("NEW-001")
+	if err != nil {
+		t.Fatalf("failed to update localDB user state: %v", err)
+	}
+	_ = localDB.Close()
+
+	res2 := SyncWithBackupCandidates(localPath, []string{backupPath})
+	if res2.Action != SyncActionLocalNewer {
+		t.Errorf("Expected SyncActionLocalNewer, got %v (%s)", res2.Action, res2.Message)
+	}
+
+	// Scenario 3: NAS backup gets newer activity -> Should sync to local and create .bak
+	time.Sleep(10 * time.Millisecond)
+	nasDB2, err := Open(backupPath)
+	if err != nil {
+		t.Fatalf("failed to open nasDB2: %v", err)
+	}
+	_, err = nasDB2.AddOperationHistory("organize", "/dest2", 10, 10, 0, false, "Newer NAS run")
+	if err != nil {
+		t.Fatalf("failed to add operation to nasDB2: %v", err)
+	}
+	_ = nasDB2.Close()
+
+	res3 := SyncWithBackupCandidates(localPath, []string{backupPath})
+	if res3.Action != SyncActionSynced {
+		t.Errorf("Expected SyncActionSynced, got %v (%s)", res3.Action, res3.Message)
+	}
+
+	// Verify local.db.bak was created
+	if _, err := os.Stat(localPath + ".bak"); err != nil {
+		t.Errorf("Expected local backup %s.bak to exist: %v", localPath, err)
+	}
+
+	// Verify local DB now has newer NAS history (2 operations)
+	localDB2, err := Open(localPath)
+	if err != nil {
+		t.Fatalf("failed to open synced localDB: %v", err)
+	}
+	defer localDB2.Close()
+	hist2, _ := localDB2.GetOperationHistory(10, false)
+	if len(hist2) != 2 {
+		t.Errorf("Expected 2 history records after sync, got %d", len(hist2))
+	}
+}
+
+
 

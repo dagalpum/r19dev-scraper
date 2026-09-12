@@ -119,45 +119,7 @@ func Default() (*DB, error) {
 			"/Volumes/home/BT/organized/.r19dev_backup.db",
 			"/Volumes/home/BT/2026/organized/.r19dev_backup.db",
 		}
-
-		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
-			for _, cand := range nasBackupCandidates {
-				if _, bErr := os.Stat(cand); bErr == nil {
-					if data, rErr := os.ReadFile(cand); rErr == nil {
-						if wErr := os.WriteFile(dbPath, data, 0o644); wErr == nil {
-							fmt.Printf("📦 [DB Restore] Restored database from NAS backup: %s -> %s\n", cand, dbPath)
-							break
-						}
-					}
-				}
-			}
-		} else {
-			// Local DB exists: check if NAS backup has newer database activity
-			for _, cand := range nasBackupCandidates {
-				if _, bErr := os.Stat(cand); bErr == nil {
-					nasTime, nErr := InspectLatestActivityTime(cand)
-					if nErr == nil && !nasTime.IsZero() {
-						localTime, lErr := InspectLatestActivityTime(dbPath)
-						if lErr == nil && nasTime.After(localTime) {
-							// NAS is newer! Create a safety .bak of local DB before syncing
-							if localData, rErr := os.ReadFile(dbPath); rErr == nil {
-								_ = os.WriteFile(dbPath+".bak", localData, 0o644)
-							}
-							if nasData, rErr := os.ReadFile(cand); rErr == nil {
-								if wErr := os.WriteFile(dbPath, nasData, 0o644); wErr == nil {
-									// Clean up old WAL and SHM to ensure clean boot
-									_ = os.Remove(dbPath + "-wal")
-									_ = os.Remove(dbPath + "-shm")
-									fmt.Printf("📦 [DB Sync] NAS backup contains newer activity (%s > %s). Synced %s -> %s\n",
-										nasTime.Format("2006-01-02 15:04:05"), localTime.Format("2006-01-02 15:04:05"), cand, dbPath)
-									break
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+		_ = SyncWithBackupCandidates(dbPath, nasBackupCandidates)
 
 		d, err := Open(dbPath)
 		if err != nil {
@@ -311,6 +273,101 @@ func queryLatestActivity(conn *sql.DB) (time.Time, error) {
 		}
 	}
 	return time.Time{}, nil
+}
+
+// SyncAction represents the outcome of database comparison.
+type SyncAction string
+
+const (
+	SyncActionNone       SyncAction = "none"
+	SyncActionRestored   SyncAction = "restored"
+	SyncActionSynced     SyncAction = "synced"
+	SyncActionLocalNewer SyncAction = "local_is_newer"
+)
+
+// SyncResult details the outcome of comparing and syncing local DB with a backup candidate.
+type SyncResult struct {
+	Action     SyncAction `json:"action"`
+	LocalPath  string     `json:"local_path"`
+	Candidate  string     `json:"candidate_path"`
+	LocalTime  time.Time  `json:"local_time,omitempty"`
+	BackupTime time.Time  `json:"backup_time,omitempty"`
+	Message    string     `json:"message"`
+}
+
+// SyncWithBackupCandidates compares localDBPath with candidate backup files.
+// If localDBPath does not exist, it restores from the newest valid candidate.
+// If localDBPath exists, it checks if any candidate has newer database activity (based on MAX(ts) of internal records).
+// If a candidate is newer, it backs up localDBPath to localDBPath + ".bak" and syncs from candidate.
+func SyncWithBackupCandidates(localDBPath string, candidates []string) SyncResult {
+	res := SyncResult{
+		Action:    SyncActionNone,
+		LocalPath: localDBPath,
+		Message:   "No sync required",
+	}
+
+	// 1. Check if local DB does not exist -> Restore
+	if _, statErr := os.Stat(localDBPath); os.IsNotExist(statErr) {
+		for _, cand := range candidates {
+			if _, bErr := os.Stat(cand); bErr == nil {
+				candTime, _ := InspectLatestActivityTime(cand)
+				if data, rErr := os.ReadFile(cand); rErr == nil {
+					if wErr := os.WriteFile(localDBPath, data, 0o644); wErr == nil {
+						res.Action = SyncActionRestored
+						res.Candidate = cand
+						res.BackupTime = candTime
+						res.Message = fmt.Sprintf("Restored database from NAS backup: %s", cand)
+						fmt.Printf("📦 [DB Restore] %s\n", res.Message)
+						return res
+					}
+				}
+			}
+		}
+		res.Message = "No valid backup candidate found for restore"
+		return res
+	}
+
+	// 2. Local DB exists -> Compare internal activity timestamps
+	localTime, lErr := InspectLatestActivityTime(localDBPath)
+	if lErr != nil {
+		localTime = time.Time{}
+	}
+	res.LocalTime = localTime
+
+	for _, cand := range candidates {
+		if _, bErr := os.Stat(cand); bErr == nil {
+			candTime, nErr := InspectLatestActivityTime(cand)
+			if nErr == nil && !candTime.IsZero() {
+				if candTime.After(localTime) {
+					// Candidate has newer data! Create safety .bak of local DB
+					if localData, rErr := os.ReadFile(localDBPath); rErr == nil {
+						_ = os.WriteFile(localDBPath+".bak", localData, 0o644)
+					}
+					if candData, rErr := os.ReadFile(cand); rErr == nil {
+						if wErr := os.WriteFile(localDBPath, candData, 0o644); wErr == nil {
+							_ = os.Remove(localDBPath + "-wal")
+							_ = os.Remove(localDBPath + "-shm")
+							res.Action = SyncActionSynced
+							res.Candidate = cand
+							res.BackupTime = candTime
+							res.Message = fmt.Sprintf("Synced newer activity from %s (%s > %s)",
+								cand, candTime.Format("2006-01-02 15:04:05"), localTime.Format("2006-01-02 15:04:05"))
+							fmt.Printf("📦 [DB Sync] %s\n", res.Message)
+							return res
+						}
+					}
+				} else {
+					res.Action = SyncActionLocalNewer
+					res.Candidate = cand
+					res.BackupTime = candTime
+					res.Message = fmt.Sprintf("Local database is newer or equal (%s >= %s)",
+						localTime.Format("2006-01-02 15:04:05"), candTime.Format("2006-01-02 15:04:05"))
+				}
+			}
+		}
+	}
+
+	return res
 }
 
 // Close closes the database connection.

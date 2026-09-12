@@ -44,6 +44,26 @@
         </button>
       </nav>
 
+      <!-- Center: Universal Search & Sticky Breadcrumbs -->
+      <div class="nav-center">
+        <!-- Sticky Breadcrumb when viewing an actress -->
+        <div id="nav-breadcrumb" class="nav-breadcrumb hidden">
+          <button class="nav-breadcrumb-back" onclick="window.app.filterCollectionActress('all')" title="Back to All Followed Actresses">
+            <span class="icon">←</span> All Actresses
+          </button>
+          <span class="nav-breadcrumb-sep">/</span>
+          <span class="nav-breadcrumb-current" id="nav-breadcrumb-actress-name">JULIA</span>
+        </div>
+
+        <!-- Universal Search Input with Cmd+K -->
+        <div class="nav-search-box" id="nav-search-box">
+          <span class="nav-search-icon" aria-hidden="true">🔍</span>
+          <input type="text" id="universal-search-input" class="nav-search-input" placeholder="Search library, actresses, SKU... (⌘K)" autocomplete="off" spellcheck="false">
+          <kbd class="nav-search-kbd" id="nav-search-kbd">⌘K</kbd>
+          <button id="universal-search-clear" class="btn-clear-search hidden" title="Clear search (Esc)" aria-label="Clear search">✕</button>
+        </div>
+      </div>
+
       <div class="nav-actions">
         <div class="dir-badge" id="nav-active-dir" title="Current Directory" tabindex="0" aria-label="Current Directory">
           <span class="dir-icon" aria-hidden="true">📂</span>
@@ -398,6 +418,17 @@
       <button id="btn-close-lightbox" class="btn-lightbox-close" aria-label="Close image preview" onclick="window.app.closeLightbox()">×</button>
       <img id="lightbox-img" src="" alt="Full Resolution Screenshot" />
       <div id="lightbox-caption" class="lightbox-caption" aria-live="polite"></div>
+    </div>
+
+    <!-- FLOATING ACTRESS QUICK NAVIGATION PILL -->
+    <div id="floating-actress-nav" class="floating-nav-pill hidden" role="navigation" aria-label="Quick Navigation">
+      <button class="floating-pill-btn floating-pill-back" onclick="window.app.filterCollectionActress('all')" title="Back to All Followed Actresses">
+        <span class="pill-icon">←</span> All Actresses
+      </button>
+      <span class="floating-pill-divider"></span>
+      <button class="floating-pill-btn floating-pill-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Scroll to top of page">
+        <span class="pill-icon">↑</span> Top
+      </button>
     </div>
 
     <!-- TOAST NOTIFICATIONS -->

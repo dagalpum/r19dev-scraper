@@ -51,6 +51,15 @@
     countActresses: document.getElementById('count-actresses'),
     labelActiveDir: document.getElementById('label-active-dir'),
     btnRescan: document.getElementById('btn-rescan'),
+
+    // Universal Search & Sticky Navigation
+    navBreadcrumb: document.getElementById('nav-breadcrumb'),
+    navBreadcrumbActressName: document.getElementById('nav-breadcrumb-actress-name'),
+    navSearchBox: document.getElementById('nav-search-box'),
+    universalSearchInput: document.getElementById('universal-search-input'),
+    navSearchKbd: document.getElementById('nav-search-kbd'),
+    universalSearchClear: document.getElementById('universal-search-clear'),
+    floatingActressNav: document.getElementById('floating-actress-nav'),
     
     // Progress Bars
     scanProgressBox: document.getElementById('scan-progress-box'),
@@ -174,6 +183,7 @@
   function init() {
     try { setupTabSwitching(); } catch (e) { console.error('setupTabSwitching failed:', e); }
     try { setupSearchAndFilters(); } catch (e) { console.error('setupSearchAndFilters failed:', e); }
+    try { setupUniversalSearch(); } catch (e) { console.error('setupUniversalSearch failed:', e); }
     try { setupDensityControl(); } catch (e) { console.error('setupDensityControl failed:', e); }
     try { setupModals(); } catch (e) { console.error('setupModals failed:', e); }
     try { setupOrganizer(); } catch (e) { console.error('setupOrganizer failed:', e); }
@@ -208,7 +218,18 @@
 
     if (tabId === 'actresses') {
       loadActressesData();
+      if (state.collectionFilterActress && state.collectionFilterActress !== 'all') {
+        elements.navBreadcrumb?.classList.remove('hidden');
+      } else {
+        elements.navBreadcrumb?.classList.add('hidden');
+      }
+    } else {
+      elements.navBreadcrumb?.classList.add('hidden');
+      elements.floatingActressNav?.classList.add('hidden');
     }
+
+    syncUniversalSearchPlaceholder();
+    updateFloatingNavVisibility();
   }
 
   function setupDensityControl() {
@@ -241,13 +262,19 @@
     elements.searchInput?.addEventListener('input', (e) => {
       state.searchQuery = e.target.value.trim().toLowerCase();
       elements.searchClear?.classList.toggle('hidden', state.searchQuery === '');
+      if (elements.universalSearchInput && elements.universalSearchInput.value !== e.target.value) {
+        elements.universalSearchInput.value = e.target.value;
+        elements.universalSearchClear?.classList.toggle('hidden', e.target.value === '');
+      }
       renderMoviesGrid();
     });
 
     elements.searchClear?.addEventListener('click', () => {
       if (elements.searchInput) elements.searchInput.value = '';
+      if (elements.universalSearchInput) elements.universalSearchInput.value = '';
       state.searchQuery = '';
       elements.searchClear?.classList.add('hidden');
+      elements.universalSearchClear?.classList.add('hidden');
       elements.searchInput?.focus();
       renderMoviesGrid();
     });
@@ -322,7 +349,9 @@
     state.searchQuery = '';
 
     if (elements.searchInput) elements.searchInput.value = '';
+    if (elements.universalSearchInput) elements.universalSearchInput.value = '';
     if (elements.searchClear) elements.searchClear.classList.add('hidden');
+    if (elements.universalSearchClear) elements.universalSearchClear.classList.add('hidden');
     if (elements.filterActress) elements.filterActress.value = '';
     if (elements.filterOrganized) elements.filterOrganized.value = 'all';
     if (elements.filterScraped) elements.filterScraped.value = 'all';
@@ -330,6 +359,163 @@
     if (elements.filterWatch) elements.filterWatch.value = 'all';
 
     renderMoviesGrid();
+  }
+
+  // =========================================================================
+  // Universal Search & Quick Navigation
+  // =========================================================================
+  function setupUniversalSearch() {
+    const isMac = (navigator.platform || '').toUpperCase().indexOf('MAC') >= 0 || (navigator.userAgent || '').toUpperCase().indexOf('MAC') >= 0;
+    if (elements.navSearchKbd) {
+      elements.navSearchKbd.textContent = isMac ? '⌘K' : 'Ctrl+K';
+    }
+
+    elements.universalSearchInput?.addEventListener('input', (e) => {
+      onUniversalSearchInput(e.target.value);
+    });
+
+    elements.universalSearchClear?.addEventListener('click', () => {
+      clearUniversalSearch();
+    });
+
+    // Global keyboard shortcuts: ⌘K / Ctrl+K and '/'
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        elements.universalSearchInput?.focus();
+        elements.universalSearchInput?.select();
+        return;
+      }
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
+        e.preventDefault();
+        elements.universalSearchInput?.focus();
+        elements.universalSearchInput?.select();
+        return;
+      }
+      if (e.key === 'Escape' && document.activeElement === elements.universalSearchInput) {
+        if (elements.universalSearchInput.value) {
+          clearUniversalSearch();
+        } else {
+          elements.universalSearchInput.blur();
+        }
+      }
+    });
+
+    // Floating Actress Navigation Pill Scroll Listener
+    window.addEventListener('scroll', updateFloatingNavVisibility, { passive: true });
+
+    // History popstate listener for back/forward navigation
+    window.addEventListener('popstate', (e) => {
+      const s = e.state;
+      if (s && s.tab) {
+        if (state.activeTab !== s.tab) switchTab(s.tab);
+        if (s.tab === 'actresses') {
+          filterCollectionActress(s.actress || 'all', false);
+        }
+      } else {
+        const params = new URLSearchParams(window.location.search);
+        const actParam = params.get('actress');
+        const tabParam = params.get('tab');
+        if (tabParam && tabParam !== state.activeTab) {
+          switchTab(tabParam);
+        }
+        if (actParam) {
+          if (state.activeTab !== 'actresses') switchTab('actresses');
+          filterCollectionActress(actParam, false);
+        } else if (state.activeTab === 'actresses' && state.collectionFilterActress !== 'all') {
+          filterCollectionActress('all', false);
+        }
+      }
+    });
+
+    // Initial check from query parameters
+    const params = new URLSearchParams(window.location.search);
+    const initialTab = params.get('tab');
+    const initialActress = params.get('actress');
+    if (initialTab && ['library', 'actresses', 'organizer'].includes(initialTab)) {
+      switchTab(initialTab);
+    }
+    if (initialActress) {
+      if (state.activeTab !== 'actresses') switchTab('actresses');
+      state.collectionFilterActress = initialActress;
+      state.activeActressName = initialActress;
+    }
+
+    syncUniversalSearchPlaceholder();
+  }
+
+  function onUniversalSearchInput(val) {
+    const rawVal = val || '';
+    const q = rawVal.trim();
+    elements.universalSearchClear?.classList.toggle('hidden', rawVal === '');
+
+    if (state.activeTab === 'library') {
+      state.searchQuery = q.toLowerCase();
+      if (elements.searchInput && elements.searchInput.value !== rawVal) {
+        elements.searchInput.value = rawVal;
+        elements.searchClear?.classList.toggle('hidden', rawVal === '');
+      }
+      renderMoviesGrid();
+    } else if (state.activeTab === 'actresses') {
+      if (state.collectionFilterActress === 'all') {
+        state.actressSearchQuery = q;
+        renderActressCollection();
+      } else {
+        state.actressMovieSearch = q;
+        renderActressCollection();
+        const stageInput = document.getElementById('actress-movie-search');
+        if (stageInput && stageInput.value !== rawVal) {
+          stageInput.value = rawVal;
+        }
+      }
+    } else if (state.activeTab === 'organizer') {
+      switchTab('library');
+      state.searchQuery = q.toLowerCase();
+      if (elements.searchInput) {
+        elements.searchInput.value = rawVal;
+        elements.searchClear?.classList.toggle('hidden', rawVal === '');
+      }
+      renderMoviesGrid();
+    }
+  }
+
+  function clearUniversalSearch() {
+    if (elements.universalSearchInput) {
+      elements.universalSearchInput.value = '';
+    }
+    elements.universalSearchClear?.classList.add('hidden');
+    onUniversalSearchInput('');
+    elements.universalSearchInput?.focus();
+  }
+
+  function updateFloatingNavVisibility() {
+    if (!elements.floatingActressNav) return;
+    const isActressDetail = state.activeTab === 'actresses' && state.collectionFilterActress && state.collectionFilterActress !== 'all';
+    const scrolledDown = window.scrollY > 300;
+    elements.floatingActressNav.classList.toggle('hidden', !(isActressDetail && scrolledDown));
+  }
+
+  function syncUniversalSearchPlaceholder() {
+    if (!elements.universalSearchInput) return;
+    const isMac = (navigator.platform || '').toUpperCase().indexOf('MAC') >= 0 || (navigator.userAgent || '').toUpperCase().indexOf('MAC') >= 0;
+    const kbdText = isMac ? '⌘K' : 'Ctrl+K';
+
+    if (state.activeTab === 'library') {
+      elements.universalSearchInput.placeholder = `Search library, SKU, actress... (${kbdText})`;
+      elements.universalSearchInput.value = elements.searchInput ? elements.searchInput.value : (state.searchQuery || '');
+    } else if (state.activeTab === 'actresses') {
+      if (state.collectionFilterActress === 'all') {
+        elements.universalSearchInput.placeholder = `Search followed actresses... (${kbdText})`;
+        elements.universalSearchInput.value = state.actressSearchQuery || '';
+      } else {
+        elements.universalSearchInput.placeholder = `Search ${state.collectionFilterActress}'s filmography... (${kbdText})`;
+        elements.universalSearchInput.value = state.actressMovieSearch || '';
+      }
+    } else {
+      elements.universalSearchInput.placeholder = `Search movies, SKU, actresses... (${kbdText})`;
+      elements.universalSearchInput.value = '';
+    }
+    elements.universalSearchClear?.classList.toggle('hidden', !elements.universalSearchInput.value);
   }
 
   function populateFilterDropdowns() {
@@ -1689,16 +1875,29 @@
     elements.actressChatView?.classList.toggle('hidden', isCollection);
   }
 
-  function filterCollectionActress(name) {
-    state.collectionFilterActress = name || 'all';
+  function filterCollectionActress(name, pushHistory = true) {
+    const actName = name || 'all';
+    state.collectionFilterActress = actName;
     state.collectionSubFilter = 'all';
     state.actressMovieSearch = '';
     state.actressGenreFilter = null;
     state.actressMovieSort = 'date-desc';
-    if (name && name !== 'all') {
-      state.activeActressName = name;
+    if (actName !== 'all') {
+      state.activeActressName = actName;
     }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    if (pushHistory && window.history && window.history.pushState) {
+      const newUrl = actName !== 'all' 
+        ? `${window.location.pathname}?tab=actresses&actress=${encodeURIComponent(actName)}`
+        : `${window.location.pathname}?tab=actresses`;
+      window.history.pushState({ tab: 'actresses', actress: actName }, '', newUrl);
+    }
+
     renderActressCollection();
+    syncUniversalSearchPlaceholder();
+    updateFloatingNavVisibility();
   }
 
   function setCollectionSubFilter(sub) {
@@ -1722,6 +1921,10 @@
 
   function handleActressMovieSearch(q) {
     state.actressMovieSearch = (q || '').trim();
+    if (elements.universalSearchInput && elements.universalSearchInput.value !== (q || '')) {
+      elements.universalSearchInput.value = q || '';
+      elements.universalSearchClear?.classList.toggle('hidden', !q);
+    }
     renderActressCollection();
     const el = document.getElementById('actress-movie-search');
     if (el) {
@@ -1883,6 +2086,8 @@
 
     // 2. Render Content
     if (isAll) {
+      if (elements.navBreadcrumb) elements.navBreadcrumb.classList.add('hidden');
+      if (elements.floatingActressNav) elements.floatingActressNav.classList.add('hidden');
       if (elements.collectionActressHero) {
         elements.collectionActressHero.innerHTML = '';
         elements.collectionActressHero.classList.add('hidden');
@@ -2000,6 +2205,14 @@
 
     } else {
       // Specific Actress Selected -> 2-Column Bento Sidebar & Dedicated Filmography Stage
+      if (elements.navBreadcrumb) {
+        elements.navBreadcrumb.classList.remove('hidden');
+        if (elements.navBreadcrumbActressName) {
+          elements.navBreadcrumbActressName.textContent = state.collectionFilterActress;
+        }
+      }
+      updateFloatingNavVisibility();
+
       if (elements.collectionActressHero) {
         elements.collectionActressHero.innerHTML = '';
         elements.collectionActressHero.classList.add('hidden');
@@ -3029,6 +3242,8 @@
     switchTab,
     setDensity,
     rescanDirectory,
+    clearUniversalSearch,
+    onUniversalSearchInput,
 
     // Library Controls
     clearSearch,

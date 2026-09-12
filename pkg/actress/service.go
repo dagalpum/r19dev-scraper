@@ -396,6 +396,9 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		strings.Contains(title, "参加権付き") ||
 		strings.Contains(title, "キーホルダーセット") ||
 		strings.Contains(title, "チェキセット") ||
+		strings.Contains(title, "チェキ付き") ||
+		strings.Contains(title, "チェキ付") ||
+		strings.Contains(title, "生写真") ||
 		strings.Contains(title, "総集編") ||
 		strings.Contains(title, "オムニバス") ||
 		strings.Contains(title, "傑作選") {

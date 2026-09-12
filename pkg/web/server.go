@@ -349,6 +349,16 @@ func (s *Server) handleScrape(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	movie, err := s.scraperClient.Scrape(ctx, id)
+	if err != nil && s.db != nil {
+		// Fallback to combined_id if known in local database (e.g. DMM content ID h_346rebdb1051tk1)
+		if existing, dbErr := s.db.GetMovie(id); dbErr == nil && existing != nil && existing.CombinedID != "" && existing.CombinedID != strings.ToLower(id) {
+			if retryMovie, retryErr := s.scraperClient.Scrape(ctx, existing.CombinedID); retryErr == nil && retryMovie != nil {
+				movie = retryMovie
+				movie.ID = id
+				err = nil
+			}
+		}
+	}
 	if err != nil {
 		writeJSONError(w, fmt.Sprintf("scrape failed: %v", err), http.StatusBadGateway)
 		return

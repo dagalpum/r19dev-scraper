@@ -363,44 +363,88 @@ func normalizeTitleForDedupe(title string) string {
 	return strings.ToLower(strings.TrimSpace(t))
 }
 
+// scoreReleaseCanon returns a higher score for standard canonical release IDs (e.g. PPPD-485 > PPP-485, BOMN-169 > BOM-169)
+func scoreReleaseCanon(r ReleaseItem) int {
+	score := 0
+	parts := strings.Split(r.MovieID, "-")
+	prefix := parts[0]
+	// Prefer standard 4-letter prefixes (PPPD, BOMN, MMND, MIZD) over 3-letter outlet codes (PPP, BOM, MMN, MIZ)
+	score += len(prefix) * 10
+	if strings.HasSuffix(prefix, "D") || strings.HasSuffix(prefix, "N") || strings.HasSuffix(prefix, "B") {
+		score += 5
+	}
+	return score
+}
+
 // deduplicateReleases keeps downloaded copies first, and collapses unowned multi-format duplicate SKUs
-// (e.g. PPPD-485 vs PPP-485, BOMN-169 vs BOM-169, EBDB-998 vs EBD-1013).
+// preferring canonical primary IDs (e.g. PPPD-485 over PPP-485, BOMN-169 over BOM-169).
 func deduplicateReleases(items []ReleaseItem) []ReleaseItem {
 	var result []ReleaseItem
-	seenDownloaded := make(map[string]bool)
+	titleGroups := make(map[string][]ReleaseItem)
+	var orderedKeys []string
 
-	// First pass: mark all normalized titles that have a downloaded / tracked copy
 	for _, item := range items {
-		if item.IsDownloaded || item.IsWatched || item.IsFavorite {
-			cleanT := normalizeTitleForDedupe(item.Title)
-			if len(cleanT) >= 6 {
-				seenDownloaded[cleanT] = true
-			}
-		}
-	}
-
-	seenUnowned := make(map[string]bool)
-	for _, item := range items {
-		// Always keep downloaded, watched, or favorited items
+		// Downloaded, watched, or favorited items are ALWAYS preserved directly
 		if item.IsDownloaded || item.IsWatched || item.IsFavorite {
 			result = append(result, item)
 			continue
 		}
 
 		cleanT := normalizeTitleForDedupe(item.Title)
-		if len(cleanT) >= 6 {
-			// Skip duplicate unowned SKU if a version is already downloaded
-			if seenDownloaded[cleanT] {
-				continue
-			}
-			// Skip duplicate unowned SKU if another unowned release for this movie is already listed
-			if seenUnowned[cleanT] {
-				continue
-			}
-			seenUnowned[cleanT] = true
+		if len(cleanT) < 6 {
+			result = append(result, item)
+			continue
 		}
-		result = append(result, item)
+
+		if _, exists := titleGroups[cleanT]; !exists {
+			orderedKeys = append(orderedKeys, cleanT)
+		}
+		titleGroups[cleanT] = append(titleGroups[cleanT], item)
 	}
+
+	// Index already downloaded titles so unowned duplicate variants don't show up
+	seenDownloaded := make(map[string]bool)
+	for _, item := range result {
+		cleanT := normalizeTitleForDedupe(item.Title)
+		if len(cleanT) >= 6 {
+			seenDownloaded[cleanT] = true
+		}
+	}
+
+	// For each unowned title group, pick the most canonical release
+	for _, key := range orderedKeys {
+		if seenDownloaded[key] {
+			continue
+		}
+		group := titleGroups[key]
+		if len(group) == 1 {
+			result = append(result, group[0])
+			continue
+		}
+
+		// Sort group: highest canonical score first (PPPD > PPP), then earliest release date (original premiere)
+		sort.SliceStable(group, func(i, j int) bool {
+			scoreI := scoreReleaseCanon(group[i])
+			scoreJ := scoreReleaseCanon(group[j])
+			if scoreI != scoreJ {
+				return scoreI > scoreJ
+			}
+			dateI := group[i].ReleaseDate
+			dateJ := group[j].ReleaseDate
+			if dateI != "" && dateJ != "" && dateI != dateJ {
+				return dateI < dateJ
+			}
+			return group[i].MovieID < group[j].MovieID
+		})
+
+		result = append(result, group[0])
+	}
+
+	// Re-sort all results by release date DESC
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].ReleaseDate > result[j].ReleaseDate
+	})
+
 	return result
 }
 

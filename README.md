@@ -15,21 +15,22 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **📊 Real-Time Streaming Progress Bars**: Live Server-Sent Events (SSE) stream progress bars for both **Scanning** (live file discovery & matching) and **NAS Organizing** (step-by-step progress, target path, and live console logs).
 - **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
 
-### ⭐ 2. Actress Hub: Dual-Mode Filmography Tracker & Chat UI
-- **🎛️ Dual-Mode Switcher (Chat vs. Collection Showcase)**:
-  - **💬 Chat Timeline Mode**: An immersive messaging interface (LINE / Discord / Telegram style) where your followed actresses announce their releases chronologically:
-    - **Left Contacts Sidebar**: Real-time list of followed actresses with avatars, online status, latest release snippet, and badge count for missing releases. Includes an instant search filter and "+ Follow Actress" friend box.
-    - **Chat Dialogue Stream**: Left bubble shows the actress introducing her release with jacket cover, title, studio, release date, and `[📋 Copy ID]` button. Right bubble shows system responses confirming Jellyfin library status (`✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้ว` with folder path or `⏳ ยังไม่ได้ดาวน์โหลด`).
-    - **Missing Release Styling**: Unacquired titles are styled with a sleek 90% grayscale cover and dashed border, smoothly animating back to full vibrant color on hover.
-    - **Bottom Action Bar**: Quick access buttons for `[+ Track JAV-ID]`, `[🔄 Refresh Releases]`, and `[📂 Open Folder in Finder]`.
-  - **🎬 Movie Collection Mode**: A visual cover showcase featuring full-bleed movie posters, status ribbons (`✓ In Library`, `📥 Staging`, `★ Missing`), release dates, studio chips, direct folder path indicators, and instant inspection cards.
-- **👤 Slide-Over Profile & Stats Drawer**:
-  - Detailed actress profile with Japanese Kanji and Romaji names.
-  - **Collection Progress Bar**: Visual percentage bar showing library completeness (e.g. 67% collected).
-  - **Stats Grid**: Comprehensive counters for Total, Downloaded in Library, Missing, Watched, and Favorites.
-  - **Verified R18.dev Links**: Direct links using the official actress ID format: `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` (e.g. `1109487` for Hayasakakanon).
-- **📂 Native Finder / File Manager Integration**: Dedicated `[📂 Open in Finder]` buttons in the header, message bubbles, collection cards, and detail modal to instantly open actress or title folders on disk.
-- **📋 One-Click Copy ID**: Dedicated `[📋 Copy ID]` buttons on every release card and within the movie detail modal for effortless clipboard copying.
+### ⭐ 2. Actress Hub: 2-Column Bento Profile & Filmography Stage
+- **🗂️ Followed Actresses Directory**:
+  - **Clean Genuine Solo Releases Only**: Automated 4-layer gatekeeper strips compilation titles (総集編, BEST, BOX), photobooks, and duplicate SKU formats (BOD, 9SNOS, K9SNOS).
+  - **Minimalist Progress Line**: Clean 6px track displaying exact downloaded count and completion percentage: `${dl}/${total} (${pct}%)`.
+  - **Instant Search & Multi-Sort**: Search by Romaji or Japanese name, and sort by `% Completed`, `Most Missing`, `Name A-Z`, or `Total Works`.
+- **🍱 2-Column Bento Profile & Dedicated Filmography Stage**:
+  - **Left Sticky Bento Profile Sidebar (~340px)**:
+    - **Bento 1 (Identity)**: 140px HD avatar with hover zoom, bold Romaji name, Japanese Kanji name, verified R18 ID badge, and dynamic **Career Span** (`📅 2021 – 2026`).
+    - **Bento 2 (Library & Storage)**: Prominent gradient highlight of **Total NAS Storage** occupied (e.g. `20.21 GB`), visual collection progress bar, and average file size (`Avg 5.1 GB / file`).
+    - **Bento 3 (Top Genres)**: Interactive tag cloud displaying the actress's top 8 most frequent genres with counts (e.g. `#Slender (14)`, `#VR (6)`). **Clicking any genre instantly filters her filmography on the right stage**.
+    - **Bento 4 (Quick Actions)**: One-click `[📂 Open in Finder]` directly into her NAS directory, `[🌐 R18.dev Profile ↗]`, and `[🔄 Refresh Releases]`.
+  - **Right Filmography Main Stage**:
+    - **Interactive Stage Toolbar**: Real-time in-page search input (filter instantly by ID like `SNOS` or title), sub-filter pills (`All Works`, `In Library`, `Missing`), active genre filter chip with 1-click removal, and a **Sort Dropdown** (`Release Date (Newest)`, `Release Date (Oldest)`, `File Size (Largest)`, `Movie ID (A-Z)`).
+    - **Uniform Poster Grid**: Eye-friendly, standardized aspect ratio poster cards with hover actions (`▶ Details`, `📋 Copy ID`, `📂 Finder`).
+    - **Responsive Design**: Automatically stacks smoothly to 1 column on mobile/tablet viewports (<960px).
+- **💬 Optional Chat Timeline Mode**: Toggle into a messaging interface (LINE / Discord style) where followed actresses announce their releases chronologically with unacquired grayscale styling and library status bubbles.
 
 ### 📂 3. NAS Directory Organizer & Jellyfin Pipeline
 - Organizes videos into the standardized folder structure:
@@ -152,11 +153,15 @@ make build
 ---
 
 ## 🛠️ Architecture & Tech Stack
-
+ 
 - **Language**: Go 1.22+
 - **Database**: Pure Go SQLite (`modernc.org/sqlite` - zero CGO required)
+  - **File Name**: `r19dev.db`
+  - **Local Path**: `~/Library/Caches/r19dev/r19dev.db` (macOS) or `~/.cache/r19dev/r19dev.db` (Linux)
+  - **Git Status**: Stored in the local OS user cache directory outside the workspace and ignored via `.gitignore` (`*.db`), **never committed or pushed to Git**.
 - **TUI Framework**: Charm Bubble Tea (`tea.Model`), Lip Gloss styling
 - **Web Frontend**: Vanilla ES6+ SPA, Vanilla CSS with CSS Grid & Custom Tokens, Embedded via `embed.FS`
 - **Metadata Source**: R18.dev REST API with persistent LRU disk caching (`~/.cache/r19dev` or `~/Library/Caches/r19dev`)
 - **Organize Pipeline**: Atomic file rename with cross-filesystem copy fallback, sanitized filenames, XML generator, and HTTP client asset downloader.
 - **Audit Logging**: SQLite-backed `operation_history` table with 30-day / 100-run auto-retention policy.
+

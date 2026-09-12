@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.3.0`  
+**Current Version**: `v1.4.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
-**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary Web UI Studio, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
+**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary Web UI Studio with 2-Column Bento Profile & Filmography Stage, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
 
 The codebase is clean, thoroughly tested (100% test pass rate across all packages), modular, and fully documented.
 
@@ -102,6 +102,10 @@ make test
     Guarded `SaveMovie` SQL upsert prevents partial records from wiping existing metadata, and unit tests use isolated temporary databases via `organizer.SetDB()` and `web.Config{DB}`.
 12. **Multi-Tier Image Endpoint (`/api/images/{id}`)**:
     Combines in-memory cache, local organized disk poster lookup, and remote DMM fetch fallback to guarantee reliable poster display under all network and offline conditions.
+13. **2-Column Bento Profile & Filmography Stage Layout**:
+    Individual actress view features a 340px sticky Bento sidebar with real-time NAS storage metrics in GB (`TotalSizeBytes`), average file size, completion progress bar, career span, and clickable top genre pills (`TopGenres`). The right stage provides instant in-page search, sub-filters, active genre tags, and multi-key sorting.
+14. **Local SQLite Database & Git Exclusion**:
+    Database file `r19dev.db` resides in the OS user cache directory (`~/Library/Caches/r19dev/r19dev.db` on macOS) outside the repository and is ignored in `.gitignore` (`*.db`), guaranteeing it remains local and is never committed or pushed to Git.
 
 ---
 

@@ -207,146 +207,52 @@
         </div>
       </section>
 
-      <!-- TAB 2: ACTRESS HUB (DUAL MODE: MOVIE COLLECTION & CHAT TIMELINE) -->
+      <!-- TAB 2: ACTRESS HUB & STUDIO COLLECTION -->
       <section id="tab-actresses" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-actresses">
-        <!-- TOP VIEW MODE CONTROL BAR -->
+        <!-- TOP CONTROL BAR: SEARCH, SORT & ACTIONS -->
         <div class="actress-view-bar">
-          <div class="actress-mode-segmented" role="tablist" aria-label="Actress View Mode">
-            <button id="btn-mode-collection" class="btn-mode-pill active" role="tab" aria-selected="true" onclick="window.app.setActressViewMode('collection')">
-              <span class="mode-pill-icon">🎬</span>
-              <span class="mode-pill-label">Movie Collection</span>
-            </button>
-            <button id="btn-mode-chat" class="btn-mode-pill" role="tab" aria-selected="false" onclick="window.app.setActressViewMode('chat')">
-              <span class="mode-pill-icon">💬</span>
-              <span class="mode-pill-label">Chat Timeline</span>
-            </button>
+          <div class="actress-header-info">
+            <h2 class="actress-hub-title">Followed Actresses</h2>
+            <span class="actress-hub-subtitle">Solo filmographies & Jellyfin collection progress</span>
           </div>
 
-          <div class="actress-view-actions">
-            <button id="btn-hub-refresh" class="btn btn-secondary btn-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
-              <span class="icon">🔄</span> Refresh All
-            </button>
-            <button id="btn-hub-add" class="btn btn-primary btn-sm" title="Follow new actress" onclick="window.app.promptAddActress()">
-              <span class="icon">+</span> Follow Actress
-            </button>
-          </div>
-        </div>
-
-        <!-- VIEW 1: MOVIE COLLECTION (STREAMING SHELVES) -->
-        <div id="actress-collection-view" class="actress-collection-view">
-          <!-- Actress Filter Chips Bar -->
-          <div class="collection-filter-bar">
-            <div id="collection-actress-chips" class="collection-chips-scroll" role="tablist" aria-label="Filter by actress">
-              <!-- Dynamically populated chips -->
-            </div>
-          </div>
-
-          <!-- Hero Overview Banner for Active Actress or Entire Collection -->
-          <div id="collection-actress-hero" class="collection-hero-banner">
-            <!-- Dynamically populated hero -->
-          </div>
-
-          <!-- Shelves Container (Netflix/Stremio horizontal carousels) -->
-          <div id="collection-shelves-container" class="collection-shelves-container">
-            <!-- Dynamically populated shelves -->
-          </div>
-        </div>
-
-        <!-- VIEW 2: CHAT TIMELINE (2-COLUMN MESSAGING LAYOUT) -->
-        <div id="actress-chat-view" class="actress-chat-layout hidden">
-          <!-- LEFT: Contacts Sidebar (Friends List) -->
-          <aside class="chat-sidebar">
-            <div class="chat-sidebar-header">
-              <div class="chat-sidebar-title">
-                <h3>💬 Actresses & Friends</h3>
-                <span id="chat-friends-count" class="badge-count">0</span>
-              </div>
-              <div class="chat-sidebar-actions">
-                <button id="btn-refresh-actresses" class="btn-icon-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
-                  <span class="icon">🔄</span>
-                </button>
-              </div>
+          <div class="actress-toolbar-controls">
+            <div class="actress-search-box">
+              <span class="search-icon" aria-hidden="true">🔍</span>
+              <input type="text" id="actress-search-input" placeholder="Search actresses..." autocomplete="off" oninput="window.app.searchActresses(this.value)" />
             </div>
 
-            <div class="chat-search-box">
-              <span class="search-icon">🔍</span>
-              <input type="text" id="chat-actress-search" placeholder="Search actresses..." />
+            <div class="actress-sort-box">
+              <select id="actress-sort-by" class="select-dropdown" aria-label="Sort actresses by" onchange="window.app.setActressSort(this.value)">
+                <option value="pct-desc" selected>📊 % Completed (High → Low)</option>
+                <option value="missing-desc">🔴 Most Missing</option>
+                <option value="name-asc">🔤 Name (A → Z)</option>
+                <option value="total-desc">📦 Total Solo Works</option>
+              </select>
             </div>
 
-            <div class="chat-add-friend-box">
-              <input type="text" id="input-actress-name" placeholder="+ Add / Follow Actress" />
-              <button id="btn-add-actress" class="btn btn-primary btn-sm" onclick="window.app.followActressFromInput()">
-                <span>+</span> Follow
+            <div class="actress-view-actions">
+              <button id="btn-hub-refresh" class="btn btn-secondary btn-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
+                <span class="icon">🔄</span> Refresh
+              </button>
+              <button id="btn-hub-add" class="btn btn-primary btn-sm" title="Follow new actress" onclick="window.app.promptAddActress()">
+                <span class="icon">+</span> Follow
               </button>
             </div>
+          </div>
+        </div>
 
-            <!-- Contacts List -->
-            <div id="chat-contacts-list" class="chat-contacts-list" role="list">
-              <!-- Dynamically populated contacts -->
-            </div>
+        <!-- ACTRESS HUB CONTENT -->
+        <div id="actress-collection-view" class="actress-collection-view">
+          <!-- Compact Hero Banner for Selected Actress (Shown only when viewing specific actress) -->
+          <div id="collection-actress-hero" class="collection-hero-banner hidden">
+            <!-- Dynamically populated compact hero -->
+          </div>
 
-            <div id="actresses-empty" class="chat-empty-sidebar hidden">
-              <p>No followed actresses yet.<br>Type a name above to add!</p>
-            </div>
-          </aside>
-
-          <!-- RIGHT: Chat Room / Feed -->
-          <main class="chat-main-panel">
-            <!-- Header of active conversation -->
-            <header id="chat-active-header" class="chat-room-header">
-              <div class="chat-room-actress-info">
-                <div class="chat-avatar-wrapper">
-                  <img id="chat-header-avatar" src="/placeholder.png" alt="Avatar" class="chat-avatar-img" />
-                  <span class="status-dot online" title="Active"></span>
-                </div>
-                <div class="chat-header-names">
-                  <div class="chat-name-row">
-                    <h3 id="chat-header-name">Select an Actress</h3>
-                    <span id="chat-header-ja" class="chat-ja-name"></span>
-                  </div>
-                  <div id="chat-header-subtitle" class="chat-status-subtitle">
-                    Select a contact from the left to view release timeline
-                  </div>
-                </div>
-              </div>
-
-              <div id="chat-header-controls" class="chat-room-controls hidden">
-                <button id="btn-open-profile-drawer" class="btn btn-secondary btn-sm" title="View Actress Profile & Stats" onclick="window.app.openActressProfileDrawer()">
-                  <span>👤</span> Profile & Stats
-                </button>
-                <a id="link-header-r18" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View Official R18.dev Profile">
-                  <span>🌐</span> R18.dev ↗
-                </a>
-                <button id="btn-header-unfollow" class="btn btn-secondary btn-sm btn-danger-hover" title="Unfollow Actress" onclick="window.app.unfollowActiveActress()">
-                  <span>🗑️</span>
-                </button>
-              </div>
-            </header>
-
-            <!-- Scrollable Messages Feed -->
-            <div id="chat-messages-feed" class="chat-messages-feed">
-              <div class="chat-welcome-placeholder">
-                <div class="welcome-icon">💬</div>
-                <h3>Welcome to Actress Release Chat</h3>
-                <p>Select an actress on the left to see her releases, download status, and Jellyfin history!</p>
-              </div>
-            </div>
-
-            <!-- Bottom Quick Action Bar -->
-            <footer id="chat-action-bar" class="chat-action-bar hidden">
-              <div class="chat-quick-actions">
-                <button id="btn-chat-track-title" class="btn btn-secondary btn-sm" onclick="window.app.trackTitleActiveActress()">
-                  <span class="icon">+</span> Track JAV-ID
-                </button>
-                <button id="btn-chat-refresh" class="btn btn-secondary btn-sm" onclick="window.app.refreshActiveActress(this)">
-                  <span class="icon">🔄</span> Refresh Releases
-                </button>
-                <button id="btn-chat-open-folder" class="btn btn-secondary btn-sm" onclick="window.app.openActiveActressFolder()">
-                  <span class="icon">📂</span> Open Folder in Finder
-                </button>
-              </div>
-            </footer>
-          </main>
+          <!-- Main Content: Directory Grid or Dedicated Filmography Grid -->
+          <div id="collection-shelves-container" class="collection-shelves-container">
+            <!-- Dynamically populated -->
+          </div>
         </div>
       </section>
 

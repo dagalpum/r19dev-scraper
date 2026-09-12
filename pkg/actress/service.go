@@ -3,9 +3,11 @@ package actress
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -13,32 +15,44 @@ import (
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
 )
 
+// GenreCount represents genre tag with its frequency count.
+type GenreCount struct {
+	Genre string `json:"genre"`
+	Count int    `json:"count"`
+}
+
 // ReleaseItem holds filmography release details with download, watch, and rating status.
 type ReleaseItem struct {
-	MovieID         string `json:"movie_id"`
-	Title           string `json:"title"`
-	OriginalTitle   string `json:"original_title"`
-	Maker           string `json:"maker"`
-	ReleaseDate     string `json:"release_date"`
-	CoverURL        string `json:"cover_url"`
-	IsDownloaded    bool   `json:"is_downloaded"`
-	IsWatched       bool   `json:"is_watched"`
-	UserRating      int    `json:"user_rating"`
-	IsFavorite      bool   `json:"is_favorite"`
-	LibraryPath     string `json:"library_path,omitempty"`
-	OrganizedFolder string `json:"organized_folder,omitempty"`
-	OrganizedVideo  string `json:"organized_video,omitempty"`
+	MovieID         string   `json:"movie_id"`
+	Title           string   `json:"title"`
+	OriginalTitle   string   `json:"original_title"`
+	Maker           string   `json:"maker"`
+	ReleaseDate     string   `json:"release_date"`
+	CoverURL        string   `json:"cover_url"`
+	IsDownloaded    bool     `json:"is_downloaded"`
+	IsWatched       bool     `json:"is_watched"`
+	UserRating      int      `json:"user_rating"`
+	IsFavorite      bool     `json:"is_favorite"`
+	LibraryPath     string   `json:"library_path,omitempty"`
+	OrganizedFolder string   `json:"organized_folder,omitempty"`
+	OrganizedVideo  string   `json:"organized_video,omitempty"`
+	SizeBytes       int64    `json:"size_bytes,omitempty"`
+	Genres          []string `json:"genres,omitempty"`
 }
 
 // ActressSummary aggregates release statistics for a followed actress.
 type ActressSummary struct {
-	Actress    db.ActressRecord `json:"actress"`
-	Releases   []ReleaseItem    `json:"releases"`
-	Total      int              `json:"total"`
-	Downloaded int              `json:"downloaded"`
-	Missing    int              `json:"missing"`
-	Watched    int              `json:"watched"`
-	Favorites  int              `json:"favorites"`
+	Actress        db.ActressRecord `json:"actress"`
+	Releases       []ReleaseItem    `json:"releases"`
+	Total          int              `json:"total"`
+	Downloaded     int              `json:"downloaded"`
+	Missing        int              `json:"missing"`
+	Watched        int              `json:"watched"`
+	Favorites      int              `json:"favorites"`
+	TotalSizeBytes int64            `json:"total_size_bytes"`
+	TopGenres      []GenreCount     `json:"top_genres"`
+	DebutDate      string           `json:"debut_date,omitempty"`
+	LatestDate     string           `json:"latest_date,omitempty"`
 }
 
 // Service manages actress tracking and new release detection.
@@ -125,7 +139,9 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	SELECT m.id, COALESCE(m.title, m.id), COALESCE(m.original_title, ''), COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''), COALESCE(m.actresses_json, '[]'),
 	       COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0), COALESCE(u.is_favorite, 0),
 	       MAX(lf.file_path),
-	       MAX(om.target_folder), MAX(om.target_video)
+	       MAX(om.target_folder), MAX(om.target_video),
+	       COALESCE(SUM(lf.size_bytes), 0),
+	       COALESCE(m.genres_json, '[]')
 	FROM movies m
 	LEFT JOIN user_state u ON m.id = u.movie_id
 	LEFT JOIN library_files lf ON m.id = lf.movie_id
@@ -145,6 +161,10 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	downloadedCount := 0
 	watchedCount := 0
 	favCount := 0
+	var totalSizeBytes int64
+	genreFreq := make(map[string]int)
+	debutDate := ""
+	latestDate := ""
 
 	for rows.Next() {
 		var r ReleaseItem
@@ -152,11 +172,15 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		var libPath sql.NullString
 		var orgFolder sql.NullString
 		var orgVideo sql.NullString
+		var sizeBytes int64
+		var genresJSON string
 		if err := rows.Scan(
 			&r.MovieID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL, &actJSON,
 			&r.IsWatched, &r.UserRating, &r.IsFavorite,
 			&libPath,
 			&orgFolder, &orgVideo,
+			&sizeBytes,
+			&genresJSON,
 		); err != nil {
 			return nil, err
 		}
@@ -195,10 +219,39 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			}
 		}
 
+		// Calculate size if not recorded in library_files but folder exists
+		if sizeBytes == 0 && r.OrganizedFolder != "" {
+			if entries, err := os.ReadDir(r.OrganizedFolder); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() {
+						if fi, fErr := e.Info(); fErr == nil {
+							sizeBytes += fi.Size()
+						}
+					}
+				}
+			}
+		}
+		r.SizeBytes = sizeBytes
+
+		// Parse genres and tally frequencies
+		if genresJSON != "" && genresJSON != "[]" {
+			var parsedGenres []string
+			if err := json.Unmarshal([]byte(genresJSON), &parsedGenres); err == nil {
+				r.Genres = parsedGenres
+				for _, g := range parsedGenres {
+					g = strings.TrimSpace(g)
+					if g != "" {
+						genreFreq[g]++
+					}
+				}
+			}
+		}
+
 		// A movie is downloaded/present if it has an organized folder, organized video, or library file
 		if r.OrganizedFolder != "" || r.OrganizedVideo != "" || r.LibraryPath != "" {
 			r.IsDownloaded = true
 			downloadedCount++
+			totalSizeBytes += r.SizeBytes
 		}
 		if r.IsWatched {
 			watchedCount++
@@ -210,20 +263,47 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			r.CoverURL = "/api/images/" + r.MovieID
 		}
 
+		if r.ReleaseDate != "" {
+			if latestDate == "" || r.ReleaseDate > latestDate {
+				latestDate = r.ReleaseDate
+			}
+			if debutDate == "" || r.ReleaseDate < debutDate {
+				debutDate = r.ReleaseDate
+			}
+		}
+
 		releases = append(releases, r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
+	topGenres := make([]GenreCount, 0)
+	for g, count := range genreFreq {
+		topGenres = append(topGenres, GenreCount{Genre: g, Count: count})
+	}
+	sort.Slice(topGenres, func(i, j int) bool {
+		if topGenres[i].Count == topGenres[j].Count {
+			return topGenres[i].Genre < topGenres[j].Genre
+		}
+		return topGenres[i].Count > topGenres[j].Count
+	})
+	if len(topGenres) > 8 {
+		topGenres = topGenres[:8]
+	}
+
 	summary := &ActressSummary{
-		Actress:    actRec,
-		Releases:   releases,
-		Total:      len(releases),
-		Downloaded: downloadedCount,
-		Missing:    len(releases) - downloadedCount,
-		Watched:    watchedCount,
-		Favorites:  favCount,
+		Actress:        actRec,
+		Releases:       releases,
+		Total:          len(releases),
+		Downloaded:     downloadedCount,
+		Missing:        len(releases) - downloadedCount,
+		Watched:        watchedCount,
+		Favorites:      favCount,
+		TotalSizeBytes: totalSizeBytes,
+		TopGenres:      topGenres,
+		DebutDate:      debutDate,
+		LatestDate:     latestDate,
 	}
 
 	return summary, nil

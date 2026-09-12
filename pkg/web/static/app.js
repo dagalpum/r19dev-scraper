@@ -35,8 +35,12 @@
     activeActressName: null,
     actressSearchQuery: '',
     actressViewMode: 'collection',
+    actressSort: 'pct-desc',
     collectionFilterActress: 'all',
     collectionSubFilter: 'all',
+    actressMovieSearch: '',
+    actressMovieSort: 'date-desc',
+    actressGenreFilter: null,
   };
 
   // DOM Selectors
@@ -1688,6 +1692,9 @@
   function filterCollectionActress(name) {
     state.collectionFilterActress = name || 'all';
     state.collectionSubFilter = 'all';
+    state.actressMovieSearch = '';
+    state.actressGenreFilter = null;
+    state.actressMovieSort = 'date-desc';
     if (name && name !== 'all') {
       state.activeActressName = name;
     }
@@ -1697,6 +1704,52 @@
   function setCollectionSubFilter(sub) {
     state.collectionSubFilter = sub || 'all';
     renderActressCollection();
+  }
+
+  function toggleActressGenreFilter(genre) {
+    if (state.actressGenreFilter === genre) {
+      state.actressGenreFilter = null;
+    } else {
+      state.actressGenreFilter = genre;
+    }
+    renderActressCollection();
+  }
+
+  function clearActressGenreFilter() {
+    state.actressGenreFilter = null;
+    renderActressCollection();
+  }
+
+  function handleActressMovieSearch(q) {
+    state.actressMovieSearch = (q || '').trim();
+    renderActressCollection();
+    const el = document.getElementById('actress-movie-search');
+    if (el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }
+
+  function setActressMovieSort(sortKey) {
+    state.actressMovieSort = sortKey || 'date-desc';
+    renderActressCollection();
+  }
+
+  function resetActressStageFilters() {
+    state.collectionSubFilter = 'all';
+    state.actressMovieSearch = '';
+    state.actressGenreFilter = null;
+    state.actressMovieSort = 'date-desc';
+    renderActressCollection();
+  }
+
+  function formatBytes(bytes, decimals = 1) {
+    if (!bytes || bytes <= 0) return '0 B';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
   }
 
   function scrollShelf(shelfId, direction) {
@@ -1827,86 +1880,12 @@
 
     // 1. Render Filter Chips (No emoji icon prefix)
     const isAll = state.collectionFilterActress === 'all';
-    let chipsHtml = `
-      <button class="collection-chip ${isAll ? 'active' : ''}" onclick="window.app.filterCollectionActress('all')">
-        <span>All Actresses</span>
-        <span class="chip-badge">${state.actresses.length}</span>
-      </button>
-    `;
-
-    state.actresses.forEach(entry => {
-      const a = entry.actress;
-      const isChipActive = !isAll && state.collectionFilterActress === a.name;
-      const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
-      const relCount = entry.releases ? entry.releases.length : 0;
-      chipsHtml += `
-        <button class="collection-chip ${isChipActive ? 'active' : ''}" onclick="window.app.filterCollectionActress('${escapeHtml(a.name)}')">
-          <img class="chip-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
-          <span>${escapeHtml(a.name)}</span>
-          <span class="chip-badge">${relCount}</span>
-        </button>
-      `;
-    });
-    if (elements.collectionActressChips) {
-      elements.collectionActressChips.innerHTML = chipsHtml;
-    }
 
     // 2. Render Content
     if (isAll) {
-      let totalTitles = 0;
-      let totalDownloaded = 0;
-      let totalMissing = 0;
-      state.actresses.forEach(entry => {
-        totalTitles += entry.total || (entry.releases ? entry.releases.length : 0);
-        totalDownloaded += entry.downloaded || 0;
-        totalMissing += entry.missing || 0;
-      });
-      const overallPct = totalTitles > 0 ? Math.round((totalDownloaded / totalTitles) * 100) : 0;
-
       if (elements.collectionActressHero) {
-        elements.collectionActressHero.innerHTML = `
-          <div class="collection-hero-content">
-            <div class="hero-profile-group">
-              <div class="hero-avatar-wrapper">
-                <div style="width: 100%; height: 100%; border-radius: 50%; background: linear-gradient(135deg, var(--primary) 0%, #a855f7 100%); display: flex; align-items: center; justify-content: center; font-size: 1.8rem; box-shadow: 0 0 16px rgba(99, 102, 241, 0.4);">
-                  🎬
-                </div>
-              </div>
-              <div class="hero-titles">
-                <div class="hero-name-row">
-                  <h2 class="hero-name">All Followed Actresses</h2>
-                </div>
-                <div class="hero-meta-pills">
-                  <span class="hero-stat-pill">👥 ${state.actresses.length} Actresses</span>
-                  <span class="hero-stat-pill">📦 ${totalTitles} Releases Tracked</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="hero-progress-group">
-              <div class="hero-progress-labels">
-                <span class="hero-progress-label">Total Collection Progress</span>
-                <span class="hero-progress-pct">${totalDownloaded}/${totalTitles} (${overallPct}%)</span>
-              </div>
-              <div class="hero-progress-track">
-                <div class="hero-progress-bar" style="width: ${overallPct}%;"></div>
-              </div>
-              <div class="hero-stats-mini">
-                <span class="hero-stat-green">🟢 ${totalDownloaded} in library</span>
-                <span class="hero-stat-red">🔴 ${totalMissing} missing</span>
-              </div>
-            </div>
-
-            <div class="hero-actions-group">
-              <button class="btn btn-secondary btn-sm" onclick="window.app.refreshAllActresses(this)">
-                <span class="icon">🔄</span> Refresh All
-              </button>
-              <button class="btn btn-primary btn-sm" onclick="window.app.promptAddActress()">
-                <span class="icon">+</span> Follow Actress
-              </button>
-            </div>
-          </div>
-        `;
+        elements.collectionActressHero.innerHTML = '';
+        elements.collectionActressHero.classList.add('hidden');
       }
 
       // Collect deduplicated releases across all actresses
@@ -1928,6 +1907,41 @@
       const libraryReleases = allReleases.filter(r => r.organized_folder || r.library_path || r.is_downloaded || state.organizedStatus[r.movie_id]).sort((a, b) => (b.release_date || '').localeCompare(a.release_date || ''));
       const libraryCards = libraryReleases.map(createPosterCardHtml);
 
+      // Filter and sort the followed actresses directory
+      let dirList = [...state.actresses];
+      if (state.actressSearchQuery) {
+        const q = state.actressSearchQuery.toLowerCase();
+        dirList = dirList.filter(e => {
+          const n = (e.actress.name || '').toLowerCase();
+          const j = (e.actress.ja_name || '').toLowerCase();
+          return n.includes(q) || j.includes(q);
+        });
+      }
+
+      const sortMode = state.actressSort || 'pct-desc';
+      dirList.sort((a, b) => {
+        const totalA = a.total || (a.releases ? a.releases.length : 0);
+        const dlA = a.downloaded || 0;
+        const pctA = totalA > 0 ? (dlA / totalA) : 0;
+        const missingA = a.missing || 0;
+
+        const totalB = b.total || (b.releases ? b.releases.length : 0);
+        const dlB = b.downloaded || 0;
+        const pctB = totalB > 0 ? (dlB / totalB) : 0;
+        const missingB = b.missing || 0;
+
+        if (sortMode === 'pct-desc') {
+          return pctB - pctA || totalB - totalA;
+        } else if (sortMode === 'missing-desc') {
+          return missingB - missingA;
+        } else if (sortMode === 'total-desc') {
+          return totalB - totalA;
+        } else if (sortMode === 'name-asc') {
+          return (a.actress.name || '').localeCompare(b.actress.name || '');
+        }
+        return 0;
+      });
+
       let contentHtml = '';
 
       // Section: Followed Actresses Directory Grid
@@ -1938,35 +1952,34 @@
               <h3 class="directory-section-title">Followed Actresses</h3>
               <p class="directory-section-subtitle">Click an actress to view her dedicated filmography</p>
             </div>
-            <span class="directory-section-badge">${state.actresses.length} Actresses</span>
+            <span class="directory-section-badge">${dirList.length} Actresses</span>
           </div>
           <div class="actresses-directory-grid">
-            ${state.actresses.map(entry => {
+            ${dirList.map(entry => {
               const a = entry.actress;
               const total = entry.total || (entry.releases ? entry.releases.length : 0);
               const dl = entry.downloaded || 0;
-              const missing = entry.missing || 0;
               const pct = total > 0 ? Math.round((dl / total) * 100) : 0;
               const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
 
               return `
                 <div class="actress-dir-card" onclick="window.app.filterCollectionActress('${escapeHtml(a.name)}')">
-                  <img class="actress-dir-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+                  <div class="actress-dir-avatar-box">
+                    <img class="actress-dir-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+                  </div>
                   <div class="actress-dir-body">
                     <div class="actress-dir-header">
                       <span class="actress-dir-name">${escapeHtml(a.name)}</span>
                       ${a.ja_name ? `<span class="actress-dir-ja">${escapeHtml(a.ja_name)}</span>` : ''}
                     </div>
                     <div class="actress-dir-progress-row">
-                      <span class="actress-dir-fraction">${dl}/${total}</span>
                       <div class="actress-dir-progress-track">
                         <div class="actress-dir-progress-fill" style="width: ${pct}%;"></div>
                       </div>
-                      <span class="actress-dir-pct">${pct}%</span>
-                    </div>
-                    <div class="actress-dir-badges">
-                      <span class="actress-dir-pill in-lib">🟢 ${dl} In Library</span>
-                      ${missing > 0 ? `<span class="actress-dir-pill missing">🔴 ${missing} Missing</span>` : ''}
+                      <div class="actress-dir-stats-line">
+                        <span class="actress-dir-fraction">${dl}/${total}</span>
+                        <span class="actress-dir-pct">${pct}%</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1986,7 +1999,12 @@
       elements.collectionShelvesContainer.innerHTML = contentHtml;
 
     } else {
-      // Specific Actress Selected -> Vertical Grid ONLY for this actress (no left/right horizontal scrolling!)
+      // Specific Actress Selected -> 2-Column Bento Sidebar & Dedicated Filmography Stage
+      if (elements.collectionActressHero) {
+        elements.collectionActressHero.innerHTML = '';
+        elements.collectionActressHero.classList.add('hidden');
+      }
+
       const activeEntry = state.actresses.find(e => e.actress.name === state.collectionFilterActress) || state.actresses[0];
       const a = activeEntry.actress;
       const releases = activeEntry.releases || [];
@@ -1995,69 +2013,26 @@
       const missing = activeEntry.missing || 0;
       const pct = total > 0 ? Math.round((dl / total) * 100) : 0;
       const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+      const totalBytes = activeEntry.total_size_bytes || 0;
+      const avgBytes = dl > 0 && totalBytes > 0 ? Math.round(totalBytes / dl) : 0;
+      const topGenres = activeEntry.top_genres || [];
+      const debutDate = activeEntry.debut_date || '';
+      const latestDate = activeEntry.latest_date || '';
+
+      let careerSpan = '';
+      if (debutDate) {
+        const dYear = debutDate.substring(0, 4);
+        const lYear = latestDate ? latestDate.substring(0, 4) : '';
+        if (dYear && lYear && dYear !== lYear) {
+          careerSpan = `${dYear} – ${lYear}`;
+        } else if (dYear) {
+          careerSpan = `Debut ${dYear}`;
+        }
+      }
 
       const r18Url = a.r18_id
         ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
         : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
-
-      if (elements.collectionActressHero) {
-        elements.collectionActressHero.innerHTML = `
-          <div class="collection-hero-content">
-            <div class="hero-profile-group">
-              <div class="hero-avatar-wrapper">
-                <img class="hero-avatar-img" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
-              </div>
-              <div class="hero-titles">
-                <div class="hero-name-row">
-                  <h2 class="hero-name">${escapeHtml(a.name)}</h2>
-                  <span class="hero-ja-name">${escapeHtml(a.ja_name || '')}</span>
-                </div>
-                <div class="hero-meta-pills">
-                  ${a.r18_id ? `<span class="hero-id-pill">#${a.r18_id}</span>` : ''}
-                  <span class="hero-stat-pill">📦 ${total} Titles</span>
-                  <span class="hero-stat-pill hero-stat-green">🟢 ${dl} In Library</span>
-                  <span class="hero-stat-pill hero-stat-red">🔴 ${missing} Missing</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="hero-progress-group">
-              <div class="hero-progress-labels">
-                <span class="hero-progress-label">Collection Progress</span>
-                <span class="hero-progress-pct">${dl}/${total} <span style="font-weight: 500; opacity: 0.85;">(${pct}%)</span></span>
-              </div>
-              <div class="hero-progress-track">
-                <div class="hero-progress-bar" style="width: ${pct}%;"></div>
-              </div>
-              <div class="hero-stats-mini">
-                <span class="hero-stat-green">🟢 ${dl} downloaded</span>
-                <span class="hero-stat-red">🔴 ${missing} missing</span>
-              </div>
-            </div>
-
-            <div class="hero-actions-group">
-              <button class="btn btn-secondary btn-sm" onclick="window.app.filterCollectionActress('all')">
-                <span>←</span> All Actresses
-              </button>
-              <button class="btn btn-secondary btn-sm" title="View Actress Profile & Stats" onclick="window.app.openActressProfileDrawer()">
-                <span>👤</span> Profile
-              </button>
-              <button class="btn btn-secondary btn-sm" title="Open Actress folder in Finder" onclick="window.app.openActiveActressFolder()">
-                <span class="icon">📂</span> Finder
-              </button>
-              <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" title="View Official R18.dev Profile">
-                <span>🌐</span> R18.dev ↗
-              </a>
-              <button class="btn btn-secondary btn-sm" title="Track a new JAV-ID for this actress" onclick="window.app.trackTitleActiveActress()">
-                <span class="icon">+</span> Track ID
-              </button>
-              <button class="btn btn-secondary btn-sm" title="Refresh releases" onclick="window.app.refreshActiveActress(this)">
-                <span class="icon">🔄</span> Refresh
-              </button>
-            </div>
-          </div>
-        `;
-      }
 
       // Group into In Library vs Missing
       const inLibraryReleases = [];
@@ -2072,58 +2047,200 @@
         }
       });
 
-      inLibraryReleases.sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
-      missingReleases.sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
-      const allChronological = [...releases].sort((x, y) => (y.release_date || '').localeCompare(x.release_date || ''));
-
-      // Sub-filter selection ('all', 'in_library', 'missing')
+      // Filter pipeline: Sub-filter -> Genre -> Search -> Sort
       const subFilter = state.collectionSubFilter || 'all';
-      let activeReleases = allChronological;
+      let filtered = releases;
       if (subFilter === 'in_library') {
-        activeReleases = inLibraryReleases;
+        filtered = inLibraryReleases;
       } else if (subFilter === 'missing') {
-        activeReleases = missingReleases;
+        filtered = missingReleases;
       }
 
-      const cardsHtml = activeReleases.map(createPosterCardHtml);
+      if (state.actressGenreFilter) {
+        filtered = filtered.filter(rel => (rel.genres || []).includes(state.actressGenreFilter));
+      }
 
-      let contentHtml = `
-        <div class="actress-grid-toolbar">
-          <div class="toolbar-left">
-            <button class="btn btn-secondary btn-sm" onclick="window.app.filterCollectionActress('all')">
-              <span>←</span> All Actresses
+      if (state.actressMovieSearch) {
+        const q = state.actressMovieSearch.toLowerCase();
+        filtered = filtered.filter(rel => {
+          const mid = (rel.movie_id || '').toLowerCase();
+          const title = (rel.title || '').toLowerCase();
+          const maker = (rel.maker || '').toLowerCase();
+          return mid.includes(q) || title.includes(q) || maker.includes(q);
+        });
+      }
+
+      const sortMode = state.actressMovieSort || 'date-desc';
+      filtered = [...filtered].sort((x, y) => {
+        if (sortMode === 'date-desc') {
+          return (y.release_date || '').localeCompare(x.release_date || '');
+        } else if (sortMode === 'date-asc') {
+          return (x.release_date || '').localeCompare(y.release_date || '');
+        } else if (sortMode === 'size-desc') {
+          return (y.size_bytes || 0) - (x.size_bytes || 0);
+        } else if (sortMode === 'id-asc') {
+          return (x.movie_id || '').localeCompare(y.movie_id || '');
+        }
+        return 0;
+      });
+
+      const cardsHtml = filtered.map(createPosterCardHtml);
+
+      const contentHtml = `
+        <div class="actress-detail-layout">
+          <!-- LEFT COLUMN: Sticky Bento Profile Sidebar -->
+          <aside class="actress-bento-sidebar">
+            <button class="bento-back-btn" onclick="window.app.filterCollectionActress('all')">
+              <span class="back-arrow">←</span> All Followed Actresses
             </button>
-            <div class="toolbar-title-group">
-              <h3 class="toolbar-actress-title">${escapeHtml(a.name)}</h3>
-              <div class="toolbar-progress-badge">
-                <span class="toolbar-progress-fraction">${dl}/${total}</span>
-                <div class="toolbar-progress-track">
-                  <div class="toolbar-progress-fill" style="width: ${pct}%;"></div>
+
+            <!-- Bento 1: Identity Card -->
+            <div class="bento-card bento-card-identity">
+              <div class="bento-avatar-wrapper">
+                <img class="bento-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
+                ${careerSpan ? `<span class="bento-career-badge">📅 ${escapeHtml(careerSpan)}</span>` : ''}
+              </div>
+              <div class="bento-identity-info">
+                <h2 class="bento-name">${escapeHtml(a.name)}</h2>
+                ${a.ja_name ? `<div class="bento-ja-name">${escapeHtml(a.ja_name)}</div>` : ''}
+                <div class="bento-badges-row">
+                  ${a.r18_id ? `<span class="bento-badge-mono">R18 #${a.r18_id}</span>` : ''}
+                  <span class="bento-badge-count">${total} Works</span>
                 </div>
               </div>
             </div>
-          </div>
-          <div class="toolbar-filters">
-            <button class="grid-filter-pill ${subFilter === 'all' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('all')">
-              All <span class="pill-count">${total}</span>
-            </button>
-            <button class="grid-filter-pill ${subFilter === 'in_library' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('in_library')">
-              In Library <span class="pill-count">${dl}</span>
-            </button>
-            <button class="grid-filter-pill ${subFilter === 'missing' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('missing')">
-              Missing <span class="pill-count">${missing}</span>
-            </button>
-          </div>
-        </div>
 
-        <div class="collection-vertical-grid">
-          ${cardsHtml.length > 0 ? cardsHtml.join('') : `
-            <div class="grid-empty-state">
-              <div class="empty-icon">🎬</div>
-              <h4>No Releases Found</h4>
-              <p>No movies match the "${escapeHtml(subFilter)}" filter for ${escapeHtml(a.name)}.</p>
+            <!-- Bento 2: Storage & Library Progress -->
+            <div class="bento-card bento-card-storage">
+              <div class="bento-card-header">
+                <span class="bento-card-title">💾 Library & Storage</span>
+                <span class="bento-storage-highlight">${formatBytes(totalBytes)}</span>
+              </div>
+              <div class="bento-progress-box">
+                <div class="bento-progress-track">
+                  <div class="bento-progress-fill" style="width: ${pct}%;"></div>
+                </div>
+                <div class="bento-progress-meta">
+                  <span class="bento-progress-count">${dl}/${total} Collected</span>
+                  <span class="bento-progress-pct">${pct}%</span>
+                </div>
+              </div>
+              ${dl > 0 && avgBytes > 0 ? `
+                <div class="bento-storage-footnote">
+                  <span>Average size:</span> <strong>${formatBytes(avgBytes)} / file</strong>
+                </div>
+              ` : ''}
             </div>
-          `}
+
+            <!-- Bento 3: Top Genres (Clickable Filter Chips) -->
+            <div class="bento-card bento-card-genres">
+              <div class="bento-card-header">
+                <span class="bento-card-title">🏷️ Top Genres</span>
+                ${state.actressGenreFilter ? `<button class="bento-chip-reset" onclick="window.app.clearActressGenreFilter()">Clear</button>` : ''}
+              </div>
+              ${topGenres.length > 0 ? `
+                <div class="bento-genres-cloud">
+                  ${topGenres.map(g => {
+                    const isActive = state.actressGenreFilter === g.genre;
+                    return `
+                      <button class="bento-genre-chip ${isActive ? 'active' : ''}" 
+                              onclick="window.app.toggleActressGenreFilter('${escapeHtml(g.genre)}')"
+                              title="${isActive ? 'Click to remove filter' : `Filter by ${escapeHtml(g.genre)}`}">
+                        <span class="genre-name">#${escapeHtml(g.genre)}</span>
+                        <span class="genre-count">${g.count}</span>
+                      </button>
+                    `;
+                  }).join('')}
+                </div>
+              ` : `
+                <div class="bento-empty-text">Detailed genres unlock as movies are scraped.</div>
+              `}
+            </div>
+
+            <!-- Bento 4: Quick Actions -->
+            <div class="bento-card bento-card-actions">
+              <div class="bento-card-header">
+                <span class="bento-card-title">⚡ Quick Actions</span>
+              </div>
+              <div class="bento-action-buttons">
+                <button class="btn btn-secondary bento-action-btn" title="Open Actress folder in Finder / NAS" onclick="window.app.openActiveActressFolder()">
+                  <span class="icon">📂</span> Open in Finder
+                </button>
+                <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary bento-action-btn" title="Official R18.dev Filmography">
+                  <span class="icon">🌐</span> R18.dev Profile ↗
+                </a>
+                <button class="btn btn-secondary bento-action-btn" title="Check & refresh releases from R18.dev" onclick="window.app.refreshActiveActress(this)">
+                  <span class="icon">🔄</span> Refresh Releases
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <!-- RIGHT COLUMN: Dedicated Main Stage -->
+          <main class="actress-main-stage">
+            <!-- Stage Toolbar -->
+            <div class="actress-stage-toolbar">
+              <div class="stage-toolbar-left">
+                <!-- In-Page Live Search -->
+                <div class="stage-search-box">
+                  <span class="stage-search-icon">🔍</span>
+                  <input type="text" 
+                         id="actress-movie-search" 
+                         class="stage-search-input" 
+                         placeholder="Search ID (e.g. SSIS) or title..." 
+                         value="${escapeHtml(state.actressMovieSearch || '')}" 
+                         oninput="window.app.handleActressMovieSearch(this.value)" />
+                  ${state.actressMovieSearch ? `
+                    <button class="stage-search-clear" onclick="window.app.handleActressMovieSearch('')">✕</button>
+                  ` : ''}
+                </div>
+
+                <!-- Sub-Filter Pills -->
+                <div class="stage-filter-pills">
+                  <button class="stage-pill ${subFilter === 'all' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('all')">
+                    All Works <span class="pill-badge">${total}</span>
+                  </button>
+                  <button class="stage-pill ${subFilter === 'in_library' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('in_library')">
+                    In Library <span class="pill-badge">${dl}</span>
+                  </button>
+                  <button class="stage-pill ${subFilter === 'missing' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('missing')">
+                    Missing <span class="pill-badge">${missing}</span>
+                  </button>
+                </div>
+
+                <!-- Active Genre Badge (if clicked from Bento) -->
+                ${state.actressGenreFilter ? `
+                  <div class="stage-active-genre-tag">
+                    <span>Genre: <strong>#${escapeHtml(state.actressGenreFilter)}</strong></span>
+                    <button class="stage-tag-close" onclick="window.app.clearActressGenreFilter()" title="Clear genre filter">✕</button>
+                  </div>
+                ` : ''}
+              </div>
+
+              <!-- Stage Toolbar Right: Sort Dropdown -->
+              <div class="stage-toolbar-right">
+                <label class="stage-sort-label" for="actress-sort-select">Sort:</label>
+                <select id="actress-sort-select" class="stage-sort-select" onchange="window.app.setActressMovieSort(this.value)">
+                  <option value="date-desc" ${sortMode === 'date-desc' ? 'selected' : ''}>Release Date (Newest)</option>
+                  <option value="date-asc" ${sortMode === 'date-asc' ? 'selected' : ''}>Release Date (Oldest)</option>
+                  <option value="size-desc" ${sortMode === 'size-desc' ? 'selected' : ''}>File Size (Largest)</option>
+                  <option value="id-asc" ${sortMode === 'id-asc' ? 'selected' : ''}>Movie ID (A-Z)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Stage Poster Grid -->
+            <div class="collection-vertical-grid">
+              ${cardsHtml.length > 0 ? cardsHtml.join('') : `
+                <div class="grid-empty-state">
+                  <div class="empty-icon">🎬</div>
+                  <h4>No Releases Found</h4>
+                  <p>No movies match your selected filters for ${escapeHtml(a.name)}.</p>
+                  <button class="btn btn-secondary btn-sm" onclick="window.app.resetActressStageFilters()">Clear Filters</button>
+                </div>
+              `}
+            </div>
+          </main>
         </div>
       `;
 
@@ -2937,10 +3054,24 @@
     organizeSingle,
     copyMovieId,
 
-    // Actress Hub: Dual View (Collection & Chat)
+    // Actress Hub: Collection & Filmography
+    searchActresses: (q) => {
+      state.actressSearchQuery = (q || '').trim();
+      renderActressCollection();
+    },
+    setActressSort: (s) => {
+      state.actressSort = s;
+      renderActressCollection();
+    },
     setActressViewMode,
     filterCollectionActress,
     setCollectionSubFilter,
+    toggleActressGenreFilter,
+    clearActressGenreFilter,
+    handleActressMovieSearch,
+    setActressMovieSort,
+    resetActressStageFilters,
+    formatBytes,
     scrollShelf,
     promptAddActress,
     openMovieById,

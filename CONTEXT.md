@@ -91,23 +91,26 @@ r19dev-scraper/
 * **Naming Convention**: Folder structure follows `<Dest>/<Actress_Name>/<JAV-ID Title>/`. Actress name and movie title prioritize English metadata, falling back to Japanese only when English is absent.
 * **ENAMETOOLONG Prevention**: Single directory components are capped at $\le 180$ bytes along UTF-8 rune boundaries, preventing OS filesystem `ENAMETOOLONG` errors (255-byte limit on APFS, ext4, NTFS, and SMB shares).
 
-### 4.3 SQLite Audit Trail with Auto-Pruning
-* All organize and scrape operations are logged into the `operation_history` table in SQLite (`~/Library/Caches/r19dev/r19dev.db` on macOS).
-* Automated pruning keeps only the last 100 entries and purges logs older than 30 days, guaranteeing zero disk clutter.
+### 4.3 SQLite Audit Trail & Local Storage Invariant
+* **Engine & Path**: All data is managed via pure Go SQLite (`modernc.org/sqlite`) stored in `~/Library/Caches/r19dev/r19dev.db` (macOS) or `~/.cache/r19dev/r19dev.db` (Linux).
+* **Git Exclusion Invariant**: The database lives in the user cache directory outside the workspace and is strictly ignored via `.gitignore` (`*.db`), guaranteeing it is never committed or pushed to Git.
+* **Audit Trail**: All organize and scrape operations are logged into the `operation_history` table in SQLite. Automated pruning keeps only the last 100 entries and purges logs older than 30 days, guaranteeing zero disk clutter.
 
 ### 4.4 Symlink Protection & Boundary-Safe Regexes
 * The scanner executes `os.Lstat()` on every node; symlinks are filtered out to guarantee immunity from circular loops.
 * Regex matching uses boundary assertions `(?:^|[^a-zA-Z0-9])` instead of standard `\b` to avoid splitting on underscores.
 
-### 4.5 Actress Chat Architecture & R18 ID Management
-* **Interactive Chat Paradigm**: Actress Hub (`#tab-actresses`) is structured as a two-column chat application (Contacts list on left, dialogue stream on right).
-* **Conversational Releases**: Filmography announcements are presented as dialogue messages from the actress with cover jackets, dates, and copy ID buttons, paired with system status bubbles verifying Jellyfin organization paths or unacquired status.
+### 4.5 Actress Hub: 2-Column Bento UI & Dedicated Filmography Stage
+* **2-Column Bento Architecture**: Individual actress view splits into:
+  - **Left Sticky Bento Sidebar (~340px)**: Large HD avatar, Romaji/Kanji names, R18 ID badge, career span (`YYYY – YYYY`), real-time NAS storage highlight in GB (`TotalSizeBytes`), completion progress bar (`x/total (pct%)`), clickable top genre tags (`TopGenres`), and native Finder/R18.dev quick action buttons.
+  - **Right Filmography Main Stage**: In-page live search input (filter instantly by ID/title), sub-filter pills (`All Works`, `In Library`, `Missing`), active genre tag indicator with 1-click removal, multi-key sort dropdown (Date Newest/Oldest, Size, ID), and uniform responsive poster grid.
+  - **Responsive Layout**: Media query `@media (max-width: 960px)` stacks the sidebar on top of the stage for tablets/mobile screens.
+* **4-Layer Gatekeeper for Genuine Solo Releases**: Automated filtering removes compilation titles (総集編, BEST, BOX), photobooks, and duplicate SKU formats (BOD, 9SNOS, K9SNOS), retaining 100% clean solo works.
 * **Official R18 Actress URLs**: Links to `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` avoiding the non-existent `/search/` route on R18.dev.
 * **Database Backfill**: `initSchema` executes `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;` and automatically triggers `backfillActressR18IDs()` on startup, extracting R18 actress IDs from cached `movies.actresses_json`.
 
-### 4.6 Dual-Mode Filmography Presentation & Native Finder Integration
-* **Mode Toggle**: Users can switch fluidly between **Chat Mode 💬** (dialogue stream with unacquired grayscale effects) and **Movie Collection Mode 🎬** (full-bleed poster grid with status ribbons for `In Library`, `Staging`, and `Missing`).
-* **Profile Drawer**: Slide-over drawer presenting detailed Kanji/Romaji names, collection progress bar, and comprehensive collection metrics.
+### 4.6 Followed Actresses Directory & Native Finder Integration
+* **Directory Grid**: Clean actress cards with minimalist 6px progress track `${dl}/${total} (${pct}%)`, search input, and multi-sort dropdown (`% Completed`, `Most Missing`, `Name A-Z`, `Total Works`).
 * **Native Finder Controls**: Direct endpoints (`POST /api/open-folder`) trigger native OS file managers (`open` on macOS Finder, `explorer` on Windows, `xdg-open` on Linux) to reveal exact actress or title folders under `/Volumes/home/BT/organized`.
 
 ### 4.7 Multi-Tier Image Serving Architecture (`/api/images/{id}`)

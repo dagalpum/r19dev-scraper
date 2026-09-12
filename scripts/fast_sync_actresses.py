@@ -25,46 +25,104 @@ HEADERS = {
 }
 
 def normalize_id(dvd_id, content_id):
-    """Normalize DVD ID or DMM Content ID to canonical JAV-ID (e.g. SNOS-115, OFJE-638, PRWF-016)."""
-    if dvd_id:
-        cleaned = dvd_id.strip().upper()
-        # If matches format like ABC-123 or ABC_123 or ABCD-1234
-        m = re.match(r"^([A-Z0-9]{2,8})[-_](\d{2,5}[A-Z]?)$", cleaned)
-        if m:
-            return f"{m.group(1)}-{m.group(2)}"
-        return cleaned
+    """Normalize DVD ID or DMM Content ID to canonical JAV-ID (e.g. SNOS-115, MIDA-517)."""
+    raw = dvd_id.strip().upper() if dvd_id else (content_id or "").strip().upper()
+    if not raw:
+        return ""
 
-    cid = content_id.lower().strip()
-    # Strip common DMM special edition / maker / event prefixes
-    cid = re.sub(r"^h_\d+", "", cid)      # e.g. h_346rebdb1046 -> rebdb1046
-    cid = re.sub(r"^k[ac]9", "", cid)     # online autograph session tickets e.g. ka9oae308, kc9oae308
-    cid = re.sub(r"^k9", "", cid)         # limited edition e.g. k9snos209 -> snos209
-    cid = re.sub(r"^9(?=[a-z]{2,5}\d+)", "", cid) # blu-ray e.g. 9ofje638 -> ofje638
-    cid = re.sub(r"^tk(?=[a-z]{3,5}\d+)", "", cid) # FANZA special e.g. tkprwf016, tkoae291
-    cid = re.sub(r"^4(?=oae\d+)", "", cid) # Aircontrol 4oae244 -> oae244
-    cid = re.sub(r"^[db]_", "", cid)
-    cid = re.sub(r"tk\d*$", "", cid)
+    # Strip BOD / DOD suffix (Built On Demand / Disc On Demand DVD-R)
+    raw = re.sub(r"[-_]?(?:BOD|DOD)$", "", raw, flags=re.IGNORECASE)
 
-    # Standard pattern: 2-6 letters + numbers
-    m = re.match(r"^([a-z]{2,6})0*(\d{2,5})$", cid)
+    # Strip DMM Outlet discount prefixes (77 = DVD outlet, 88 = Blu-ray outlet)
+    raw = re.sub(r"^(?:77|88)(?=[A-Za-z]{2,6})", "", raw)
+
+    # Strip DMM special prefixes (H_xxx, DB_)
+    raw = re.sub(r"^(?:H_\d+|[DB]_)", "", raw, flags=re.IGNORECASE)
+
+    # Strip Rental prefix R (e.g. RSDMT-286 -> SDMT-286)
+    raw = re.sub(r"^R(?=[A-Za-z]{3,5}-\d+)", "", raw)
+
+    # Strip DMM edition prefixes (9 = Blu-ray, K9 = Limited Blu-ray, KA9/KC9 = Tickets, TK = FANZA special, 4 = Aircontrol)
+    raw = re.sub(r"^(?:K9|KA9|KC9|TK|9|4)(?=[A-Za-z]{2,6}[-_]?\d+)", "", raw, flags=re.IGNORECASE)
+    raw = re.sub(r"TK\d*$", "", raw, flags=re.IGNORECASE)
+
+    # Strip AI remaster patterns (e.g. 1SDMT00286AI -> SDMT-286)
+    m_ai = re.match(r"^1?([A-Z]{2,6})0*(\d{1,5})AI$", raw)
+    if m_ai:
+        num = int(m_ai.group(2))
+        num_str = f"{num:03d}" if num < 1000 else str(num)
+        return f"{m_ai.group(1)}-{num_str}"
+
+    # Strip single digit maker prefix (e.g. 2BOM077 -> BOM-077, 2DVAJ541 -> DVAJ-541, 5MIR117 -> MIR-117)
+    raw = re.sub(r"^[1-9](?=[A-Za-z]{3,5}\d+)", "", raw)
+
+    # Standard pattern: 2-6 letters + numbers + optional single letter suffix
+    m = re.match(r"^([A-Z]{2,6})[-_]?0*(\d{1,5})([A-Z]?)$", raw)
     if m:
-        prefix = m.group(1).upper()
-        num_val = int(m.group(2))
-        # Use at least 3 digits if original was short, else exact digits
-        num_str = f"{num_val:03d}" if num_val < 1000 else str(num_val)
-        return f"{prefix}-{num_str}"
+        prefix = m.group(1)
+        num = int(m.group(2))
+        suffix_letter = m.group(3) or ""
+        num_str = f"{num:03d}" if num < 1000 else str(num)
+        return f"{prefix}-{num_str}{suffix_letter}"
 
-    return cid.upper()
+    return raw
 
 def is_photobook_or_nonvideo(title_ja, content_id):
-    """Check if item is a digital photobook rather than a video release."""
+    """Check if item is a digital photobook, pose book, or non-video release."""
     t = (title_ja or "").lower()
     c = (content_id or "").lower()
-    if "写真集" in title_ja or "デジタル写真集" in title_ja or "photobook" in t:
+    
+    book_keywords = [
+        "写真集", "デジタル写真集", "ポーズブック", "フォトブック",
+        "電子書籍", "グラビアスナック", "photobook", "posebook"
+    ]
+    if any(kw in t for kw in book_keywords):
         return True
-    if c.startswith("g_") or c.startswith("b_") or "pb" in c:
-        if "写真集" in title_ja:
+
+    # DMM Book / E-Book category prefix (starts with 'b' followed by numbers, but not maker codes like bomn/boie/bobb)
+    if c.startswith("g_") or (c.startswith("b") and not c.startswith(("bomn", "boie", "bobb"))):
+        if any(kw in t for kw in ["写真", "グラビア", "ブック", "book"]):
             return True
+
+    return False
+
+def is_compilation(jav_id, title_ja):
+    """Check if release is an omnibus, best-of, or multi-hour compilation recut."""
+    jid = (jav_id or "").upper()
+    t = title_ja or ""
+    tl = t.lower()
+
+    # Common compilation maker/series prefixes
+    if jid.startswith(("OFJE-", "OFRF-", "OFKU-", "OFMA-")):
+        return True
+
+    # Title keywords indicating omnibus / compilation / best-of / multi-scene recuts
+    comp_keywords = [
+        "総集編", "ベスト", "オムニバス", "コレクション", "傑作選", "名作選",
+        "コンプリート", "メモリアル", "厳選", "セレクション", "全集", "パック",
+        "box", "ハイライト", "ダイジェスト", "大乱交", "福袋", "まるごと収録",
+        "選りすぐり", "大百科", "名場面", "大行進", "名鑑", "100選", "50選", "30選"
+    ]
+    for kw in comp_keywords:
+        if kw in tl:
+            return True
+
+    for kw in ["best", "complete", "memorial", "omnibus", "selection", "digest"]:
+        if kw in tl:
+            return True
+
+    # Multi-hour recuts (e.g. 4時間, 6時間, 8時間, 10時間, 12時間, 16時間, 19時間, 24時間, 42時間)
+    if re.search(r"\d+時間", t):
+        return True
+
+    # Multi-scene omnibus patterns (e.g. 50発, 100発, 100本番, 10連発)
+    if re.search(r"\d{2,}発|\d{2,}本番|\d+連発|\d+射精|\d+sex", t, re.IGNORECASE):
+        return True
+
+    # Multi-actress omnibus indicators in title (e.g. 10人の美女, 16人, 20人, 46人, 48人)
+    if re.search(r"\d+人[の\s]", t):
+        return True
+
     return False
 
 def get_high_res_cover(thumb_url):
@@ -133,8 +191,10 @@ def sync_actress(conn, actress):
         page += 1
         time.sleep(0.25) # Polite throttle between pages
 
-    # Deduplicate raw items to canonical JAV IDs
+    # Deduplicate raw items to canonical JAV IDs and unique titles
     unique_movies = {}
+    title_to_id = {}
+
     for item in all_raw_items:
         title_ja = item.get("title_ja") or ""
         cid = item.get("content_id") or ""
@@ -147,8 +207,22 @@ def sync_actress(conn, actress):
         if not jav_id:
             continue
 
+        if is_compilation(jav_id, title_ja):
+            continue
+
         date = item.get("release_date") or ""
         cover_url = get_high_res_cover(item.get("jacket_thumb_url"))
+
+        # Clean title key to merge duplicate releases of same film (e.g. PPB-269 vs PPBD-269)
+        clean_t = re.sub(r"【.*?】|（.*?）|\(.*?\)|[_\s\-]", "", title_ja) if title_ja else ""
+        if len(clean_t) >= 15 and clean_t in title_to_id:
+            canon_id = title_to_id[clean_t]
+            existing = unique_movies[canon_id]
+            if not existing["release_date"] and date:
+                existing["release_date"] = date
+            if (not existing["cover_url"] or "ps.jpg" in existing["cover_url"]) and cover_url:
+                existing["cover_url"] = cover_url
+            continue
 
         if jav_id not in unique_movies:
             unique_movies[jav_id] = {
@@ -159,6 +233,8 @@ def sync_actress(conn, actress):
                 "release_date": date,
                 "cover_url": cover_url,
             }
+            if len(clean_t) >= 15:
+                title_to_id[clean_t] = jav_id
         else:
             # If current item has a better date or cover, update
             existing = unique_movies[jav_id]

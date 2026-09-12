@@ -113,6 +113,10 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - Automatically prunes records older than 30 days: `DELETE FROM operation_history WHERE created_at < datetime('now', '-30 days')`.
   - Automatically enforces a 100-run ceiling: `DELETE FROM operation_history WHERE id NOT IN (SELECT id FROM operation_history ORDER BY id DESC LIMIT 100)`.
   - Maintains a tiny database footprint (< 5MB) with zero `.log` file clutter on user disks.
+* **Local Storage & Git Exclusion Policy**:
+  - File name: `r19dev.db`.
+  - Location: `~/Library/Caches/r19dev/r19dev.db` (macOS) or `~/.cache/r19dev/r19dev.db` (Linux) via `os.UserCacheDir()`.
+  - Git status: Resides outside the Git workspace; root `.gitignore` explicitly blocks `*.db`, `*.db-shm`, and `*.db-wal`. Local databases are strictly never committed or pushed to Git.
 
 ### 3.6 Jellyfin Organizer Pipeline (`pkg/organizer` & `pkg/jellyfin`)
 
@@ -148,15 +152,27 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - **Clipboard Copy**: Direct copy button copies raw console output with toast confirmation.
   - **History Integration**: Header button opens SQLite Operation History modal with instant log inspection and audit trail review.
 
-### 3.8 Actress Hub: Chat UI & Dual-Mode Filmography Engine
+### 3.8 Actress Hub: 2-Column Bento UI & Rich Metadata Engine
 
-* **Dual-Mode Presentation**:
-  - **💬 Chat Timeline Mode**: Two-column messaging view (LINE/Discord style) with contacts list on left and chronological release stream on right. Dialogue bubbles feature actress announcement with jacket cover, release date, and `[📋 Copy ID]`, paired with system responses indicating Jellyfin status (`✅ จัดเก็บเข้า Jellyfin เรียบร้อยแล้ว` or `⏳ ยังไม่ได้ดาวน์โหลด`).
-  - **🎬 Movie Collection Mode**: Visual poster showcase with full-bleed cards, status ribbons (`✓ In Library`, `📥 Staging`, `★ Missing`), release dates, studio tags, and direct inspection links.
-* **Slide-Over Profile Drawer**:
-  - Smooth sliding drawer from the right edge with avatar, Romaji/Kanji names, verified R18 ID links (`https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress`), collection completeness progress bar, and comprehensive stats (Total, Downloaded, Missing, Watched, Favorites).
+* **Followed Actresses Directory**:
+  - **4-Layer Gatekeeper**: Strips compilation titles (総集編, BEST), photobooks, and duplicate SKU formats (BOD, 9SNOS, K9SNOS), retaining 100% genuine solo releases.
+  - **Minimalist Progress Track**: Sleek 6px progress bar with downloaded vs. total releases and completion percentage: `${dl}/${total} (${pct}%)`.
+  - **Multi-Sort & Live Search**: Filter by name and sort by `% Completed`, `Most Missing`, `Name A-Z`, or `Total Works`.
+* **2-Column Bento Profile & Dedicated Filmography Stage**:
+  - **Left Sticky Bento Sidebar (~340px)**:
+    - **Identity Bento**: 140px HD avatar with hover zoom, Romaji/Kanji names, verified R18 ID badge, and dynamic **Career Span** (`📅 2021 – 2026`).
+    - **Storage & Library Bento**: Highlight of **Total NAS Storage** in GB (`TotalSizeBytes`), completion progress bar, and average file size (`Avg X.X GB / file`).
+    - **Top Genres Bento**: Interactive tag cloud of the actress's top 8 most frequent categories (`TopGenres`). Clicking any genre chip dynamically filters her filmography on the right stage.
+    - **Quick Actions Bento**: Direct `[📂 Open in Finder]` on NAS, `[🌐 R18.dev Profile ↗]`, and `[🔄 Refresh Releases]`.
+  - **Right Filmography Main Stage**:
+    - **In-Page Real-Time Search**: Instant filtering by movie ID or title substring.
+    - **Sub-Filter Pills**: `All Works`, `In Library`, and `Missing`.
+    - **Active Genre Indicator**: Visual tag chip with one-click clear button.
+    - **Multi-Key Sorting**: `Release Date (Newest/Oldest)`, `File Size (Largest)`, and `Movie ID (A-Z)`.
+    - **Standardized Poster Grid**: Ergonomic, uniform aspect ratio cards with hover actions.
+    - **Responsive Breakpoint**: Auto-stacks cleanly to single-column layout on narrower screens (<960px).
 * **Native Finder Controls**:
-  - One-click `[📂 Open in Finder]` buttons in header, chat cards, collection cards, and detail modal.
+  - One-click `[📂 Open in Finder]` buttons in header, cards, and modals via `/api/open-folder`.
 
 ---
 

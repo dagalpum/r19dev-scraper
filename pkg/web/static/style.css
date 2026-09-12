@@ -1,6 +1,31 @@
 /* ==========================================================================
    R19DEV Studio - WCAG Compliant & High-Fidelity Modern Dark Design System
+   100% Offline-Ready Architecture with Local Embedded Fonts & Icons
    ========================================================================== */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/inter-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/jetbrains-mono-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('/fonts/material-symbols-outlined.woff2') format('woff2');
+}
 
 :root {
   --bg-base: #0c0e14;
@@ -48,6 +73,31 @@
 
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   Google Fonts Material Symbols
+   ========================================================================== */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 1.2rem;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  vertical-align: middle;
+  -webkit-font-smoothing: antialiased;
+}
+
+.brand-logo-icon {
+  font-size: 1.6rem;
+  color: var(--primary);
+  margin-right: 0.25rem;
 }
 
 /* Reset & Base Setup */
@@ -3327,6 +3377,244 @@ body {
   font-size: 0.82rem;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+/* Actress Sub-Tabs (Followed vs Discovered in NAS) */
+.actress-subtabs-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.actress-subtabs {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.actress-subtab-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.95rem;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.actress-subtab-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.actress-subtab-btn.active {
+  color: #fff;
+  background: rgba(99, 102, 241, 0.28);
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+}
+
+.actress-subtab-btn .badge-subcount {
+  font-size: 0.75rem;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+}
+
+.actress-subtab-btn.active .badge-subcount {
+  background: rgba(99, 102, 241, 0.45);
+  color: #fff;
+}
+
+/* Structured 2-Element Latest Release Row on Actress Card (Non-overflowing) */
+.actress-dir-latest-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-wrap: wrap;
+}
+
+.actress-dir-latest-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.actress-dir-latest-pill .icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.actress-dir-latest-pill.downloaded {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.actress-dir-latest-pill.missing {
+  background: rgba(244, 63, 94, 0.12);
+  color: #fb7185;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.actress-dir-latest-pill.nas-info {
+  background: rgba(59, 130, 246, 0.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.32);
+}
+
+.actress-dir-latest-pill .actress-dir-latest-id {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+}
+
+.actress-dir-latest-date {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.74rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Poster Card Skip Reason Badge */
+.poster-badge-skip-reason {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 0.4rem;
+}
+
+/* 100% Completion Milestone */
+.actress-dir-card.completed {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: linear-gradient(135deg, #182236 0%, rgba(245, 158, 11, 0.06) 100%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(245, 158, 11, 0.12);
+}
+
+.actress-dir-card.completed:hover {
+  border-color: rgba(245, 158, 11, 0.8);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(245, 158, 11, 0.25);
+}
+
+.actress-dir-card.completed .actress-dir-progress-fill {
+  background: linear-gradient(90deg, #10b981, #f59e0b);
+}
+
+.actress-dir-card.completed .actress-dir-fraction {
+  color: #fbbf24;
+}
+
+.actress-dir-card.completed .actress-dir-pct {
+  color: #fbbf24;
+}
+
+.actress-dir-badge-completed {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+
+.actress-dir-badge-completed .icon {
+  font-size: 0.85rem;
+}
+
+/* Discovered Actress Cards */
+.actress-dir-card.discovered {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.actress-dir-card.discovered:hover {
+  border-color: rgba(59, 130, 246, 0.65);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 20px rgba(59, 130, 246, 0.2);
+}
+
+.actress-dir-nas-info {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.actress-dir-nas-info .icon {
+  font-size: 1rem;
+}
+
+.actress-dir-actions {
+  display: flex;
+  align-items: center;
+  margin-top: 0.35rem;
+}
+
+.btn-follow-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--primary, #6366f1);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.42rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+}
+
+.btn-follow-quick:hover {
+  background: #4f46e5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5);
+}
+
+.btn-follow-quick:active {
+  transform: translateY(0);
+}
+
+.btn-follow-quick .icon {
+  font-size: 1rem;
 }
 
 /* ==========================================================================

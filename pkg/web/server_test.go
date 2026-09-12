@@ -103,4 +103,12 @@ func TestWebServerEndpoints(t *testing.T) {
 	if wGetMovie.Code != http.StatusOK || !strings.Contains(wGetMovie.Body.String(), "Test Movie") {
 		t.Errorf("GET /api/movie/SNOS-038 failed: code %d", wGetMovie.Code)
 	}
+
+	// 5. Test /api/actresses/discovered
+	reqDiscovered := httptest.NewRequest(http.MethodGet, "/api/actresses/discovered", nil)
+	wDiscovered := httptest.NewRecorder()
+	handler.ServeHTTP(wDiscovered, reqDiscovered)
+	if wDiscovered.Code != http.StatusOK || !strings.Contains(wDiscovered.Body.String(), "actresses") {
+		t.Errorf("GET /api/actresses/discovered failed: code %d, body: %s", wDiscovered.Code, wDiscovered.Body.String())
+	}
 }

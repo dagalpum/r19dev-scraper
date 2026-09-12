@@ -64,7 +64,12 @@ r19dev-scraper/
 │   ├── web/                  # Module 9: Single-Binary Web UI Studio
 │   │   ├── server.go         # HTTP router, SSE stream handlers (scan, scrape, organize), timeout guards
 │   │   ├── server_test.go    # REST and streaming endpoint test suite
-│   │   └── static/           # Embedded SPA assets (index.html, style.css, app.js, vendor/lucide.min.js)
+│   │   └── static/           # Embedded SPA assets
+│   │       ├── fonts/        # Local offline WOFF2 fonts (Inter, JetBrains Mono, Material Symbols)
+│   │       ├── js/           # Native ES Modules (state, api, modal, scanner, organizer, history, actress, app)
+│   │       ├── vendor/       # Offline vendor bundles (Lucide icons, PhotoSwipe 5)
+│   │       ├── index.html    # Semantic dark-mode HTML shell (zero external CDN links)
+│   │       └── style.css     # CSS Design system with local @font-face rules
 │   └── tui/                  # Module 10: Interactive Terminal Dashboard
 │       ├── app.go            # Bubble Tea Model (Init, Update, async Cmd handlers)
 │       ├── views.go          # View layout: Split screen (file table + metadata inspector)
@@ -147,9 +152,30 @@ r19dev-scraper/
 * **Null-Safe Scanning**: `GetMovie` in `pkg/db/db.go` scans using SQL `COALESCE(dvd_id, id)` and `sql.NullTime` for timestamps, preventing driver conversion errors.
 * **Graceful Scraper Fallback**: If standard `dvd_id` lookup yields a 404 on R18.dev, the engine falls back to `combined_id` resolution without application errors.
 
+### 4.13 100% Offline-Ready Architecture (Zero CDN Reliance)
+* **Embedded WOFF2 Assets**: All web typography and iconography are bundled locally in `pkg/web/static/fonts/`:
+  - `inter-variable.woff2` (Inter variable 100–900)
+  - `jetbrains-mono-latin.woff2` (JetBrains Mono Latin)
+  - `material-symbols-outlined.woff2` (Google Material Symbols Outlined full glyph set)
+* **Local `@font-face` Invariant**: `style.css` resolves all fonts from local absolute paths (`/fonts/...`). All external Google Fonts CDN links, preconnect directives, and remote stylesheets are eliminated from `index.html`.
+* **Isolated Environment Resilience**: UI functions 100% identically with zero broken glyphs or raw font fallbacks on completely air-gapped home labs or offline NAS devices.
+
+### 4.14 Native ES Modules Architecture (Zero Build Step)
+* **Browser-Native `import` / `export`**: Frontend is cleanly divided into 8 single-responsibility ES modules under `pkg/web/static/js/`:
+  - `state.js`: Global reactive application state, DOM cache, sanitization, and toast notifications.
+  - `api.js`: REST/SSE clients, scraping, user state updates, folder opening, actress operations.
+  - `modal.js`: Full-width hero modal, PhotoSwipe 5 dynamic loader, ratings, and lightbox.
+  - `scanner.js`: Media discovery stream, multi-part grouping, grid density, sorting, and directory rescan.
+  - `organizer.js`: Jellyfin organizer stream, terminal log console, and auto-scroll controller.
+  - `history.js`: Operation history modal and SQLite audit log inspection.
+  - `actress.js`: Actress Hub (Followed/Discovered directory, Bento profile, dedicated filmography stage, and Chat mode).
+  - `app.js`: Application bootstrap, tab routing, and `window.app` public interface binding.
+* **Single-Binary Zero-Node Philosophy**: No Node.js runtime, npm dependencies, or Webpack/Vite bundler steps required. Browsers execute ES modules natively via `<script type="module" src="/js/app.js"></script>`, maintaining the pure `go build` single-binary distribution.
+
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions
+
 
 1. **Standard Hyphenated**: `[Letters 2-6]-[Numbers 2-5]` (e.g. `MIDA-517`, `SNOS-028`, `WAAA-615`).
 2. **VR 5-Digit**: `[Letters 3-5][Numbers 5]` (e.g. `kavr00428`, `sivr00394`). Display format: `KAVR-428`, `SIVR-394`.

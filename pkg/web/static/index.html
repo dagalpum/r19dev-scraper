@@ -6,11 +6,8 @@
   <meta name="referrer" content="no-referrer">
   <meta name="description" content="R19DEV Studio - High performance JAV library manager, metadata scraper, and Jellyfin NAS organizer">
   <title>R19DEV Studio - JAV Scraper & Media Hub</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/vendor/photoswipe.css">
-  <link rel="stylesheet" href="/style.css?v=2.2">
+  <link rel="stylesheet" href="/style.css?v=2.3">
 </head>
 <body>
   <!-- WCAG Skip Link -->
@@ -20,7 +17,7 @@
     <!-- Top Navigation Bar -->
     <header class="navbar" role="banner">
       <div class="nav-brand">
-        <span class="brand-logo" aria-hidden="true">🎬</span>
+        <span class="material-symbols-outlined brand-logo-icon" aria-hidden="true">movie</span>
         <div class="brand-text">
           <h1 class="brand-title">R19DEV</h1>
           <span class="brand-subtitle">Studio & Jellyfin Hub</span>
@@ -29,17 +26,17 @@
 
       <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
         <button id="tab-btn-library" class="nav-tab active" data-tab="library" role="tab" aria-selected="true" aria-controls="tab-library" onclick="window.app.switchTab('library')">
-          <span class="tab-icon" aria-hidden="true">📁</span>
+          <span class="material-symbols-outlined tab-icon" aria-hidden="true">video_library</span>
           <span>Library</span>
           <span class="badge-count" id="count-library" aria-label="Total files">0</span>
         </button>
         <button id="tab-btn-actresses" class="nav-tab" data-tab="actresses" role="tab" aria-selected="false" aria-controls="tab-actresses" onclick="window.app.switchTab('actresses')">
-          <span class="tab-icon" aria-hidden="true">⭐</span>
+          <span class="material-symbols-outlined tab-icon" aria-hidden="true">star</span>
           <span>Actresses</span>
           <span class="badge-count" id="count-actresses" aria-label="Followed actresses count">0</span>
         </button>
         <button id="tab-btn-organizer" class="nav-tab" data-tab="organizer" role="tab" aria-selected="false" aria-controls="tab-organizer" onclick="window.app.switchTab('organizer')">
-          <span class="tab-icon" aria-hidden="true">📂</span>
+          <span class="material-symbols-outlined tab-icon" aria-hidden="true">folder_managed</span>
           <span>NAS Organizer</span>
         </button>
       </nav>
@@ -49,7 +46,7 @@
         <!-- Sticky Breadcrumb when viewing an actress -->
         <div id="nav-breadcrumb" class="nav-breadcrumb hidden">
           <button class="nav-breadcrumb-back" onclick="window.app.filterCollectionActress('all')" title="Back to All Followed Actresses">
-            <span class="icon">←</span> All Actresses
+            <span class="material-symbols-outlined icon">arrow_back</span> All Actresses
           </button>
           <span class="nav-breadcrumb-sep">/</span>
           <span class="nav-breadcrumb-current" id="nav-breadcrumb-actress-name">JULIA</span>
@@ -57,7 +54,7 @@
 
         <!-- Universal Search Input with Cmd+K -->
         <div class="nav-search-box" id="nav-search-box">
-          <span class="nav-search-icon" aria-hidden="true">🔍</span>
+          <span class="material-symbols-outlined nav-search-icon" aria-hidden="true">search</span>
           <input type="text" id="universal-search-input" class="nav-search-input" placeholder="Search library, actresses, SKU... (⌘K)" autocomplete="off" spellcheck="false">
           <kbd class="nav-search-kbd" id="nav-search-kbd">⌘K</kbd>
           <button id="universal-search-clear" class="btn-clear-search hidden" title="Clear search (Esc)" aria-label="Clear search">✕</button>
@@ -69,7 +66,7 @@
           <span class="dir-icon" aria-hidden="true">📂</span>
           <span class="dir-name" id="label-active-dir">/</span>
         </div>
-        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory" aria-label="Rescan Directory" onclick="window.app.rescanDirectory()">
+        <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory" aria-label="Rescan Directory">
           <span class="icon" aria-hidden="true">🔄</span> Rescan
         </button>
       </div>
@@ -232,31 +229,47 @@
         <!-- TOP CONTROL BAR: SEARCH, SORT & ACTIONS -->
         <div class="actress-view-bar">
           <div class="actress-header-info">
-            <h2 class="actress-hub-title">Followed Actresses</h2>
-            <span class="actress-hub-subtitle">Solo filmographies & Jellyfin collection progress</span>
+            <h2 class="actress-hub-title" id="actress-hub-title">Followed Actresses</h2>
+            <span class="actress-hub-subtitle" id="actress-hub-subtitle">Solo filmographies & Jellyfin collection progress</span>
+          </div>
+
+          <!-- ACTRESS SUBTABS: FOLLOWED vs DISCOVERED IN NAS -->
+          <div class="actress-subtabs" id="actress-subtabs" role="tablist" aria-label="Actress Categories">
+            <button id="subtab-btn-followed" class="actress-subtab-btn active" role="tab" aria-selected="true" onclick="window.app.switchActressSubTab('followed')">
+              <span class="material-symbols-outlined icon">star</span>
+              <span>Followed</span>
+              <span class="badge-subcount" id="count-subtab-followed">0</span>
+            </button>
+            <button id="subtab-btn-discovered" class="actress-subtab-btn" role="tab" aria-selected="false" onclick="window.app.switchActressSubTab('discovered')">
+              <span class="material-symbols-outlined icon">folder</span>
+              <span>Discovered in NAS</span>
+              <span class="badge-subcount" id="count-subtab-discovered">0</span>
+            </button>
           </div>
 
           <div class="actress-toolbar-controls">
             <div class="actress-search-box">
-              <span class="search-icon" aria-hidden="true">🔍</span>
+              <span class="material-symbols-outlined search-icon" aria-hidden="true">search</span>
               <input type="text" id="actress-search-input" placeholder="Search actresses..." autocomplete="off" oninput="window.app.searchActresses(this.value)" />
             </div>
 
-            <div class="actress-sort-box">
+            <div class="actress-sort-box" id="actress-sort-box">
               <select id="actress-sort-by" class="select-dropdown" aria-label="Sort actresses by" onchange="window.app.setActressSort(this.value)">
-                <option value="pct-desc" selected>📊 % Completed (High → Low)</option>
-                <option value="missing-desc">🔴 Most Missing</option>
-                <option value="name-asc">🔤 Name (A → Z)</option>
-                <option value="total-desc">📦 Total Solo Works</option>
+                <option value="pct-desc" selected>% Completed (High → Low)</option>
+                <option value="completed-first">100% Completed Only</option>
+                <option value="in-progress">In Progress Only</option>
+                <option value="missing-desc">Most Missing</option>
+                <option value="name-asc">Name (A → Z)</option>
+                <option value="total-desc">Total Solo Works</option>
               </select>
             </div>
 
             <div class="actress-view-actions">
               <button id="btn-hub-refresh" class="btn btn-secondary btn-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
-                <span class="icon">🔄</span> Refresh
+                <span class="material-symbols-outlined icon">sync</span> Refresh
               </button>
               <button id="btn-hub-add" class="btn btn-primary btn-sm" title="Follow new actress" onclick="window.app.promptAddActress()">
-                <span class="icon">+</span> Follow
+                <span class="material-symbols-outlined icon">person_add</span> Follow
               </button>
             </div>
           </div>
@@ -423,11 +436,11 @@
     <!-- FLOATING ACTRESS QUICK NAVIGATION PILL -->
     <div id="floating-actress-nav" class="floating-nav-pill hidden" role="navigation" aria-label="Quick Navigation">
       <button class="floating-pill-btn floating-pill-back" onclick="window.app.filterCollectionActress('all')" title="Back to All Followed Actresses">
-        <span class="pill-icon">←</span> All Actresses
+        <span class="material-symbols-outlined pill-icon">arrow_back</span> All Actresses
       </button>
       <span class="floating-pill-divider"></span>
       <button class="floating-pill-btn floating-pill-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Scroll to top of page">
-        <span class="pill-icon">↑</span> Top
+        <span class="material-symbols-outlined pill-icon">arrow_upward</span> Top
       </button>
     </div>
 
@@ -436,6 +449,6 @@
   </div>
 
   <script src="/vendor/lucide.min.js"></script>
-  <script src="/app.js?v=2.2"></script>
+  <script type="module" src="/js/app.js?v=3.0"></script>
 </body>
 </html>

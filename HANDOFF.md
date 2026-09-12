@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.5.0`  
+**Current Version**: `v1.6.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
-**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary Web UI Studio with 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
+**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
 
 The codebase is clean, thoroughly tested (100% test pass rate across all packages), modular, and fully documented.
 
@@ -17,6 +17,7 @@ The codebase is clean, thoroughly tested (100% test pass rate across all package
 |---|---|---|
 | **Compilation** | ✅ Passing | Single-binary compilation via `go build -o bin/r19dev ./cmd/r19dev` |
 | **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/actress`, `pkg/cache`, `pkg/db`, and `pkg/web` |
+| **Frontend** | ✅ Modular | Native ES Modules in `pkg/web/static/js/`, zero Node.js/npm dependencies, 100% offline-ready |
 | **Dependencies** | ✅ Stable | Using standard library + `modernc.org/sqlite` (pure Go, zero CGO) + Charm packages (`bubbletea`, `lipgloss`) |
 | **Performance** | ✅ Fast | Zero UI lag; asynchronous IO for disk traversal, HTTP connection pooling, and live SSE streaming |
 | **Documentation** | ✅ Complete | Updated `README.md`, `OKF.md`, `CONTEXT.md`, and `HANDOFF.md` |
@@ -36,6 +37,12 @@ pkg/
 ├── actress/              -> Actress tracking service, filmography tracker, and local release comparator
 ├── cache/                -> Persistent disk cache for API payloads and images (~/.cache or ~/Library/Caches)
 ├── web/                  -> Single-binary Web UI Studio server, SSE streaming, REST API, embedded SPA frontend
+│   └── static/           -> Static web assets (embedded via embed.FS)
+│       ├── fonts/        -> Local offline fonts (Inter, JetBrains Mono, Material Symbols)
+│       ├── js/           -> Native ES modules (state, api, modal, scanner, organizer, history, actress, app)
+│       ├── vendor/       -> Offline vendor bundles (Lucide, PhotoSwipe 5)
+│       ├── index.html    -> Semantic dark-mode HTML shell (zero CDN links)
+│       └── style.css     -> CSS Design system with local @font-face rules
 └── tui/                  -> Elm Architecture terminal dashboard with native GPU bitmap protocols (Kitty, iTerm2, Sixel)
 ```
 
@@ -118,6 +125,12 @@ make test
     Automated gatekeeper excludes AI Remasters (`JQRE-`, `AIリマスター`, `復刻`), variety talk shows (`KCKC-`, `MLTN-`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers). Smart deduplication prioritizes canonical maker disc codes over streaming re-releases (e.g. `PPPD-485` over `PPP-485`, `BOMN-169` over `BOM-169`).
 20. **Database Null-Safety & DMM Content ID Fallback**:
     `GetMovie` in `pkg/db/db.go` uses SQL `COALESCE(dvd_id, id)` and `sql.NullTime` scanning. This prevents database driver scan errors for physical releases on DMM/R18.dev where `dvd_id` is null (such as `EBDB-998`), gracefully falling back to `combined_id`.
+21. **100% Offline-Ready Architecture (Zero CDN Reliance)**:
+    Bundled local `.woff2` font files in `pkg/web/static/fonts/` (`inter-variable.woff2`, `jetbrains-mono-latin.woff2`, `material-symbols-outlined.woff2`) with local `@font-face` definitions in `style.css`. All external Google Fonts CDN links are removed from `index.html`.
+22. **Native Browser ES Modules (Zero Build Step)**:
+    Frontend refactored from a monolithic 3,500-line script into 8 single-responsibility ES modules under `pkg/web/static/js/` (`state.js`, `api.js`, `modal.js`, `scanner.js`, `organizer.js`, `history.js`, `actress.js`, `app.js`). Runs natively via `<script type="module" src="/js/app.js"></script>` without Node.js or npm.
+23. **Balanced 2-Element Directory Card & Skipped Filmography Audit**:
+    Redesigned the actress directory cards with a compact status pill + monospace release date to prevent text clipping. Added a dedicated `Skipped` sub-filter tab on the actress filmography stage showing excluded titles with reasons.
 
 ---
 
@@ -140,6 +153,9 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Multi-Actress Group Work Prioritization**: Followed performer folder priority with zero storage waste.
 - ✅ **Extended Clean Filmography Gatekeeping**: Excludes AI remasters, talk shows, and omnibus compilations.
 - ✅ **DMM Content ID Fallback & DB Null-Safety**: Robust scanning handling null `dvd_id` without errors.
+- ✅ **100% Offline-Ready UI (Zero CDN Reliance)**: Bundled local WOFF2 fonts and icons.
+- ✅ **Native ES Modules Frontend**: Modular JavaScript with zero Node.js/npm dependencies.
+- ✅ **Actress Directory Card Redesign & Skipped Filmography Audit**: 2-element layout and auditable exclusions.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:
@@ -155,4 +171,5 @@ Recommended future enhancements:
 
 * **Maintainer**: `dagalpum`
 * **Repository**: `https://github.com/dagalpum/r19dev-scraper`
+
 

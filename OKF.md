@@ -156,7 +156,24 @@ The matcher converts irregular filenames into normalized JAV IDs.
 
 ### 3.7 Web Studio Architecture (`pkg/web`)
 
-* **Single Binary Embedding**: Frontend assets (`index.html`, `style.css`, `app.js`, `vendor/lucide.min.js`) embedded via `embed.FS`.
+* **Single Binary Embedding**: All frontend assets (`index.html`, `style.css`, `fonts/*`, `js/*`, `vendor/lucide.min.js`) embedded via Go's `embed.FS` with zero external runtime dependencies.
+* **100% Offline-Ready Architecture**:
+  - Embedded local font files in `pkg/web/static/fonts/`:
+    - `inter-variable.woff2` (Inter Variable 100–900)
+    - `jetbrains-mono-latin.woff2` (JetBrains Mono Latin)
+    - `material-symbols-outlined.woff2` (Complete glyph set of Google Material Symbols)
+  - Absolute local `@font-face` declarations in `style.css`.
+  - Zero external CDN links or font preconnects in `index.html`, allowing the UI to render flawlessly on offline NAS systems and isolated home networks.
+* **Native ES Modules Architecture (`pkg/web/static/js/`)**:
+  - Modularized frontend with zero build-step (no Node.js/npm required, served directly as native ES modules via `<script type="module" src="/js/app.js"></script>`):
+    - `state.js`: Global reactive application state, DOM cache, sanitization, and toast system.
+    - `api.js`: REST/SSE clients, scraping, user state updates, folder opening, actress operations.
+    - `modal.js`: Full-width hero modal, PhotoSwipe 5 dynamic loader, ratings, and lightbox.
+    - `scanner.js`: Media discovery stream, multi-part grouping, grid density, sorting, and directory rescan.
+    - `organizer.js`: Jellyfin organizer stream, terminal log console, and auto-scroll controller.
+    - `history.js`: Operation history modal and SQLite audit log inspection.
+    - `actress.js`: Actress Hub (Followed/Discovered directory, Bento profile, dedicated filmography stage, and Chat mode).
+    - `app.js`: Application bootstrap, tab routing, and `window.app` public interface binding.
 * **Universal Search in Sticky Top Header**:
   - Pinned centered glassmorphic search input (`#universal-search-input`) with context-aware routing (Library files/SKU, Followed Actress Directory, or Active Actress Filmography).
   - Global keyboard shortcuts: `⌘K` (macOS) / `Ctrl+K` (Windows/Linux) and `/` (when browsing) to focus; `Esc` to clear/blur.
@@ -179,7 +196,9 @@ The matcher converts irregular filenames into normalized JAV IDs.
 
 ### 3.8 Actress Hub: 2-Column Bento UI & Rich Metadata Engine
 
-* **Followed Actresses Directory**:
+* **Followed & Discovered Actresses Directory**:
+  - **Dual Sub-Tabs**: Toggle between `Followed Actresses` (active tracking) and `Discovered in NAS Library` (untracked performers with files found in local storage, with 1-click Quick Follow).
+  - **Balanced 2-Element Card Layout**: Compact status pill `[ ✓ SNOS-140 ]` (emerald green if downloaded, rose/amber with download icon if missing) paired with a clean monospace release date `2026-03-24` (or `Recent`), preventing text overflow across all card widths.
   - **Multi-Layer Gatekeeper**: Strips compilation titles (総集編, BEST), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers).
   - **Canonical SKU Prioritization**: Smart deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
   - **Minimalist Progress Track**: Sleek 6px progress bar with downloaded vs. total releases and completion percentage: `${dl}/${total} (${pct}%)`.
@@ -192,13 +211,15 @@ The matcher converts irregular filenames into normalized JAV IDs.
     - **Quick Actions Bento**: Direct `[📂 Open in Finder]` on NAS, `[🌐 R18.dev Profile ↗]`, and `[🔄 Refresh Releases]`.
   - **Right Filmography Main Stage**:
     - **In-Page Real-Time Search**: Instant filtering by movie ID or title substring.
-    - **Sub-Filter Pills**: `All Works`, `In Library`, and `Missing`.
+    - **Sub-Filter Pills**: `All Works`, `In Library`, `Missing`, and **`Skipped`**.
+    - **Auditable Exclusions (`Skipped` Tab)**: Displays excluded non-solo/duplicate works with specific reason badges (`Omnibus Compilation`, `AI Remaster`, `Variety Talk Show`, etc.) for complete transparency.
     - **Active Genre Indicator**: Visual tag chip with one-click clear button.
     - **Multi-Key Sorting**: `Release Date (Newest/Oldest)`, `File Size (Largest)`, and `Movie ID (A-Z)`.
     - **Standardized Poster Grid**: Ergonomic, uniform aspect ratio cards with hover actions.
     - **Responsive Breakpoint**: Auto-stacks cleanly to single-column layout on narrower screens (<960px).
 * **Native Finder Controls**:
   - One-click `[📂 Open in Finder]` buttons in header, cards, and modals via `/api/open-folder`.
+
 
 ---
 

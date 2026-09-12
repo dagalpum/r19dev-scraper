@@ -8,6 +8,12 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 
 ### 🌐 1. Modern Web UI Studio (`r19dev web`)
 - **Embedded Single Binary**: Built using Go's `embed.FS` — zero external runtime dependencies, zero Node.js required. Runs natively on macOS, Linux, or NAS servers.
+- **🔌 100% Offline-Ready UI (Zero External CDN Dependencies)**:
+  - All web fonts and icons are embedded locally in `pkg/web/static/fonts/` (`inter-variable.woff2`, `jetbrains-mono-latin.woff2`, `material-symbols-outlined.woff2`).
+  - Works seamlessly on completely air-gapped local networks or offline NAS environments without broken icons or external Google Fonts CDN reliance.
+- **🧩 Native ES Modules Architecture (`pkg/web/static/js/`)**:
+  - Frontend codebase refactored from a monolithic script into 8 modular native browser ES modules (`state.js`, `api.js`, `modal.js`, `scanner.js`, `organizer.js`, `history.js`, `actress.js`, `app.js`).
+  - Zero build step, zero npm/Webpack/Vite tooling needed — runs natively in all modern browsers.
 - **🔍 Universal Search in Sticky Top Header**:
   - Centered glassmorphism search input (`#universal-search-input`) pinned to the fixed navbar.
   - **Context-Aware Routing**: Automatically searches library files & SKU in Library tab, followed actresses in Directory view, and actress filmography in the Bento stage view.
@@ -24,7 +30,13 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
 
 ### ⭐ 2. Actress Hub: 2-Column Bento Profile & Filmography Stage
-- **🗂️ Followed Actresses Directory**:
+- **🗂️ Followed & Discovered Actresses Directory**:
+  - **Sub-Tabs (`Followed` vs. `Discovered in NAS`)**:
+    - **Followed Actresses**: Solo filmographies, completion metrics, and latest release status for your tracked performers.
+    - **Discovered in NAS Library**: Automatic discovery of performers found in your local video files who are not yet tracked, with 1-click Quick Follow.
+  - **Balanced 2-Element Card Layout**:
+    - **Left**: High-contrast status pill `[ ✓ SNOS-140 ]` (emerald green if downloaded in NAS, rose/amber with download icon if missing).
+    - **Right**: Monospace release date `2026-03-24` (or `Recent`). Clean, compact, and immune to line breaks or text clipping.
   - **Clean Genuine Solo Releases Only**: Automated multi-layer gatekeeper strips compilation titles (総集編, BEST, BOX), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers).
   - **Canonical SKU Prioritization**: Smart deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
   - **Minimalist Progress Line**: Clean 6px track displaying exact downloaded count and completion percentage: `${dl}/${total} (${pct}%)`.
@@ -36,7 +48,8 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
     - **Bento 3 (Top Genres)**: Interactive tag cloud displaying the actress's top 8 most frequent genres with counts (e.g. `#Slender (14)`, `#VR (6)`). **Clicking any genre instantly filters her filmography on the right stage**.
     - **Bento 4 (Quick Actions)**: One-click `[📂 Open in Finder]` directly into her NAS directory, `[🌐 R18.dev Profile ↗]`, and `[🔄 Refresh Releases]`.
   - **Right Filmography Main Stage**:
-    - **Interactive Stage Toolbar**: Real-time in-page search input (filter instantly by ID like `SNOS` or title), sub-filter pills (`All Works`, `In Library`, `Missing`), active genre filter chip with 1-click removal, and a **Sort Dropdown** (`Release Date (Newest)`, `Release Date (Oldest)`, `File Size (Largest)`, `Movie ID (A-Z)`).
+    - **Interactive Stage Toolbar**: Real-time in-page search input (filter instantly by ID like `SNOS` or title), sub-filter pills (`All Works`, `In Library`, `Missing`, and **`Skipped`**), active genre filter chip with 1-click removal, and a **Sort Dropdown** (`Release Date (Newest)`, `Release Date (Oldest)`, `File Size (Largest)`, `Movie ID (A-Z)`).
+    - **Audit Filtered Works (`Skipped` Tab)**: Dedicated sub-filter displaying all non-solo or duplicate titles excluded by the gatekeeper (with specific skip reason badges like `Omnibus Compilation`, `AI Remaster`, `Variety Talk Show`, etc.) so no titles are mysteriously lost.
     - **Uniform Poster Grid**: Eye-friendly, standardized aspect ratio poster cards with hover actions (`▶ Details`, `📋 Copy ID`, `📂 Finder`).
     - **Responsive Design**: Automatically stacks smoothly to 1 column on mobile/tablet viewports (<960px).
 - **💬 Optional Chat Timeline Mode**: Toggle into a messaging interface (LINE / Discord style) where followed actresses announce their releases chronologically with unacquired grayscale styling and library status bubbles.
@@ -175,7 +188,11 @@ make build
   - **UI / API Backup Download**: Dedicated `/api/db/backup?download=1` endpoint and `[💾 Backup DB]` button in the Web UI History Modal for instant one-click downloads.
   - **Git Status**: Ignored via `.gitignore` (`*.db`, `*.db-shm`, `*.db-wal`), strictly local, **never committed to Git**.
 - **TUI Framework**: Charm Bubble Tea (`tea.Model`), Lip Gloss styling
-- **Web Frontend**: Vanilla ES6+ SPA, Vanilla CSS with CSS Grid & Custom Tokens, Embedded via `embed.FS`
+- **Web Frontend**:
+  - **Architecture**: Native Browser ES Modules (`pkg/web/static/js/`) with zero Node.js/npm dependencies and zero build step.
+  - **Styling**: Vanilla CSS Design System with CSS custom properties (`style.css`), dark mode glassmorphism, responsive grid.
+  - **Offline Fonts & Icons**: 100% offline-ready with local bundled `.woff2` files (`/fonts/inter-variable.woff2`, `/fonts/jetbrains-mono-latin.woff2`, `/fonts/material-symbols-outlined.woff2`). Zero CDN dependencies.
+  - **Distribution**: Single-binary embedding via Go `embed.FS`.
 - **Metadata Source**: R18.dev REST API with persistent LRU disk caching (`~/.cache/r19dev` or `~/Library/Caches/r19dev`)
 - **Organize Pipeline**: Atomic file rename with cross-filesystem copy fallback, sanitized filenames, XML generator, and HTTP client asset downloader.
 - **Audit Logging**: SQLite-backed `operation_history` table with 30-day / 100-run auto-retention policy.

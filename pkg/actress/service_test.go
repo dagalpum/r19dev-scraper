@@ -235,3 +235,138 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 	}
 }
 
+func TestListDiscoveredActresses(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "r19dev_discovered_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	d, err := db.Open(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("failed to open DB: %v", err)
+	}
+	defer d.Close()
+
+	svc := New(d, nil)
+
+	// Follow only Actress A
+	_ = svc.Follow("Actress A", "女優A", "https://example.com/a.jpg")
+
+	// Save movie with Actress A and Actress B (unfollowed)
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:          "TEST-001",
+		Title:       "Test Movie 1",
+		ReleaseDate: "2026-03-01",
+		Actresses: []scraper.Actress{
+			{Name: "Actress A", JaName: "女優A"},
+			{Name: "Actress B", JaName: "女優B", ImageURL: "https://example.com/b.jpg"},
+		},
+	})
+	// Save another movie with Actress B and Actress C (unfollowed)
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:          "TEST-002",
+		Title:       "Test Movie 2",
+		ReleaseDate: "2026-04-01",
+		Actresses: []scraper.Actress{
+			{Name: "Actress B", JaName: "女優B"},
+			{Name: "Actress C", JaName: "女優C"},
+		},
+	})
+
+	// Before movies are in library, discovered should be empty
+	discovered, err := svc.ListDiscoveredActresses()
+	if err != nil {
+		t.Fatalf("ListDiscoveredActresses failed: %v", err)
+	}
+	if len(discovered) != 0 {
+		t.Errorf("Expected 0 discovered before library addition, got %d", len(discovered))
+	}
+
+	// Add TEST-001 to organized_movies and TEST-002 to library_files
+	_ = d.SetOrganized("TEST-001", "/nas/organized/TEST-001", "/nas/organized/TEST-001/TEST-001.mp4")
+	_ = d.UpsertLibraryFile(db.LibraryFileRecord{
+		FilePath: "/nas/staging/TEST-002.mp4",
+		MovieID:  "TEST-002",
+	})
+
+	// Now Actress B (2 movies) and Actress C (1 movie) should be discovered, while Actress A is excluded because she is followed
+	discovered, err = svc.ListDiscoveredActresses()
+	if err != nil {
+		t.Fatalf("ListDiscoveredActresses failed: %v", err)
+	}
+
+	if len(discovered) != 2 {
+		t.Fatalf("Expected 2 discovered actresses, got %d: %+v", len(discovered), discovered)
+	}
+
+	// Actress B should be first (2 movies > 1 movie)
+	if discovered[0].Name != "Actress B" || discovered[0].MovieCount != 2 {
+		t.Errorf("Expected Actress B with 2 movies, got %+v", discovered[0])
+	}
+	if discovered[0].LatestRelease != "2026-04-01" {
+		t.Errorf("Expected latest release 2026-04-01, got %q", discovered[0].LatestRelease)
+	}
+
+	// Actress C should be second (1 movie)
+	if discovered[1].Name != "Actress C" || discovered[1].MovieCount != 1 {
+		t.Errorf("Expected Actress C with 1 movie, got %+v", discovered[1])
+	}
+}
+
+func TestCleanMovieTitle(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "【数量限定】潮吹きクイーン誕生 170cm幼顔Icupでお漏らしバグボディ 雛形みくる 生写真3枚セット",
+			expected: "潮吹きクイーン誕生 170cm幼顔Icupでお漏らしバグボディ 雛形みくる",
+		},
+		{
+			input:    "【FANZA限定】娘の友達は幼顔なのに…身長170cm！おっぱいIカップ！ 雛形みくる （ブルーレイディスク） 生写真3枚セット",
+			expected: "娘の友達は幼顔なのに…身長170cm！おっぱいIカップ！ 雛形みくる",
+		},
+		{
+			input:    "【数量限定】男を虜にする無意識のたわわな誘惑 雛形みくる (Blu-ray Disc) チェキ付き",
+			expected: "男を虜にする無意識のたわわな誘惑 雛形みくる",
+		},
+		{
+			input:    "【FANZA限定】White Mirage 生写真3枚セット",
+			expected: "White Mirage",
+		},
+		{
+			input:    "新人NO.1STYLE 雛形みくる AVデビュー",
+			expected: "新人NO.1STYLE 雛形みくる AVデビュー",
+		},
+	}
+
+	for _, tc := range tests {
+		got := CleanMovieTitle(tc.input)
+		if got != tc.expected {
+			t.Errorf("CleanMovieTitle(%q) = %q; want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+func TestPromoBonusNotSkippedAndSkippedReleases(t *testing.T) {
+	// 1. Promo raw photo bonus set on a standard movie ID should NOT be skipped
+	shouldSkip, reason := CheckFilmographyInclusion("SNOS-175", "潮吹きクイーン誕生 生写真3枚セット", "", nil)
+	if shouldSkip {
+		t.Errorf("Expected SNOS-175 with photo bonus not to be skipped, got skip=true, reason=%s", reason)
+	}
+
+	// 2. Photobook should be skipped with Photobook reason
+	shouldSkip, reason = CheckFilmographyInclusion("B600ZSGK41601", "雛形みくる 純欲があふれてる", "", nil)
+	if !shouldSkip || reason != "Photobook / Digital Book" {
+		t.Errorf("Expected B600ZSGK41601 to be skipped as Photobook, got %v (%s)", shouldSkip, reason)
+	}
+
+	// 3. Omnibus compilation should be skipped
+	shouldSkip, reason = CheckFilmographyInclusion("MKCK-417", "総集編 600min", "", nil)
+	if !shouldSkip || reason != "Omnibus Compilation" {
+		t.Errorf("Expected MKCK-417 to be skipped as Omnibus Compilation, got %v (%s)", shouldSkip, reason)
+	}
+}
+
+

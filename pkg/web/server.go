@@ -115,6 +115,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/actresses/follow", s.handleActressFollow)
 	mux.HandleFunc("/api/actresses/unfollow", s.handleActressUnfollow)
 	mux.HandleFunc("/api/actresses/releases", s.handleActressReleases)
+	mux.HandleFunc("/api/actresses/discovered", s.handleDiscoveredActresses)
 	mux.HandleFunc("/api/organize", s.handleOrganize)
 	mux.HandleFunc("/api/organize/stream", s.handleOrganizeStream)
 	mux.HandleFunc("/api/open-folder", s.handleOpenFolder)
@@ -509,6 +510,19 @@ func (s *Server) handleActressReleases(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"actresses": summaries})
+}
+
+func (s *Server) handleDiscoveredActresses(w http.ResponseWriter, r *http.Request) {
+	if s.actressService == nil {
+		writeJSONError(w, "actress service not initialized", http.StatusInternalServerError)
+		return
+	}
+	actresses, err := s.actressService.ListDiscoveredActresses()
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"actresses": actresses})
 }
 
 func defaultOrganizedDir(targetDir string) string {

@@ -62,11 +62,29 @@ func PlanOrganize(match *matcher.MatchResult, movie *scraper.Movie, targetRoot s
 
 	actressFolder := "Unknown Actress"
 	if len(movie.Actresses) > 0 {
-		act := movie.Actresses[0]
-		if strings.TrimSpace(act.Name) != "" {
-			actressFolder = strings.TrimSpace(act.Name)
-		} else if strings.TrimSpace(act.JaName) != "" {
-			actressFolder = strings.TrimSpace(act.JaName)
+		chosenAct := movie.Actresses[0]
+		if d := getDB(); d != nil {
+			if followed, err := d.ListFollowedActresses(); err == nil && len(followed) > 0 {
+				followedMap := make(map[string]bool)
+				for _, f := range followed {
+					followedMap[strings.ToLower(strings.TrimSpace(f.Name))] = true
+					if f.JaName != "" {
+						followedMap[strings.ToLower(strings.TrimSpace(f.JaName))] = true
+					}
+				}
+				for _, act := range movie.Actresses {
+					if followedMap[strings.ToLower(strings.TrimSpace(act.Name))] || (act.JaName != "" && followedMap[strings.ToLower(strings.TrimSpace(act.JaName))]) {
+						chosenAct = act
+						break
+					}
+				}
+			}
+		}
+
+		if strings.TrimSpace(chosenAct.Name) != "" {
+			actressFolder = strings.TrimSpace(chosenAct.Name)
+		} else if strings.TrimSpace(chosenAct.JaName) != "" {
+			actressFolder = strings.TrimSpace(chosenAct.JaName)
 		}
 	}
 	actressFolder = jellyfin.SanitizeFilename(actressFolder)

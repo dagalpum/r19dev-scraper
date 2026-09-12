@@ -667,25 +667,32 @@ func (d *DB) GetMovie(id string) (*scraper.Movie, error) {
 	defer d.mu.RUnlock()
 
 	query := `
-	SELECT id, combined_id, title, original_title, maker, label, director,
-	       release_date, runtime_minutes, cover_url, poster_url, trailer_url,
-	       actresses_json, genres_json, screenshots_json, scraped_at
+	SELECT id, COALESCE(combined_id, ''), COALESCE(title, ''), COALESCE(original_title, ''),
+	       COALESCE(maker, ''), COALESCE(label, ''), COALESCE(director, ''),
+	       COALESCE(release_date, ''), COALESCE(runtime_minutes, 0),
+	       COALESCE(cover_url, ''), COALESCE(poster_url, ''), COALESCE(trailer_url, ''),
+	       COALESCE(actresses_json, '[]'), COALESCE(genres_json, '[]'), COALESCE(screenshots_json, '[]'),
+	       scraped_at
 	FROM movies WHERE id = ? OR combined_id = ?
 	`
 	combinedID := scraper.NormalizeToCombinedID(id)
 
 	var m scraper.Movie
 	var actJSON, genJSON, scJSON string
+	var scrapedAt sql.NullTime
 	err := d.conn.QueryRow(query, id, combinedID).Scan(
 		&m.ID, &m.CombinedID, &m.Title, &m.OriginalTitle, &m.Maker, &m.Label, &m.Director,
 		&m.ReleaseDate, &m.RuntimeMinutes, &m.CoverURL, &m.PosterURL, &m.TrailerURL,
-		&actJSON, &genJSON, &scJSON, &m.ScrapedAt,
+		&actJSON, &genJSON, &scJSON, &scrapedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
+	}
+	if scrapedAt.Valid {
+		m.ScrapedAt = scrapedAt.Time
 	}
 
 	_ = json.Unmarshal([]byte(actJSON), &m.Actresses)

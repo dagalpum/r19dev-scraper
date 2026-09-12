@@ -466,8 +466,8 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		}
 	}
 
-	// 2. Variety talk show series (non-AV talk content, e.g. KCKC- / カチコチTV)
-	if strings.HasPrefix(upperID, "KCKC") || strings.HasPrefix(upperID, "MLTN") ||
+	// 2. Variety talk show series & known compilation series (e.g. KCKC-, MLTN-, BMW-)
+	if strings.HasPrefix(upperID, "KCKC") || strings.HasPrefix(upperID, "MLTN") || strings.HasPrefix(upperID, "BMW") ||
 		strings.Contains(title, "カチコチTV") || strings.Contains(title, "カチコチ") {
 		return true
 	}
@@ -536,8 +536,8 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 			actCount = actressCount[0]
 		}
 
-		// Mega multi-actress omnibus (e.g. MKCK-417 with 74 actresses, RBB-279 with 49 actresses)
-		if actCount >= 20 {
+		// Multi-actress omnibus (e.g. MKCK-417 with 74 actresses, RBB-279 with 49 actresses, REbecca STARS with 12 actresses)
+		if actCount >= 10 || strings.Contains(title, "REbecca STARS") {
 			return true
 		}
 

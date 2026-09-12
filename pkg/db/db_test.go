@@ -265,5 +265,64 @@ func TestSyncWithBackupCandidates(t *testing.T) {
 	}
 }
 
+func TestPurgePromotionalVariants(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "r19dev_purge_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	d, err := Open(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer d.Close()
+
+	// Insert genuine release
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:    "FWAY-095",
+		Title: "Everyone Loves Boobs. Shido Rui",
+	})
+
+	// Insert promotional variants
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:     "C9FWAY095",
+		Title:  "紫堂るい 3本購入特典付き",
+		Genres: []string{"Special Offers And Set Products"},
+	})
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:     "E9FWAY095",
+		Title:  "紫堂るい 2本購入特典付き",
+		Genres: []string{"Special Offers And Set Products"},
+	})
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:    "S9FWAY095",
+		Title: "【オンラインサイン会】紫堂るい 1本購入特典付き",
+	})
+
+	deleted, err := d.PurgePromotionalVariants()
+	if err != nil {
+		t.Fatalf("PurgePromotionalVariants failed: %v", err)
+	}
+	if deleted != 3 {
+		t.Errorf("Expected 3 rows deleted, got %d", deleted)
+	}
+
+	// Genuine movie must still exist
+	m, err := d.GetMovie("FWAY-095")
+	if err != nil || m == nil {
+		t.Errorf("Expected FWAY-095 to exist, got %v", m)
+	}
+
+	// Variants must not exist
+	for _, id := range []string{"C9FWAY095", "E9FWAY095", "S9FWAY095"} {
+		v, _ := d.GetMovie(id)
+		if v != nil {
+			t.Errorf("Expected %s to be purged, but it still exists", id)
+		}
+	}
+}
+
+
 
 

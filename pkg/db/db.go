@@ -477,6 +477,7 @@ func (d *DB) initSchema() error {
 	// Safe migration for existing installations
 	_, _ = d.conn.Exec("ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;")
 	_ = d.backfillActressR18IDs()
+	_, _ = d.purgePromotionalVariantsLocked()
 	return nil
 }
 
@@ -1051,3 +1052,37 @@ func (d *DB) ClearOperationHistory() error {
 	_, err := d.conn.Exec(`DELETE FROM operation_history`)
 	return err
 }
+
+// PurgePromotionalVariants deletes phantom promotional / set product duplicate SKUs
+// (e.g. C9FWAY095, E9FWAY095, S9FWAY095, Special Offers tag) that are not owned or tracked in user state.
+func (d *DB) PurgePromotionalVariants() (int64, error) {
+	if d == nil || d.conn == nil {
+		return 0, fmt.Errorf("database not initialized")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.purgePromotionalVariantsLocked()
+}
+
+func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
+	query := `
+	DELETE FROM movies
+	WHERE (
+		id GLOB '[CESNK9]9*'
+		OR genres_json LIKE '%Special Offers And Set Products%'
+		OR genres_json LIKE '%Includes Event Participation Rights%'
+		OR title LIKE '%オンラインサイン会%'
+		OR title LIKE '%購入特典付き%'
+	)
+	AND id NOT IN (SELECT movie_id FROM user_state)
+	AND id NOT IN (SELECT movie_id FROM library_files)
+	AND id NOT IN (SELECT movie_id FROM organized_movies);
+	`
+	res, err := d.conn.Exec(query)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+

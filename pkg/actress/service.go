@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -233,23 +234,35 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		}
 		r.SizeBytes = sizeBytes
 
-		// Parse genres and tally frequencies
+		// Parse genres
 		if genresJSON != "" && genresJSON != "[]" {
 			var parsedGenres []string
 			if err := json.Unmarshal([]byte(genresJSON), &parsedGenres); err == nil {
 				r.Genres = parsedGenres
-				for _, g := range parsedGenres {
-					g = strings.TrimSpace(g)
-					if g != "" {
-						genreFreq[g]++
-					}
-				}
 			}
 		}
 
 		// A movie is downloaded/present if it has an organized folder, organized video, or library file
 		if r.OrganizedFolder != "" || r.OrganizedVideo != "" || r.LibraryPath != "" {
 			r.IsDownloaded = true
+		}
+
+		// Filter out promotional/set duplicates (e.g. C9FWAY095, E9FWAY095, S9FWAY095, Special Offers tag) and photobooks
+		if !r.IsDownloaded && !r.IsWatched && !r.IsFavorite {
+			if IsPromotionalOrDuplicateVariant(r.MovieID, r.Title, r.CoverURL, r.Genres) {
+				continue
+			}
+		}
+
+		// Tally genre frequencies for genuine releases only
+		for _, g := range r.Genres {
+			g = strings.TrimSpace(g)
+			if g != "" && !isPromotionalGenre(g) {
+				genreFreq[g]++
+			}
+		}
+
+		if r.IsDownloaded {
 			downloadedCount++
 			totalSizeBytes += r.SizeBytes
 		}
@@ -326,3 +339,67 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 	}
 	return results, nil
 }
+
+var promoSkuRegex = regexp.MustCompile(`^(?:[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}\d+)`)
+
+// IsPromotionalOrDuplicateVariant checks if a release is a duplicate promotional bundle,
+// online event ticket, set product SKU (e.g. C9FWAY095, E9FWAY095, S9FWAY095, L9MIDA438, Special Offers tag),
+// or non-video digital photobook / magazine.
+func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []string) bool {
+	upperID := strings.ToUpper(strings.TrimSpace(movieID))
+	tl := strings.ToLower(title)
+
+	// 1. Non-video digital e-book / photobook checks
+	if strings.Contains(coverURL, "ebook-assets") || strings.Contains(coverURL, "/e-book/") {
+		return true
+	}
+	for _, kw := range []string{"写真集", "デジタル写真集", "ポーズブック", "フォトブック", "電子書籍", "photobook", "photo book"} {
+		if strings.Contains(tl, kw) {
+			return true
+		}
+	}
+
+	// 2. Tag / Genre checks (R18 / DMM categories)
+	for _, g := range genres {
+		gNorm := strings.ToLower(strings.TrimSpace(g))
+		if gNorm == "special offers and set products" ||
+			gNorm == "includes event participation rights" ||
+			strings.Contains(gNorm, "set products") ||
+			strings.Contains(gNorm, "event participation") ||
+			strings.Contains(gNorm, "photo book") ||
+			strings.Contains(gNorm, "digital photo") {
+			return true
+		}
+	}
+
+	// 3. Promotional SKU prefixes: C9, E9, S9, N9, L9, K9, KA9, KC9, TK9, 9 followed by letters
+	if promoSkuRegex.MatchString(upperID) {
+		return true
+	}
+
+	// 4. Title markers (Online autograph sessions, multiple purchase bundle promotions, goods sets)
+	if strings.Contains(title, "オンラインサイン会") ||
+		strings.Contains(title, "購入特典付き") ||
+		strings.Contains(title, "購入特典付") ||
+		strings.Contains(title, "参加URL付き") ||
+		strings.Contains(title, "参加URL付") ||
+		strings.Contains(title, "参加権付き") ||
+		strings.Contains(title, "キーホルダーセット") ||
+		strings.Contains(title, "チェキセット") {
+		return true
+	}
+
+	return false
+}
+
+func isPromotionalGenre(genre string) bool {
+	gNorm := strings.ToLower(strings.TrimSpace(genre))
+	return gNorm == "special offers and set products" ||
+		gNorm == "includes event participation rights" ||
+		strings.Contains(gNorm, "set products") ||
+		strings.Contains(gNorm, "event participation") ||
+		strings.Contains(gNorm, "photo book") ||
+		strings.Contains(gNorm, "digital photo")
+}
+
+

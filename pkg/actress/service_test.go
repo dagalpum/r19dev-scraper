@@ -143,7 +143,7 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		Title:       "Everyone Loves Boobs. Shido Rui",
 		ReleaseDate: "2025-06-03",
 		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
-		Genres:      []string{"Beautiful Tits", "Slender"},
+		Genres:      []string{"Beautiful Tits", "Slender", "Exclusive Distribution", "Featured Actress", "4K", "Documentary", "Hi-Def"},
 	})
 
 	// Save promotional duplicates
@@ -189,11 +189,15 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		t.Errorf("Expected release FWAY-095, got %+v", summary.Releases)
 	}
 
-	// Top genres must not contain promotional or compilation category
+	// Top genres must only contain genuine acting themes (Beautiful Tits, Slender), NOT technical specs or promotional tags
 	for _, g := range summary.TopGenres {
-		if g.Genre == "Special Offers And Set Products" || g.Genre == "Compilation" {
-			t.Errorf("Top genres should not contain promotional/compilation category: %+v", summary.TopGenres)
+		switch g.Genre {
+		case "Special Offers And Set Products", "Compilation", "Exclusive Distribution", "Featured Actress", "4K", "Documentary", "Hi-Def":
+			t.Errorf("Top genres should not contain non-acting/technical genre %q: %+v", g.Genre, summary.TopGenres)
 		}
+	}
+	if len(summary.TopGenres) != 2 {
+		t.Errorf("Expected exactly 2 genuine genres (Beautiful Tits, Slender), got %d: %+v", len(summary.TopGenres), summary.TopGenres)
 	}
 }
 

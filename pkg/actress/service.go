@@ -367,6 +367,11 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 			gNorm == "compilation" ||
 			gNorm == "collection of photographs" ||
 			gNorm == "omnibus" ||
+			gNorm == "anime" ||
+			gNorm == "animation" ||
+			gNorm == "game" ||
+			gNorm == "comic" ||
+			gNorm == "manga" ||
 			strings.Contains(gNorm, "set products") ||
 			strings.Contains(gNorm, "event participation") ||
 			strings.Contains(gNorm, "photo book") ||
@@ -402,17 +407,42 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 
 func isPromotionalGenre(genre string) bool {
 	gNorm := strings.ToLower(strings.TrimSpace(genre))
-	return gNorm == "special offers and set products" ||
+	// 1. Promotional & Non-movie tags
+	if gNorm == "special offers and set products" ||
 		gNorm == "includes event participation rights" ||
 		gNorm == "compilation" ||
 		gNorm == "collection of photographs" ||
 		gNorm == "omnibus" ||
+		gNorm == "anime" ||
+		gNorm == "animation" ||
+		gNorm == "game" ||
+		gNorm == "comic" ||
+		gNorm == "manga" ||
 		strings.Contains(gNorm, "set products") ||
 		strings.Contains(gNorm, "event participation") ||
 		strings.Contains(gNorm, "photo book") ||
 		strings.Contains(gNorm, "digital photo") ||
 		strings.Contains(gNorm, "photograph") ||
-		strings.Contains(gNorm, "compilation")
+		strings.Contains(gNorm, "compilation") {
+		return true
+	}
+
+	// 2. Technical specs, distribution channels, and formats (not acting themes)
+	switch gNorm {
+	case "exclusive distribution",
+		"featured actress",
+		"hi-def",
+		"4k",
+		"8kvr",
+		"high-quality vr",
+		"vr exclusive",
+		"over 4 hours",
+		"documentary",
+		"debut":
+		return true
+	}
+
+	return false
 }
 
 

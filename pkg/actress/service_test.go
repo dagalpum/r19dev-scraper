@@ -107,6 +107,11 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		{"L9MIDA-438", "福田ゆあ キーホルダーセット", "", nil, true},
 		{"9SNOS001", "Compilation title", "", nil, true},
 		{"S727AWQGD00043", "君の裸が見たい 福田ゆあ", "https://ebook-assets.dmm.co.jp/digital/e-book/s727awqgd00043/s727awqgd00043pl.jpg", nil, true},
+		{"MKCK-429", "Soft-Breast Sex 50", "", []string{"Big Tits", "Compilation"}, true},
+		{"VRKM-1769", "Fascinating Hairless 300 Minutes", "", []string{"Compilation", "Over 4 Hours"}, true},
+		{"S209AJMEM00081", "S1 Campaign 2025 Special Photo Book", "", []string{"Collection Of Photographs"}, true},
+		{"MIDE-999", "人気女優 240分 総集編", "", nil, true},
+		{"CAWD-123", "オムニバス 傑作選", "", nil, true},
 	}
 
 	for _, tc := range testCases {
@@ -162,13 +167,21 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		ReleaseDate: "2025-06-03",
 		Actresses:   []scraper.Actress{{Name: "Rui Shido"}},
 	})
+	// Save unowned compilation / omnibus recut
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:          "MKCK-429",
+		Title:       "Soft-Breast Sex 50",
+		ReleaseDate: "2025-07-01",
+		Actresses:   []scraper.Actress{{Name: "Rui Shido"}, {Name: "Other Actress"}},
+		Genres:      []string{"Compilation", "Big Tits"},
+	})
 
 	summary, err := svc.GetActressSummary(context.Background(), "Rui Shido")
 	if err != nil {
 		t.Fatalf("GetActressSummary failed: %v", err)
 	}
 
-	// Must contain ONLY 1 genuine release (FWAY-095), C9/E9/S9 filtered out!
+	// Must contain ONLY 1 genuine release (FWAY-095), C9/E9/S9/MKCK-429 filtered out!
 	if summary.Total != 1 {
 		t.Errorf("Expected exactly 1 genuine release, got %d (releases: %+v)", summary.Total, summary.Releases)
 	}
@@ -176,10 +189,10 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		t.Errorf("Expected release FWAY-095, got %+v", summary.Releases)
 	}
 
-	// Top genres must not contain "Special Offers And Set Products"
+	// Top genres must not contain promotional or compilation category
 	for _, g := range summary.TopGenres {
-		if g.Genre == "Special Offers And Set Products" {
-			t.Errorf("Top genres should not contain promotional category: %+v", summary.TopGenres)
+		if g.Genre == "Special Offers And Set Products" || g.Genre == "Compilation" {
+			t.Errorf("Top genres should not contain promotional/compilation category: %+v", summary.TopGenres)
 		}
 	}
 }

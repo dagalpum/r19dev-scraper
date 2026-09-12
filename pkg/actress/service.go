@@ -344,7 +344,7 @@ var promoSkuRegex = regexp.MustCompile(`^(?:[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}
 
 // IsPromotionalOrDuplicateVariant checks if a release is a duplicate promotional bundle,
 // online event ticket, set product SKU (e.g. C9FWAY095, E9FWAY095, S9FWAY095, L9MIDA438, Special Offers tag),
-// or non-video digital photobook / magazine.
+// non-video digital photobook / magazine, or multi-actress compilation / omnibus (e.g. Compilation tag, 総集編).
 func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []string) bool {
 	upperID := strings.ToUpper(strings.TrimSpace(movieID))
 	tl := strings.ToLower(title)
@@ -364,10 +364,15 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		gNorm := strings.ToLower(strings.TrimSpace(g))
 		if gNorm == "special offers and set products" ||
 			gNorm == "includes event participation rights" ||
+			gNorm == "compilation" ||
+			gNorm == "collection of photographs" ||
+			gNorm == "omnibus" ||
 			strings.Contains(gNorm, "set products") ||
 			strings.Contains(gNorm, "event participation") ||
 			strings.Contains(gNorm, "photo book") ||
-			strings.Contains(gNorm, "digital photo") {
+			strings.Contains(gNorm, "digital photo") ||
+			strings.Contains(gNorm, "photograph") ||
+			strings.Contains(gNorm, "compilation") {
 			return true
 		}
 	}
@@ -377,7 +382,7 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		return true
 	}
 
-	// 4. Title markers (Online autograph sessions, multiple purchase bundle promotions, goods sets)
+	// 4. Title markers (Online autograph sessions, bundle promotions, goods sets, omnibus/compilations)
 	if strings.Contains(title, "オンラインサイン会") ||
 		strings.Contains(title, "購入特典付き") ||
 		strings.Contains(title, "購入特典付") ||
@@ -385,7 +390,10 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		strings.Contains(title, "参加URL付") ||
 		strings.Contains(title, "参加権付き") ||
 		strings.Contains(title, "キーホルダーセット") ||
-		strings.Contains(title, "チェキセット") {
+		strings.Contains(title, "チェキセット") ||
+		strings.Contains(title, "総集編") ||
+		strings.Contains(title, "オムニバス") ||
+		strings.Contains(title, "傑作選") {
 		return true
 	}
 
@@ -396,10 +404,16 @@ func isPromotionalGenre(genre string) bool {
 	gNorm := strings.ToLower(strings.TrimSpace(genre))
 	return gNorm == "special offers and set products" ||
 		gNorm == "includes event participation rights" ||
+		gNorm == "compilation" ||
+		gNorm == "collection of photographs" ||
+		gNorm == "omnibus" ||
 		strings.Contains(gNorm, "set products") ||
 		strings.Contains(gNorm, "event participation") ||
 		strings.Contains(gNorm, "photo book") ||
-		strings.Contains(gNorm, "digital photo")
+		strings.Contains(gNorm, "digital photo") ||
+		strings.Contains(gNorm, "photograph") ||
+		strings.Contains(gNorm, "compilation")
 }
+
 
 

@@ -299,13 +299,18 @@ func TestPurgePromotionalVariants(t *testing.T) {
 		ID:    "S9FWAY095",
 		Title: "【オンラインサイン会】紫堂るい 1本購入特典付き",
 	})
+	_ = d.SaveMovie(&scraper.Movie{
+		ID:     "S209AJMEM00081",
+		Title:  "S1 Campaign 2025 Special Photo Book",
+		Genres: []string{"Collection Of Photographs"},
+	})
 
 	deleted, err := d.PurgePromotionalVariants()
 	if err != nil {
 		t.Fatalf("PurgePromotionalVariants failed: %v", err)
 	}
-	if deleted != 3 {
-		t.Errorf("Expected 3 rows deleted, got %d", deleted)
+	if deleted != 4 {
+		t.Errorf("Expected 4 rows deleted, got %d", deleted)
 	}
 
 	// Genuine movie must still exist
@@ -315,7 +320,7 @@ func TestPurgePromotionalVariants(t *testing.T) {
 	}
 
 	// Variants must not exist
-	for _, id := range []string{"C9FWAY095", "E9FWAY095", "S9FWAY095"} {
+	for _, id := range []string{"C9FWAY095", "E9FWAY095", "S9FWAY095", "S209AJMEM00081"} {
 		v, _ := d.GetMovie(id)
 		if v != nil {
 			t.Errorf("Expected %s to be purged, but it still exists", id)

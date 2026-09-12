@@ -1072,6 +1072,7 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		id GLOB '[CESNK9]9*'
 		OR genres_json LIKE '%Special Offers And Set Products%'
 		OR genres_json LIKE '%Includes Event Participation Rights%'
+		OR genres_json LIKE '%Collection Of Photographs%'
 		OR title LIKE '%オンラインサイン会%'
 		OR title LIKE '%購入特典付き%'
 	)

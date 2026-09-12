@@ -472,8 +472,17 @@ func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []s
 		return true
 	}
 
-	// 3. Re-issue Director's Cut / Remaster duplicates (e.g. SSIS-160 to SSIS-165)
-	if strings.Contains(title, "未公開映像収録") || strings.Contains(title, "ディレクターズカット") {
+	// 3. Re-issue Director's Cut / Remaster duplicates (e.g. SSIS-160 to SSIS-165, JQRE-027 AI Remaster)
+	if strings.Contains(title, "未公開映像収録") ||
+		strings.Contains(title, "ディレクターズカット") ||
+		strings.Contains(title, "AIリマスター") ||
+		strings.Contains(tl, "ai remaster") ||
+		strings.Contains(title, "デジタルリマスター") ||
+		strings.Contains(tl, "digital remaster") ||
+		strings.Contains(title, "リマスター") ||
+		strings.Contains(tl, "remaster") ||
+		strings.Contains(title, "復刻") ||
+		strings.HasPrefix(upperID, "JQRE") {
 		return true
 	}
 

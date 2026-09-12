@@ -432,8 +432,16 @@ func runOrganize(args []string) {
 		successCount++
 	}
 
+	if !dryRun && successCount > 0 && d != nil {
+		backupPath := filepath.Join(absDest, ".r19dev_backup.db")
+		if err := d.BackupTo(backupPath); err == nil {
+			fmt.Printf("💾 [Auto-Backup] Saved database snapshot to %s\n", backupPath)
+		}
+	}
+
 	fmt.Printf("\n✨ Finished! Successfully organized %d/%d movies into %s\n", successCount, len(matches), absDest)
 }
+
 
 func printHelp() {
 	fmt.Println(`🎬 R19DEV Scraper - JAV Scanner, Matcher, Actress Tracker & NAS Jellyfin Organizer

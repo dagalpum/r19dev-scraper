@@ -372,6 +372,7 @@
             </div>
           </div>
           <div class="modal-header-actions">
+            <button id="btn-backup-db" class="btn-log-action" title="Download SQLite database snapshot backup" onclick="window.location.href='/api/db/backup?download=1'">💾 Backup DB</button>
             <button id="btn-clear-history" class="btn-log-action btn-danger" title="Clear all history" onclick="window.app.clearHistory()">🗑️ Clear All</button>
             <button id="btn-close-history" class="btn-modal-close" title="Close (Esc)" onclick="window.app.closeHistoryModal()">×</button>
           </div>

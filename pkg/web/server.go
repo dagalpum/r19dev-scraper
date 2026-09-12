@@ -120,6 +120,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/open-folder", s.handleOpenFolder)
 	mux.HandleFunc("/api/history", s.handleHistory)
 	mux.HandleFunc("/api/history/detail", s.handleHistoryDetail)
+	mux.HandleFunc("/api/db/backup", s.handleDatabaseBackup)
 
 	// Static Files from Embedded FS
 	subFS, err := fs.Sub(staticFS, "static")
@@ -593,6 +594,11 @@ func (s *Server) handleOrganize(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Auto-Backup database snapshot to destination directory (NAS)
+	if s.db != nil && !req.DryRun && req.Destination != "" && successCount > 0 {
+		_ = s.db.BackupTo(filepath.Join(req.Destination, ".r19dev_backup.db"))
+	}
+
 	writeJSON(w, map[string]any{
 		"results":       results,
 		"success_count": successCount,
@@ -867,6 +873,16 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	if s.db != nil && len(validMatches) > 0 {
 		failCount := len(validMatches) - successCount
 		_, _ = s.db.AddOperationHistory("organize", destDir, len(validMatches), successCount, failCount, dryRun, logBuf.String())
+	}
+
+	// Auto-Backup database snapshot to destination directory (NAS)
+	if s.db != nil && !dryRun && destDir != "" && successCount > 0 {
+		backupPath := filepath.Join(destDir, ".r19dev_backup.db")
+		if bErr := s.db.BackupTo(backupPath); bErr == nil {
+			logBuf.WriteString(fmt.Sprintf("💾 [Auto-Backup] Successfully saved database snapshot -> %s\n", backupPath))
+		} else {
+			logBuf.WriteString(fmt.Sprintf("⚠️  [Auto-Backup] Warning: failed to save database snapshot: %v\n", bErr))
+		}
 	}
 
 	doneData, _ := json.Marshal(map[string]any{
@@ -1344,3 +1360,52 @@ func (s *Server) handleHistoryDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, record)
 }
+
+func (s *Server) handleDatabaseBackup(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		writeJSONError(w, "database not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	if r.URL.Query().Get("download") == "1" {
+		tmpFile, err := os.CreateTemp("", "r19dev_backup_*.db")
+		if err != nil {
+			writeJSONError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+		_ = os.Remove(tmpPath) // BackupTo requires destination file not to exist
+
+		if err := s.db.BackupTo(tmpPath); err != nil {
+			writeJSONError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer os.Remove(tmpPath)
+
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"r19dev_backup_%s.db\"", time.Now().Format("20060102_150405")))
+		w.Header().Set("Content-Type", "application/x-sqlite3")
+		http.ServeFile(w, r, tmpPath)
+		return
+	}
+
+	targetPath := r.URL.Query().Get("target")
+	if targetPath == "" {
+		targetPath = filepath.Join(s.targetDir, ".r19dev_backup.db")
+	} else if fi, err := os.Stat(targetPath); err == nil && fi.IsDir() {
+		targetPath = filepath.Join(targetPath, ".r19dev_backup.db")
+	}
+
+	if err := s.db.BackupTo(targetPath); err != nil {
+		writeJSONError(w, fmt.Sprintf("failed to backup database: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"success":     true,
+		"backup_path": targetPath,
+		"db_path":     s.db.Path(),
+		"timestamp":   time.Now().Format(time.RFC3339),
+	})
+}
+

@@ -91,9 +91,11 @@ r19dev-scraper/
 * **Naming Convention**: Folder structure follows `<Dest>/<Actress_Name>/<JAV-ID Title>/`. Actress name and movie title prioritize English metadata, falling back to Japanese only when English is absent.
 * **ENAMETOOLONG Prevention**: Single directory components are capped at $\le 180$ bytes along UTF-8 rune boundaries, preventing OS filesystem `ENAMETOOLONG` errors (255-byte limit on APFS, ext4, NTFS, and SMB shares).
 
-### 4.3 SQLite Audit Trail & Local Storage Invariant
-* **Engine & Path**: All data is managed via pure Go SQLite (`modernc.org/sqlite`) stored in `~/Library/Caches/r19dev/r19dev.db` (macOS) or `~/.cache/r19dev/r19dev.db` (Linux).
-* **Git Exclusion Invariant**: The database lives in the user cache directory outside the workspace and is strictly ignored via `.gitignore` (`*.db`), guaranteeing it is never committed or pushed to Git.
+### 4.3 SQLite Storage Invariant, Application Support & NAS Auto-Backup
+* **Engine & Path**: All application data is managed via pure Go SQLite (`modernc.org/sqlite` with WAL mode & busy timeout) stored in `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) via `os.UserConfigDir()`, protected from OS cache-cleaners.
+* **Seamless Migration**: On startup, legacy databases from `~/Library/Caches/r19dev/r19dev.db` are automatically migrated to `Application Support`.
+* **SMB Invariant & NAS Auto-Backup**: SQLite directly on SMB network shares (`smbfs`) suffers from lack of `.db-shm` `mmap` and missing Darwin `fsctl` support. Therefore, active SQLite is strictly kept on the local SSD, while atomic, defragmented snapshots (`.r19dev_backup.db`) are created on the target NAS directory using `VACUUM INTO` (via local temp file copy) after organize operations.
+* **Git Exclusion Invariant**: The database lives outside the workspace and is ignored via `.gitignore` (`*.db`, `*.db-shm`, `*.db-wal`), guaranteeing it is never committed or pushed to Git.
 * **Audit Trail**: All organize and scrape operations are logged into the `operation_history` table in SQLite. Automated pruning keeps only the last 100 entries and purges logs older than 30 days, guaranteeing zero disk clutter.
 
 ### 4.4 Symlink Protection & Boundary-Safe Regexes

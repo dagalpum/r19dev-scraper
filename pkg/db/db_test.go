@@ -133,4 +133,31 @@ func TestDBOperations(t *testing.T) {
 	if len(emptyList) != 0 {
 		t.Errorf("Expected 0 history records after clear, got %d", len(emptyList))
 	}
+
+	// 7. Test DB Path and BackupTo
+	if d.Path() != dbPath {
+		t.Errorf("Expected db.Path() to be %s, got %s", dbPath, d.Path())
+	}
+
+	backupFile := filepath.Join(tempDir, "backup_test.db")
+	if err := d.BackupTo(backupFile); err != nil {
+		t.Fatalf("BackupTo failed: %v", err)
+	}
+
+	if _, err := os.Stat(backupFile); err != nil {
+		t.Fatalf("Expected backup file to exist at %s: %v", backupFile, err)
+	}
+
+	// Verify backup can be opened and contains data
+	backupDB, err := Open(backupFile)
+	if err != nil {
+		t.Fatalf("Failed to open backup database: %v", err)
+	}
+	defer backupDB.Close()
+
+	backupMovie, err := backupDB.GetMovie("snos-038")
+	if err != nil || backupMovie == nil || backupMovie.Title != "Sample Movie" {
+		t.Errorf("Backup database corrupted or missing data: %+v (err: %v)", backupMovie, err)
+	}
 }
+

@@ -155,10 +155,14 @@ make build
 ## 🛠️ Architecture & Tech Stack
  
 - **Language**: Go 1.22+
-- **Database**: Pure Go SQLite (`modernc.org/sqlite` - zero CGO required)
+- **Database**: Pure Go SQLite (`modernc.org/sqlite` - zero CGO required) with WAL mode & busy timeout
   - **File Name**: `r19dev.db`
-  - **Local Path**: `~/Library/Caches/r19dev/r19dev.db` (macOS) or `~/.cache/r19dev/r19dev.db` (Linux)
-  - **Git Status**: Stored in the local OS user cache directory outside the workspace and ignored via `.gitignore` (`*.db`), **never committed or pushed to Git**.
+  - **Local Path**: `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) — safe from macOS cache-cleaner purges.
+  - **Auto-Migration**: Automatically migrates legacy database from `~/Library/Caches/r19dev/r19dev.db` seamlessly on boot.
+  - **NAS Auto-Backup Snapshot**: Automatically creates a crash-consistent, defragmented single-file backup (`.r19dev_backup.db`) on the target NAS organized share using `VACUUM INTO` on organize completion.
+  - **Disaster Recovery**: Automatically restores state from NAS `.r19dev_backup.db` if starting on a new machine.
+  - **UI / API Backup Download**: Dedicated `/api/db/backup?download=1` endpoint and `[💾 Backup DB]` button in the Web UI History Modal for instant one-click downloads.
+  - **Git Status**: Ignored via `.gitignore` (`*.db`, `*.db-shm`, `*.db-wal`), strictly local, **never committed to Git**.
 - **TUI Framework**: Charm Bubble Tea (`tea.Model`), Lip Gloss styling
 - **Web Frontend**: Vanilla ES6+ SPA, Vanilla CSS with CSS Grid & Custom Tokens, Embedded via `embed.FS`
 - **Metadata Source**: R18.dev REST API with persistent LRU disk caching (`~/.cache/r19dev` or `~/Library/Caches/r19dev`)

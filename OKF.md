@@ -94,7 +94,20 @@ The matcher converts irregular filenames into normalized JAV IDs.
 
 ### 3.5 Database & Audit Trail (`pkg/db`)
 
-* **Storage Engine**: Pure Go SQLite (`modernc.org/sqlite` without CGO), stored at `~/.cache/r19dev/r19dev.db` (Linux) or `~/Library/Caches/r19dev/r19dev.db` (macOS).
+* **Storage Engine**: Pure Go SQLite (`modernc.org/sqlite` without CGO), stored at `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) via `os.UserConfigDir()`.
+* **Storage Location Strategy & SMB Mount Constraint**:
+  - Network-attached storage shares mounted via SMB (`smbfs`, e.g. `/Volumes/home/...`) are fundamentally incompatible with SQLite WAL mode (`_pragma=journal_mode(wal)`) because Darwin `smbfs` lacks POSIX shared-memory `mmap` support for `.db-shm` and `modernc.org/libc` lacks Darwin `fsctl` support (`libc_darwin.go:277:Xfsctl: TODOTODO`).
+  - Therefore, the active working SQLite database strictly resides on the local NVMe/SSD filesystem in `Application Support` (safe from OS cache cleaners), ensuring maximum read/write performance and crash resiliency.
+* **Auto-Migration from Legacy Cache**:
+  - On startup, if `~/Library/Application Support/r19dev/r19dev.db` does not exist, `db.Default()` checks the legacy location `~/Library/Caches/r19dev/r19dev.db` and seamlessly copies existing user data, watched status, and actress records forward.
+* **NAS Auto-Backup Snapshot via `VACUUM INTO` (`BackupTo`)**:
+  - When batch or single organize operations complete successfully, an atomic backup snapshot is saved to the destination root on the NAS as `.r19dev_backup.db`.
+  - To prevent Darwin SMB `fsctl` errors, `BackupTo` executes `VACUUM INTO` targeting a local SSD temp file (`os.TempDir()`), then streams the clean, defragmented single-file snapshot to the destination via `io.Copy`.
+* **Automatic Disaster Recovery on Fresh Machines**:
+  - If a new machine launches R19DEV Studio without an existing local database, `db.Default()` checks for NAS backup candidates (`/Volumes/home/BT/organized/.r19dev_backup.db` or `/Volumes/home/BT/2026/organized/.r19dev_backup.db`) and automatically restores full user history and followed actresses.
+* **UI & API Backup Access**:
+  - Direct HTTP endpoint `/api/db/backup` triggers on-demand NAS snapshots, while `/api/db/backup?download=1` streams an instant `.db` download to the browser.
+  - The History Modal features a dedicated `[💾 Backup DB]` button.
 * **Schema & Relations**:
   - `actresses`: Tracked performers with Japanese/Romaji names, `r18_id INTEGER DEFAULT 0` for direct R18.dev links, follower status, and notes.
   - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, actresses, genres, screenshots).
@@ -105,7 +118,7 @@ The matcher converts irregular filenames into normalized JAV IDs.
 * **Safe Updates & Data Integrity**:
   - `SaveMovie` employs guarded `ON CONFLICT(id) DO UPDATE SET` clauses using SQL `CASE WHEN excluded.<field> != '' THEN excluded.<field> ELSE movies.<field> END` for `cover_url`, `poster_url`, `trailer_url`, `title`, and metadata arrays. This guarantees partial saves, mock objects, or network dropouts never overwrite existing rich metadata with empty strings.
 * **Test Isolation (`SetDB`)**:
-  - `pkg/organizer` and `pkg/web` allow overriding the active database via `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` so test suites run against isolated temporary databases without mutating `~/Library/Caches/r19dev/r19dev.db`.
+  - `pkg/organizer` and `pkg/web` allow overriding the active database via `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` so test suites run against isolated temporary databases without mutating `~/Library/Application Support/r19dev/r19dev.db`.
 * **Auto-Migration & R18 ID Backfill**:
   - Automatically migrates existing databases on boot: `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;`.
   - Runs `backfillActressR18IDs()` on startup to inspect `movies.actresses_json` and automatically populate `r18_id` for followed actresses without requiring manual DB updates.
@@ -115,7 +128,7 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - Maintains a tiny database footprint (< 5MB) with zero `.log` file clutter on user disks.
 * **Local Storage & Git Exclusion Policy**:
   - File name: `r19dev.db`.
-  - Location: `~/Library/Caches/r19dev/r19dev.db` (macOS) or `~/.cache/r19dev/r19dev.db` (Linux) via `os.UserCacheDir()`.
+  - Location: `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux).
   - Git status: Resides outside the Git workspace; root `.gitignore` explicitly blocks `*.db`, `*.db-shm`, and `*.db-wal`. Local databases are strictly never committed or pushed to Git.
 
 ### 3.6 Jellyfin Organizer Pipeline (`pkg/organizer` & `pkg/jellyfin`)

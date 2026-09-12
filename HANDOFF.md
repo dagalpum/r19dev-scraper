@@ -104,8 +104,10 @@ make test
     Combines in-memory cache, local organized disk poster lookup, and remote DMM fetch fallback to guarantee reliable poster display under all network and offline conditions.
 13. **2-Column Bento Profile & Filmography Stage Layout**:
     Individual actress view features a 340px sticky Bento sidebar with real-time NAS storage metrics in GB (`TotalSizeBytes`), average file size, completion progress bar, career span, and clickable top genre pills (`TopGenres`). The right stage provides instant in-page search, sub-filters, active genre tags, and multi-key sorting.
-14. **Local SQLite Database & Git Exclusion**:
-    Database file `r19dev.db` resides in the OS user cache directory (`~/Library/Caches/r19dev/r19dev.db` on macOS) outside the repository and is ignored in `.gitignore` (`*.db`), guaranteeing it remains local and is never committed or pushed to Git.
+14. **Local SQLite in Application Support & NAS Auto-Backup**:
+    Database file `r19dev.db` resides in `~/Library/Application Support/r19dev/r19dev.db` (macOS) via `os.UserConfigDir()`, safe from cache cleaner sweeps, with automatic boot migration from legacy `~/Library/Caches`. Active SQLite remains on local SSD to avoid SMB (`smbfs`) WAL `.db-shm` and Darwin `fsctl` limitations, while atomic `VACUUM INTO` snapshots (`.r19dev_backup.db`) are automatically created on the NAS organized root after organize completion. A dedicated `/api/db/backup?download=1` endpoint and UI button enable instant downloads, and missing databases auto-restore from NAS backups.
+15. **Git Exclusion Invariant**:
+    Root `.gitignore` strictly ignores `*.db`, `*.db-shm`, and `*.db-wal`. The database is purely local, never committed to Git.
 
 ---
 
@@ -114,6 +116,7 @@ make test
 The following major roadmap milestones from previous versions are now **fully completed**:
 - ✅ **Kodi / Jellyfin NFO & Media Asset Exporter**: Generated automatically in standardized folders.
 - ✅ **Persistent SQLite Database**: Stores user states, ratings, favorites, and organized status.
+- ✅ **Application Support Migration & NAS Auto-Backup**: Resilient local storage with automated NAS snapshots.
 - ✅ **NAS Organizer Pipeline**: Automatic atomic move/copy with multi-part consolidation.
 - ✅ **Operation History & Audit Trail**: SQLite-backed with auto-retention and Web UI viewer.
 - ✅ **Interactive Actress Chat UI & Dual View**: Chat timeline mode and Movie Collection showcase.

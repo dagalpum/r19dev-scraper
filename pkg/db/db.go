@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,7 @@ type OperationRecord struct {
 // DB wraps SQLite operations for R19DEV.
 type DB struct {
 	conn *sql.DB
+	path string
 	mu   sync.RWMutex
 }
 
@@ -74,15 +76,17 @@ var (
 	dbOnce    sync.Once
 )
 
-// Default returns the singleton global DB instance located in ~/.cache/r19dev/r19dev.db.
+// Default returns the singleton global DB instance located in ~/Library/Application Support/r19dev/r19dev.db (macOS)
+// or ~/.config/r19dev/r19dev.db (Linux).
 func Default() (*DB, error) {
 	var initErr error
 	dbOnce.Do(func() {
-		baseDir, err := os.UserCacheDir()
+		// Prefer UserConfigDir (~/Library/Application Support on macOS, ~/.config on Linux)
+		baseDir, err := os.UserConfigDir()
 		if err != nil || baseDir == "" {
 			home, hErr := os.UserHomeDir()
 			if hErr == nil {
-				baseDir = filepath.Join(home, ".cache")
+				baseDir = filepath.Join(home, "Library", "Application Support")
 			} else {
 				baseDir = "."
 			}
@@ -93,6 +97,41 @@ func Default() (*DB, error) {
 			return
 		}
 		dbPath := filepath.Join(dbDir, "r19dev.db")
+
+		// Seamless Migration from legacy Cache directory (~/Library/Caches or ~/.cache)
+		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
+			legacyDir, lErr := os.UserCacheDir()
+			if lErr == nil && legacyDir != "" {
+				legacyDBPath := filepath.Join(legacyDir, "r19dev", "r19dev.db")
+				if _, legStatErr := os.Stat(legacyDBPath); legStatErr == nil {
+					// Copy legacy DB to new Application Support location
+					if data, readErr := os.ReadFile(legacyDBPath); readErr == nil {
+						if writeErr := os.WriteFile(dbPath, data, 0o644); writeErr == nil {
+							fmt.Printf("📦 [DB Migration] Safely migrated database from %s -> %s\n", legacyDBPath, dbPath)
+						}
+					}
+				}
+			}
+		}
+
+		// Fallback Restore from NAS backup if DB still does not exist
+		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
+			nasBackupCandidates := []string{
+				"/Volumes/home/BT/organized/.r19dev_backup.db",
+				"/Volumes/home/BT/2026/organized/.r19dev_backup.db",
+			}
+			for _, cand := range nasBackupCandidates {
+				if _, bErr := os.Stat(cand); bErr == nil {
+					if data, rErr := os.ReadFile(cand); rErr == nil {
+						if wErr := os.WriteFile(dbPath, data, 0o644); wErr == nil {
+							fmt.Printf("📦 [DB Restore] Restored database from NAS backup: %s -> %s\n", cand, dbPath)
+							break
+						}
+					}
+				}
+			}
+		}
+
 		d, err := Open(dbPath)
 		if err != nil {
 			initErr = err
@@ -113,7 +152,7 @@ func Open(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	d := &DB{conn: conn}
+	d := &DB{conn: conn, path: dbPath}
 	if err := d.initSchema(); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("failed to initialize sqlite schema: %w", err)
@@ -121,6 +160,64 @@ func Open(dbPath string) (*DB, error) {
 
 	return d, nil
 }
+
+// Path returns the filesystem path of the SQLite database.
+func (d *DB) Path() string {
+	if d == nil {
+		return ""
+	}
+	return d.path
+}
+
+// BackupTo creates an atomic, crash-consistent SQLite backup snapshot at targetFile.
+// It snapshots to a local temp file via VACUUM INTO first (avoiding SMB/NFS fsctl/locking issues on macOS),
+// then copies the clean database file to targetFile.
+func (d *DB) BackupTo(targetFile string) error {
+	if d == nil || d.conn == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	targetFile = filepath.Clean(targetFile)
+	if err := os.MkdirAll(filepath.Dir(targetFile), 0o755); err != nil {
+		return fmt.Errorf("failed to create directory for backup: %w", err)
+	}
+
+	// Always VACUUM INTO a local temporary file first to avoid SMB/NFS fsctl issues on macOS
+	tmpFile, err := os.CreateTemp("", "r19dev_backup_*.db")
+	if err != nil {
+		return fmt.Errorf("failed to create temp backup file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	_ = tmpFile.Close()
+	_ = os.Remove(tmpPath) // VACUUM INTO requires target file not exist
+	defer os.Remove(tmpPath)
+
+	if _, err := d.conn.Exec("VACUUM INTO ?", tmpPath); err != nil {
+		return fmt.Errorf("VACUUM INTO failed: %w", err)
+	}
+
+	// Copy atomic snapshot to target destination (works seamlessly across local, SMB, NFS)
+	src, err := os.Open(tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to open temp backup: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := os.OpenFile(targetFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to create target backup file: %w", err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("failed to copy backup to target: %w", err)
+	}
+
+	return nil
+}
+
 
 // Close closes the database connection.
 func (d *DB) Close() error {

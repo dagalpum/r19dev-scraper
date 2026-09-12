@@ -2098,12 +2098,12 @@
             <div class="bento-card bento-card-identity">
               <div class="bento-avatar-wrapper">
                 <img class="bento-avatar" src="${avatar}" alt="${escapeHtml(a.name)}" onerror="this.src='/placeholder.png'" />
-                ${careerSpan ? `<span class="bento-career-badge">📅 ${escapeHtml(careerSpan)}</span>` : ''}
               </div>
               <div class="bento-identity-info">
                 <h2 class="bento-name">${escapeHtml(a.name)}</h2>
                 ${a.ja_name ? `<div class="bento-ja-name">${escapeHtml(a.ja_name)}</div>` : ''}
                 <div class="bento-badges-row">
+                  ${careerSpan ? `<span class="bento-career-badge">📅 ${escapeHtml(careerSpan)}</span>` : ''}
                   ${a.r18_id ? `<span class="bento-badge-mono">R18 #${a.r18_id}</span>` : ''}
                   <span class="bento-badge-count">${total} Works</span>
                 </div>

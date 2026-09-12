@@ -159,5 +159,23 @@ func TestDBOperations(t *testing.T) {
 	if err != nil || backupMovie == nil || backupMovie.Title != "Sample Movie" {
 		t.Errorf("Backup database corrupted or missing data: %+v (err: %v)", backupMovie, err)
 	}
+
+	// 8. Test Latest Activity Time
+	latestTime, err := d.GetLatestActivityTime()
+	if err != nil {
+		t.Fatalf("GetLatestActivityTime failed: %v", err)
+	}
+	if latestTime.IsZero() {
+		t.Errorf("Expected non-zero latest activity time")
+	}
+
+	inspectedTime, err := InspectLatestActivityTime(backupFile)
+	if err != nil {
+		t.Fatalf("InspectLatestActivityTime failed: %v", err)
+	}
+	if inspectedTime.IsZero() {
+		t.Errorf("Expected non-zero inspected activity time")
+	}
 }
+
 

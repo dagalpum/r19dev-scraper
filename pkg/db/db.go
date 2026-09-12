@@ -114,18 +114,45 @@ func Default() (*DB, error) {
 			}
 		}
 
-		// Fallback Restore from NAS backup if DB still does not exist
+		// Fallback Restore or Sync from NAS backup
+		nasBackupCandidates := []string{
+			"/Volumes/home/BT/organized/.r19dev_backup.db",
+			"/Volumes/home/BT/2026/organized/.r19dev_backup.db",
+		}
+
 		if _, statErr := os.Stat(dbPath); os.IsNotExist(statErr) {
-			nasBackupCandidates := []string{
-				"/Volumes/home/BT/organized/.r19dev_backup.db",
-				"/Volumes/home/BT/2026/organized/.r19dev_backup.db",
-			}
 			for _, cand := range nasBackupCandidates {
 				if _, bErr := os.Stat(cand); bErr == nil {
 					if data, rErr := os.ReadFile(cand); rErr == nil {
 						if wErr := os.WriteFile(dbPath, data, 0o644); wErr == nil {
 							fmt.Printf("📦 [DB Restore] Restored database from NAS backup: %s -> %s\n", cand, dbPath)
 							break
+						}
+					}
+				}
+			}
+		} else {
+			// Local DB exists: check if NAS backup has newer database activity
+			for _, cand := range nasBackupCandidates {
+				if _, bErr := os.Stat(cand); bErr == nil {
+					nasTime, nErr := InspectLatestActivityTime(cand)
+					if nErr == nil && !nasTime.IsZero() {
+						localTime, lErr := InspectLatestActivityTime(dbPath)
+						if lErr == nil && nasTime.After(localTime) {
+							// NAS is newer! Create a safety .bak of local DB before syncing
+							if localData, rErr := os.ReadFile(dbPath); rErr == nil {
+								_ = os.WriteFile(dbPath+".bak", localData, 0o644)
+							}
+							if nasData, rErr := os.ReadFile(cand); rErr == nil {
+								if wErr := os.WriteFile(dbPath, nasData, 0o644); wErr == nil {
+									// Clean up old WAL and SHM to ensure clean boot
+									_ = os.Remove(dbPath + "-wal")
+									_ = os.Remove(dbPath + "-shm")
+									fmt.Printf("📦 [DB Sync] NAS backup contains newer activity (%s > %s). Synced %s -> %s\n",
+										nasTime.Format("2006-01-02 15:04:05"), localTime.Format("2006-01-02 15:04:05"), cand, dbPath)
+									break
+								}
+							}
 						}
 					}
 				}
@@ -218,9 +245,77 @@ func (d *DB) BackupTo(targetFile string) error {
 	return nil
 }
 
+// GetLatestActivityTime returns the newest activity timestamp recorded in the database.
+// It inspects operation_history.created_at, user_state.updated_at, organized_movies.organized_at,
+// and movies.scraped_at.
+func (d *DB) GetLatestActivityTime() (time.Time, error) {
+	if d == nil || d.conn == nil {
+		return time.Time{}, fmt.Errorf("database not initialized")
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	return queryLatestActivity(d.conn)
+}
+
+// InspectLatestActivityTime opens an existing SQLite database at dbPath in read-only mode
+// and returns its latest activity timestamp.
+func InspectLatestActivityTime(dbPath string) (time.Time, error) {
+	if _, err := os.Stat(dbPath); err != nil {
+		return time.Time{}, err
+	}
+	conn, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer conn.Close()
+
+	return queryLatestActivity(conn)
+}
+
+func queryLatestActivity(conn *sql.DB) (time.Time, error) {
+	query := `
+	SELECT MAX(ts) FROM (
+		SELECT MAX(created_at) AS ts FROM operation_history
+		UNION ALL
+		SELECT MAX(updated_at) AS ts FROM user_state
+		UNION ALL
+		SELECT MAX(organized_at) AS ts FROM organized_movies
+		UNION ALL
+		SELECT MAX(scraped_at) AS ts FROM movies
+	)`
+
+	var latest sql.NullString
+	if err := conn.QueryRow(query).Scan(&latest); err != nil {
+		return time.Time{}, err
+	}
+	str := strings.TrimSpace(latest.String)
+	if idx := strings.Index(str, " m="); idx != -1 {
+		str = str[:idx]
+	}
+
+	for _, layout := range []string{
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05.999999999 -0700",
+		"2006-01-02 15:04:05.999999999",
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999Z07:00",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02T15:04:05",
+	} {
+		if t, err := time.Parse(layout, str); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, nil
+}
 
 // Close closes the database connection.
 func (d *DB) Close() error {
+
 	if d == nil || d.conn == nil {
 		return nil
 	}

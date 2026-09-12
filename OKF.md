@@ -117,6 +117,8 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - `operation_history`: Audit trail for all organize and scrape runs storing execution metadata, success/fail metrics, and complete console output.
 * **Safe Updates & Data Integrity**:
   - `SaveMovie` employs guarded `ON CONFLICT(id) DO UPDATE SET` clauses using SQL `CASE WHEN excluded.<field> != '' THEN excluded.<field> ELSE movies.<field> END` for `cover_url`, `poster_url`, `trailer_url`, `title`, and metadata arrays. This guarantees partial saves, mock objects, or network dropouts never overwrite existing rich metadata with empty strings.
+* **Null-Safe Scanning & Content ID Fallback (`GetMovie`)**:
+  - For DMM physical goods or legacy releases where `dvd_id` or timestamps are null (e.g., `EBDB-998` / `h_346rebdb998`), `GetMovie` uses SQL `COALESCE(dvd_id, id)` and `sql.NullTime` scanning. This prevents database driver scan errors and guarantees smooth fallback to `combined_id` across both scraper endpoints and the web UI.
 * **Test Isolation (`SetDB`)**:
   - `pkg/organizer` and `pkg/web` allow overriding the active database via `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` so test suites run against isolated temporary databases without mutating `~/Library/Application Support/r19dev/r19dev.db`.
 * **Auto-Migration & R18 ID Backfill**:
@@ -138,8 +140,10 @@ The matcher converts irregular filenames into normalized JAV IDs.
   /Volumes/home/BT/organized/<Actress_Name>/<JAV-ID Sanitized_Title>/
   ```
   1. **Actress Name**: English/Romaji name preferred. Falls back to Japanese Kanji if English is empty; defaults to `Unknown Actress` if neither exists.
-  2. **Movie Title**: English title preferred. Falls back to Original Japanese Title if English is empty; defaults to `JAV-ID` if neither exists.
-  3. **Multi-Part Consolidation**: All parts of the same movie are moved into the same destination directory as `<JAV-ID>-cd1.mp4`, `<JAV-ID>-cd2.mp4` per Jellyfin multi-disc specifications.
+  2. **Multi-Actress Group Work Prioritization**: When organizing group or crossover works (e.g. duo or harem titles), the organizer inspects followed actresses in SQLite and prioritizes placing the physical directory under **followed/tracked actresses** over untracked co-stars.
+  3. **Zero Storage Waste (Single Physical Instance)**: Video files reside in exactly one physical folder on the NAS without duplication. Both Jellyfin (via multi-`<actor>` NFO tags) and R19DEV Studio (via SQLite metadata linking) display the movie under all participating co-stars' libraries simultaneously.
+  4. **Movie Title**: English title preferred. Falls back to Original Japanese Title if English is empty; defaults to `JAV-ID` if neither exists.
+  5. **Multi-Part Consolidation**: All parts of the same movie are moved into the same destination directory as `<JAV-ID>-cd1.mp4`, `<JAV-ID>-cd2.mp4` per Jellyfin multi-disc specifications.
 * **Default Destination**: Defaults to `/Volumes/home/BT/organized` across both backend services and frontend inputs.
 * **Filesystem Boundary Safety (ENAMETOOLONG Prevention)**:
   - `SanitizeFilename` strips invalid OS characters (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>`, `|`) and collapses whitespace.
@@ -153,6 +157,14 @@ The matcher converts irregular filenames into normalized JAV IDs.
 ### 3.7 Web Studio Architecture (`pkg/web`)
 
 * **Single Binary Embedding**: Frontend assets (`index.html`, `style.css`, `app.js`, `vendor/lucide.min.js`) embedded via `embed.FS`.
+* **Universal Search in Sticky Top Header**:
+  - Pinned centered glassmorphic search input (`#universal-search-input`) with context-aware routing (Library files/SKU, Followed Actress Directory, or Active Actress Filmography).
+  - Global keyboard shortcuts: `⌘K` (macOS) / `Ctrl+K` (Windows/Linux) and `/` (when browsing) to focus; `Esc` to clear/blur.
+  - Synchronized two-way with in-page stage search inputs.
+* **Sticky Breadcrumb & Floating Quick Navigation**:
+  - Header breadcrumb (`[← All Actresses] / {Actress Name}`) sticky on fixed navbar.
+  - Floating Quick Navigation Pill (`[← All Actresses] | [↑ Top]`) auto-reveals via glassmorphism when scrolling down $> 300\text{px}$ in long filmographies.
+  - Browser history integration: `history.pushState` and `popstate` event listeners enable hardware back button and trackpad two-finger swipe back.
 * **Multi-Tier Image Endpoint (`/api/images/{id}`)**:
   - Layer 1: In-memory cache check (`cache.Default().GetImage(id)`).
   - Layer 2: Disk scan in organized folder (`poster.jpg`, `fanart.jpg`, `cover.jpg`) via SQLite `organized_movies` record or `/Volumes/home/BT/organized/*/*{id}*`.
@@ -168,7 +180,8 @@ The matcher converts irregular filenames into normalized JAV IDs.
 ### 3.8 Actress Hub: 2-Column Bento UI & Rich Metadata Engine
 
 * **Followed Actresses Directory**:
-  - **4-Layer Gatekeeper**: Strips compilation titles (総集編, BEST), photobooks, and duplicate SKU formats (BOD, 9SNOS, K9SNOS), retaining 100% genuine solo releases.
+  - **Multi-Layer Gatekeeper**: Strips compilation titles (総集編, BEST), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers).
+  - **Canonical SKU Prioritization**: Smart deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
   - **Minimalist Progress Track**: Sleek 6px progress bar with downloaded vs. total releases and completion percentage: `${dl}/${total} (${pct}%)`.
   - **Multi-Sort & Live Search**: Filter by name and sort by `% Completed`, `Most Missing`, `Name A-Z`, or `Total Works`.
 * **2-Column Bento Profile & Dedicated Filmography Stage**:
@@ -200,6 +213,10 @@ The matcher converts irregular filenames into normalized JAV IDs.
 | **Multi-Part Video (CD1/CD2)** | Sibling parts in directory | Consolidated into a single Jellyfin folder with `-cd1.mp4`, `-cd2.mp4` naming. |
 | **Network Failure during Scrape** | 503 / DNS / Timeout | UI displays clear warning badge in the detail panel with retry hint or manual ID override. |
 | **Missing Remote Cover URL** | Empty `cover_url` in DB | `/api/images/{id}` automatically checks disk for `poster.jpg` / `fanart.jpg` and serves high-res local image. |
+| **Null DVD ID on Physical Goods** | `EBDB-998` (`h_346rebdb998`) has `dvd_id = null` | `GetMovie` uses `COALESCE(dvd_id, id)` & `sql.NullTime`, safely returning movie via `combined_id` fallback without scan errors. |
+| **Multi-Actress Group Works** | Co-star / duo / harem title with multiple performers | Organizer inspects followed actresses in SQLite, placing folder under the tracked performer; multi-`<actor>` NFO tags display movie in both actresses' libraries with zero storage duplication. |
+| **Re-issue & AI Remasters** | `JQRE-027`, `AIリマスター`, `復刻` duplicate old catalog | Scraper filter checks maker prefix and title keywords, stripping re-issues to keep filmography strictly genuine original works. |
+| **Omnibus Clip Compilations** | `BMW-364`, `REbecca STARS` (10–30 actresses) | Filter checks `BMW` prefix, studio tags, and actress count $\ge 10$, excluding omnibus clip reels. |
 | **Unit Test Database Pollution** | Mock data wipes real DB | Isolated temporary SQLite DB passed via `organizer.SetDB()` and `web.Config{DB}`, preventing production DB mutation. |
 | **Partial Metadata Overwrite** | Empty fields on re-save | `SaveMovie` SQL uses `CASE WHEN excluded.* != ''` preserving existing covers, titles, and metadata. |
 | **Symlink Recursion** | Cyclic links in NAS | Skipped unconditionally at `os.Lstat` evaluation phase. |

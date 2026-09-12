@@ -8,6 +8,14 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 
 ### 🌐 1. Modern Web UI Studio (`r19dev web`)
 - **Embedded Single Binary**: Built using Go's `embed.FS` — zero external runtime dependencies, zero Node.js required. Runs natively on macOS, Linux, or NAS servers.
+- **🔍 Universal Search in Sticky Top Header**:
+  - Centered glassmorphism search input (`#universal-search-input`) pinned to the fixed navbar.
+  - **Context-Aware Routing**: Automatically searches library files & SKU in Library tab, followed actresses in Directory view, and actress filmography in the Bento stage view.
+  - **Keyboard Shortcuts**: Instant focus via **`⌘K`** (macOS) / **`Ctrl+K`** (Windows/Linux) or **`/`** (when browsing); **`Esc`** clears or blurs. Fully synchronized two-way with in-page search bars.
+- **🚀 Sticky Breadcrumb & Floating Quick Navigation**:
+  - Sticky Breadcrumb on top navbar (`[← All Actresses] / {Actress Name}`) accessible from any scroll depth.
+  - Floating Quick Navigation Pill (`[← All Actresses] | [↑ Top]`) auto-reveals via glassmorphism when scrolling down $> 300\text{px}$ in long filmographies.
+  - Full browser history (`history.pushState` & `popstate`) supporting trackpad two-finger swipe back and hardware back buttons.
 - **📦 Multi-Part & Multi-File Aggregation**: Files belonging to the same movie (e.g. `_1.mp4`, `_2.mp4`, `-cd1.mp4`, `-cd2.mp4`) are automatically merged into a **single card** with part chips (`P1, P2 (2 parts • 8.4 GB)`).
 - **🎛️ Dynamic Grid Density (1–5 Cards/Row)**: Adjust view layout from **1 card/row** (wide showcase layout with large cover) up to **5 cards/row** (compact grid) or **Auto**. Preferences are automatically saved in `localStorage`.
 - **🖼️ Full-Width Hero Cover Modal**: Clicking any movie card displays a cinematic, full-width high-resolution cover banner with an ambient blurred backdrop, interactive rating stars (1–5 ⭐), watched toggle (👁️), favorite toggle (❤️), and direct full-screen zoom.
@@ -17,7 +25,8 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 
 ### ⭐ 2. Actress Hub: 2-Column Bento Profile & Filmography Stage
 - **🗂️ Followed Actresses Directory**:
-  - **Clean Genuine Solo Releases Only**: Automated 4-layer gatekeeper strips compilation titles (総集編, BEST, BOX), photobooks, and duplicate SKU formats (BOD, 9SNOS, K9SNOS).
+  - **Clean Genuine Solo Releases Only**: Automated multi-layer gatekeeper strips compilation titles (総集編, BEST, BOX), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers).
+  - **Canonical SKU Prioritization**: Smart deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
   - **Minimalist Progress Line**: Clean 6px track displaying exact downloaded count and completion percentage: `${dl}/${total} (${pct}%)`.
   - **Instant Search & Multi-Sort**: Search by Romaji or Japanese name, and sort by `% Completed`, `Most Missing`, `Name A-Z`, or `Total Works`.
 - **🍱 2-Column Bento Profile & Dedicated Filmography Stage**:
@@ -38,6 +47,8 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
   /Volumes/home/BT/organized/{Actress_English_Name}/{JAV-ID} {English_Title}/
   ```
   - **English Naming Priority**: Folders prioritize English/Romaji names for both Actresses and Titles, seamlessly falling back to Japanese only if English metadata is unavailable.
+  - **Multi-Actress Group Work Prioritization**: When organizing group or crossover works (e.g. duo or harem titles), the organizer prioritizes placing the physical directory under **followed/tracked actresses** over untracked co-stars.
+  - **Zero Storage Waste (Single Physical Instance)**: Video files reside in exactly one physical folder on the NAS without duplication. Both Jellyfin (via multi-`<actor>` NFO tags) and R19DEV Studio (via SQLite metadata linking) display the movie under all participating co-stars' libraries simultaneously.
   - **Filesystem Safety**: Names are safely capped at 180 bytes with UTF-8 boundary validation to prevent OS filesystem `ENAMETOOLONG` errors (255-byte `NAME_MAX`).
 - **Consolidation**: Consolidates multi-part videos (e.g. `SNOS-038-cd1.mp4`, `SNOS-038-cd2.mp4`) into single unified Jellyfin movie entries.
 - **Jellyfin Metadata (.nfo)**: Generates official Kodi/Jellyfin Movie NFO XML with title, original title, plot, studio, release date, runtime, actresses with thumbnail URLs, genres, watched status, and user ratings.

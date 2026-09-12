@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.4.0`  
+**Current Version**: `v1.5.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
-**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary Web UI Studio with 2-Column Bento Profile & Filmography Stage, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
+**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary Web UI Studio with 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
 
 The codebase is clean, thoroughly tested (100% test pass rate across all packages), modular, and fully documented.
 
@@ -108,6 +108,16 @@ make test
     Database file `r19dev.db` resides in `~/Library/Application Support/r19dev/r19dev.db` (macOS) via `os.UserConfigDir()`, safe from cache cleaner sweeps, with automatic boot migration from legacy `~/Library/Caches`. Active SQLite remains on local SSD to avoid SMB (`smbfs`) WAL `.db-shm` and Darwin `fsctl` limitations, while atomic `VACUUM INTO` snapshots (`.r19dev_backup.db`) are automatically created on the NAS organized root after organize completion. A dedicated `/api/db/backup?download=1` endpoint and UI button enable instant downloads, and missing databases auto-restore from NAS backups.
 15. **Git Exclusion Invariant**:
     Root `.gitignore` strictly ignores `*.db`, `*.db-shm`, and `*.db-wal`. The database is purely local, never committed to Git.
+16. **Universal Search & Fast Keyboard Navigation**:
+    Sticky top header includes a centered glassmorphic search input with context-aware routing (Library files/SKU, Followed Actress Directory, or Active Filmography stage). Global keyboard shortcuts `⌘K` / `Ctrl+K` and `/` instantly focus search, with `Esc` clearing or blurring.
+17. **Sticky Breadcrumb & Floating Quick Navigation**:
+    Top fixed navbar contains an interactive breadcrumb (`[← All Actresses] / {Actress Name}`). In long filmography views, a floating glassmorphic pill (`[← All Actresses] | [↑ Top]`) auto-reveals on scroll $> 300\text{px}$. Browser history (`history.pushState` & `popstate`) is seamlessly integrated for hardware back buttons and trackpad swipe gestures.
+18. **Multi-Actress Group Work Prioritization & Zero Storage Waste**:
+    When organizing group or crossover releases, `pkg/organizer` inspects followed actresses in SQLite and prioritizes placing the physical directory under the tracked performer. Only 1 physical file instance exists on the NAS (0 duplicate bytes). The title is dynamically linked across Jellyfin NFO `<actor>` tags and Web UI collections for all co-stars simultaneously.
+19. **Extended Filmography Gatekeeping & Canonical SKU Preference**:
+    Automated gatekeeper excludes AI Remasters (`JQRE-`, `AIリマスター`, `復刻`), variety talk shows (`KCKC-`, `MLTN-`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers). Smart deduplication prioritizes canonical maker disc codes over streaming re-releases (e.g. `PPPD-485` over `PPP-485`, `BOMN-169` over `BOM-169`).
+20. **Database Null-Safety & DMM Content ID Fallback**:
+    `GetMovie` in `pkg/db/db.go` uses SQL `COALESCE(dvd_id, id)` and `sql.NullTime` scanning. This prevents database driver scan errors for physical releases on DMM/R18.dev where `dvd_id` is null (such as `EBDB-998`), gracefully falling back to `combined_id`.
 
 ---
 
@@ -125,6 +135,11 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Organized Library Default**: Standardized destination at `/Volumes/home/BT/organized`.
 - ✅ **Safe Metadata Upserts & Test DB Isolation**: Guarantees zero production database corruption.
 - ✅ **Multi-Tier Image Serving Pipeline**: Complete resilience with disk fallback.
+- ✅ **Universal Search & Keyboard Shortcuts**: Header search bar with `⌘K` / `Ctrl+K` and `/`.
+- ✅ **Sticky Breadcrumbs & Floating Quick Navigation**: Breadcrumb in navbar and floating navigation pill.
+- ✅ **Multi-Actress Group Work Prioritization**: Followed performer folder priority with zero storage waste.
+- ✅ **Extended Clean Filmography Gatekeeping**: Excludes AI remasters, talk shows, and omnibus compilations.
+- ✅ **DMM Content ID Fallback & DB Null-Safety**: Robust scanning handling null `dvd_id` without errors.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:
@@ -140,3 +155,4 @@ Recommended future enhancements:
 
 * **Maintainer**: `dagalpum`
 * **Repository**: `https://github.com/dagalpum/r19dev-scraper`
+

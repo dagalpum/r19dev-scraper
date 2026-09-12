@@ -107,7 +107,7 @@ r19dev-scraper/
   - **Left Sticky Bento Sidebar (~340px)**: Large HD avatar, Romaji/Kanji names, R18 ID badge, career span (`YYYY – YYYY`), real-time NAS storage highlight in GB (`TotalSizeBytes`), completion progress bar (`x/total (pct%)`), clickable top genre tags (`TopGenres`), and native Finder/R18.dev quick action buttons.
   - **Right Filmography Main Stage**: In-page live search input (filter instantly by ID/title), sub-filter pills (`All Works`, `In Library`, `Missing`), active genre tag indicator with 1-click removal, multi-key sort dropdown (Date Newest/Oldest, Size, ID), and uniform responsive poster grid.
   - **Responsive Layout**: Media query `@media (max-width: 960px)` stacks the sidebar on top of the stage for tablets/mobile screens.
-* **4-Layer Gatekeeper for Genuine Solo Releases**: Automated filtering removes compilation titles (総集編, BEST, BOX), photobooks, and duplicate SKU formats (BOD, 9SNOS, K9SNOS), retaining 100% clean solo works.
+* **Multi-Layer Gatekeeper for Genuine Solo Releases**: Automated filtering removes compilation titles (総集編, BEST, BOX), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers), retaining 100% clean solo works.
 * **Official R18 Actress URLs**: Links to `https://r18.dev/videos/vod/movies/list/?id={r18_id}&type=actress` avoiding the non-existent `/search/` route on R18.dev.
 * **Database Backfill**: `initSchema` executes `ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;` and automatically triggers `backfillActressR18IDs()` on startup, extracting R18 actress IDs from cached `movies.actresses_json`.
 
@@ -122,7 +122,30 @@ r19dev-scraper/
 
 ### 4.8 Safe DB Updates & Test Environment Isolation
 * **Safe Upserts**: `SaveMovie` employs SQL `CASE WHEN excluded.<field> != '' THEN excluded.<field> ELSE movies.<field> END` to ensure partial movie records never erase existing cover URLs, titles, or metadata arrays.
-* **Test Isolation**: `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` allow test suites to run against temporary SQLite databases without polluting `~/Library/Caches/r19dev/r19dev.db`.
+* **Test Isolation**: `organizer.SetDB(testDB)` and `web.Config{DB: testDB}` allow test suites to run against temporary SQLite databases without polluting `~/Library/Application Support/r19dev/r19dev.db`.
+
+### 4.9 Universal Search & Keyboard Navigation
+* **Sticky Navbar Search**: Centered glassmorphic search input in the fixed header with context-aware routing:
+  - Library tab: Searches library files and SKUs.
+  - Actresses directory: Filters followed performers in real-time.
+  - Actress stage: Filters filmography titles and IDs.
+* **Global Keyboard Shortcuts**: `⌘K` (macOS) / `Ctrl+K` (Windows/Linux) and `/` (when browsing) focus the search input; `Esc` clears or unfocuses.
+* **Deep Navigation & History**: Sticky breadcrumbs (`[← All Actresses] / {Actress Name}`), floating quick navigation pill (`[← All Actresses] | [↑ Top]` appearing after scrolling $> 300\text{px}$), and full `history.pushState` integration supporting trackpad gestures and hardware back buttons.
+
+### 4.10 Multi-Actress Group Work Prioritization & Zero Storage Duplication
+* **Physical Directory Placement Priority**: When organizing group or crossover releases with multiple co-stars, `pkg/organizer` queries SQLite to determine which actresses are followed. The physical folder is placed under the followed performer (avoiding placing works under untracked co-stars). If multiple co-stars are followed, the first alphabetically or primary tracked performer is selected.
+* **Zero Storage Waste (Single Physical Instance)**: Files reside strictly in a single physical location on the NAS (0 duplicate bytes).
+* **Multi-Library Discovery**: Jellyfin NFO contains all `<actor>` tags, and R19DEV Studio records the path in `organized_movies`, allowing the title to be discovered and linked under all participating actresses across both platforms simultaneously.
+
+### 4.11 Extended Filmography Gatekeeping & Canonical SKU Preference
+* **Canonical Disc Code Preference**: Deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
+* **AI Remaster & Re-issue Filter**: Excludes duplicate re-issues bearing `JQRE-` prefixes or keywords like `AIリマスター`, `デジタルリマスター`, `復刻`, or `名作`.
+* **Omnibus Series Filter**: Excludes clip compilations (e.g. `BMW-` series from Wanz Factory, `REbecca STARS`, and works featuring $\ge 10$ performers) from solo performer filmographies.
+
+### 4.12 DMM Content ID Fallback & Database Null-Safety
+* **Content ID vs DVD ID Distinction**: On DMM/R18.dev, physical goods (such as REbecca Blu-rays, e.g. `EBDB-998` $\rightarrow$ `h_346rebdb998`) have `content_id` set but `dvd_id = null`.
+* **Null-Safe Scanning**: `GetMovie` in `pkg/db/db.go` scans using SQL `COALESCE(dvd_id, id)` and `sql.NullTime` for timestamps, preventing driver conversion errors.
+* **Graceful Scraper Fallback**: If standard `dvd_id` lookup yields a 404 on R18.dev, the engine falls back to `combined_id` resolution without application errors.
 
 ---
 

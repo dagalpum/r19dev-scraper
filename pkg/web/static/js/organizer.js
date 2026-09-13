@@ -178,6 +178,9 @@ export function startOrganizeStream() {
       showToast(`Organize complete: ${data.success_count} movies processed!`, 'success');
 
       renderMoviesGrid();
+      try {
+        localStorage.removeItem('r19dev_scan_cache');
+      } catch (err) {}
 
       setTimeout(() => {
         elements.orgProgressBox.classList.add('hidden');

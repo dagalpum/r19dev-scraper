@@ -217,9 +217,12 @@
 
         <!-- Empty State -->
         <div id="library-empty" class="empty-state hidden">
-          <div class="empty-icon" aria-hidden="true"><span class="material-symbols-outlined icon" style="font-size: 3.5rem;">folder</span></div>
-          <h3>No videos found</h3>
-          <p>Scan a directory containing video files (.mp4, .mkv, .avi) to get started.</p>
+          <div class="empty-icon" aria-hidden="true"><span class="material-symbols-outlined icon" style="font-size: 3.5rem;">folder_open</span></div>
+          <h3>Ready to Scan Incoming Videos</h3>
+          <p>Click below to discover and match incoming video files, or browse ready titles in <strong>Library</strong>.</p>
+          <button class="btn btn-primary" onclick="window.app.startScanStream()" style="margin-top: 1rem;">
+            <span class="material-symbols-outlined icon">sync</span> Scan Directory Now
+          </button>
         </div>
       </section>
 

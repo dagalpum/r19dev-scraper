@@ -140,6 +140,10 @@ export function switchTab(tabId) {
   }
 
   state.activeTab = tabId;
+  try {
+    localStorage.setItem('r19dev_active_tab', tabId);
+  } catch (e) {}
+
   (elements.tabs || []).forEach(t => {
     const isCur = t.dataset.tab === tabId;
     t.classList.toggle('active', isCur);
@@ -183,6 +187,16 @@ export function init() {
   try { setupHistoryModal(); } catch (e) { console.error('setupHistoryModal failed:', e); }
   try { setupNetworkGraph(); } catch (e) { console.error('setupNetworkGraph failed:', e); }
 
+  // Restore last active tab (default to 'catalog' so Library is shown instantly!)
+  let savedTab = 'catalog';
+  try {
+    const stored = localStorage.getItem('r19dev_active_tab');
+    if (stored && ['library', 'actresses', 'catalog'].includes(stored)) {
+      savedTab = stored;
+    }
+  } catch (e) {}
+  switchTab(savedTab);
+
   // Initial Data Fetch
   try { fetchInitialData(); } catch (e) { console.error('fetchInitialData failed:', e); }
 
@@ -197,6 +211,7 @@ window.app = {
   switchTab,
   setDensity,
   rescanDirectory,
+  startScanStream,
   clearUniversalSearch,
   onUniversalSearchInput,
 

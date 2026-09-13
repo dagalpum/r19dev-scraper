@@ -87,7 +87,7 @@ export function setupSearchAndFilters() {
 
   elements.btnRescan?.addEventListener('click', (e) => {
     e.stopPropagation();
-    rescanDirectory();
+    rescanDirectory(false);
   });
 
   if (elements.labelActiveDir) {
@@ -97,7 +97,7 @@ export function setupSearchAndFilters() {
       badge.title = 'Click to change scan directory';
       badge.addEventListener('click', (e) => {
         e.stopPropagation();
-        rescanDirectory();
+        rescanDirectory(true);
       });
     }
   }
@@ -345,8 +345,49 @@ export function groupMatches(matches) {
 }
 
 export async function fetchInitialData() {
-  startScanStream();
+  // 1. Instantly load actress & library catalog data from DB (0.01s)
   loadActressesData();
+
+  // 2. Check if we have cached scan results in localStorage for 0s instant load
+  let hasCached = false;
+  try {
+    const cachedStr = localStorage.getItem('r19dev_scan_cache');
+    if (cachedStr) {
+      const cached = JSON.parse(cachedStr);
+      if (cached && Array.isArray(cached.rawMatches) && cached.rawMatches.length > 0) {
+        state.rawMatches = cached.rawMatches;
+        state.activeDir = cached.activeDir || state.activeDir;
+        if (elements.labelActiveDir) elements.labelActiveDir.textContent = state.activeDir;
+        if (elements.orgSrcDir) elements.orgSrcDir.value = state.activeDir;
+        if (elements.orgDestRoot && !elements.orgDestRoot.value) {
+          elements.orgDestRoot.value = getDefaultOrganizedDestination(state.activeDir);
+        }
+
+        if (cached.metadata) Object.assign(state.metadata, cached.metadata);
+        if (cached.userStates) Object.assign(state.userStates, cached.userStates);
+        if (cached.organizedStatus) Object.assign(state.organizedStatus, cached.organizedStatus);
+        if (cached.organizedFolders) Object.assign(state.organizedFolders, cached.organizedFolders);
+
+        state.groupedMovies = groupMatches(state.rawMatches);
+        updateStats();
+        populateFilterDropdowns();
+        renderMoviesGrid();
+
+        if (elements.countLibrary) {
+          elements.countLibrary.textContent = state.groupedMovies.length;
+        }
+        hasCached = true;
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to restore scan cache:', e);
+  }
+
+  // If no cached scan data, don't run auto-scan across network NAS; render clean empty state
+  if (!hasCached) {
+    if (elements.scanProgressBox) elements.scanProgressBox.classList.add('hidden');
+    renderMoviesGrid();
+  }
 }
 
 export function startScanStream(customPath) {
@@ -406,6 +447,26 @@ export function startScanStream(customPath) {
       populateFilterDropdowns();
       renderMoviesGrid();
 
+      if (elements.countLibrary) {
+        elements.countLibrary.textContent = state.groupedMovies.length;
+      }
+
+      // Cache scan results to localStorage for 0s instant load next time
+      try {
+        const cachePayload = {
+          rawMatches: state.rawMatches,
+          activeDir: state.activeDir,
+          metadata: state.metadata,
+          userStates: state.userStates,
+          organizedStatus: state.organizedStatus,
+          organizedFolders: state.organizedFolders,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('r19dev_scan_cache', JSON.stringify(cachePayload));
+      } catch (err) {
+        console.warn('Failed to save scan cache:', err);
+      }
+
       setTimeout(() => {
         elements.scanProgressBox.classList.add('hidden');
       }, 1200);
@@ -426,12 +487,16 @@ export function startScanStream(customPath) {
   };
 }
 
-export function rescanDirectory() {
-  const current = state.activeDir || '';
-  const newPath = prompt('Enter folder path to scan for JAV files:', current);
-  if (newPath !== null && newPath.trim() !== '') {
-    startScanStream(newPath.trim());
+export function rescanDirectory(promptForPath = false) {
+  if (promptForPath) {
+    const current = state.activeDir || '';
+    const newPath = prompt('Enter folder path to scan for JAV files:', current);
+    if (newPath !== null && newPath.trim() !== '') {
+      startScanStream(newPath.trim());
+    }
+    return;
   }
+  startScanStream(state.activeDir);
 }
 
 export function updateStats() {

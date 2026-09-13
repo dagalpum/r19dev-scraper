@@ -3,7 +3,8 @@
  * Native ES Module
  */
 
-import { state, elements, escapeHtml } from './state.js';
+import { state, elements, escapeHtml, getMovieLocationInfo, getDefaultOrganizedDestination } from './state.js';
+export { getDefaultOrganizedDestination };
 import {
   loadActressesData,
   scrapeMovie,
@@ -17,50 +18,41 @@ import { openMovieDetail } from './modal.js';
 import { renderActressCollection, filterCollectionActress } from './actress.js';
 
 export function setupDensityControl() {
-  applyGridDensity(state.gridCols);
+  const savedDensity = localStorage.getItem('r19dev_density') || (state.gridCols === 'compact' ? 'compact' : 'auto');
+  applyGridDensity(savedDensity);
 
-  (elements.densityButtons || []).forEach(btn => {
+  (elements.densityToggles || []).forEach(btn => {
     btn.addEventListener('click', () => {
-      const cols = btn.dataset.cols;
-      state.gridCols = cols;
-      localStorage.setItem('r19dev_grid_cols', cols);
-      applyGridDensity(cols);
+      const density = btn.dataset.density || 'auto';
+      setDensity(density);
     });
   });
 }
 
-export function applyGridDensity(cols) {
-  (elements.densityButtons || []).forEach(b => {
-    const isCur = b.dataset.cols === cols;
+export function applyGridDensity(density) {
+  const activeDensity = (density === 'compact') ? 'compact' : 'auto';
+  state.gridCols = activeDensity;
+
+  (elements.densityToggles || []).forEach(b => {
+    const isCur = (b.dataset.density || 'auto') === activeDensity;
     b.classList.toggle('active', isCur);
     b.setAttribute('aria-pressed', isCur ? 'true' : 'false');
   });
 
   if (elements.moviesGrid) {
-    elements.moviesGrid.className = 'movies-grid ' + (cols === 'auto' ? 'grid-auto' : `grid-cols-${cols}`);
+    elements.moviesGrid.className = 'movies-grid ' + (activeDensity === 'compact' ? 'grid-compact' : 'grid-auto');
   }
 }
 
-export function setDensity(cols) {
-  if (!cols) return;
-  state.gridCols = cols;
-  localStorage.setItem('r19dev_grid_cols', cols);
-  applyGridDensity(cols);
+export function setDensity(density) {
+  if (!density) return;
+  const activeDensity = (density === 'compact') ? 'compact' : 'auto';
+  state.gridCols = activeDensity;
+  localStorage.setItem('r19dev_density', activeDensity);
+  applyGridDensity(activeDensity);
 }
 
 export function setupSearchAndFilters() {
-  elements.searchInput?.addEventListener('input', (e) => {
-    state.searchQuery = e.target.value.trim().toLowerCase();
-    elements.searchClear?.classList.toggle('hidden', state.searchQuery === '');
-    if (elements.universalSearchInput && elements.universalSearchInput.value !== e.target.value) {
-      elements.universalSearchInput.value = e.target.value;
-      elements.universalSearchClear?.classList.toggle('hidden', e.target.value === '');
-    }
-    renderMoviesGrid();
-  });
-
-  elements.searchClear?.addEventListener('click', clearSearch);
-
   elements.filterActress?.addEventListener('change', (e) => {
     state.filterActress = e.target.value;
     renderMoviesGrid();
@@ -112,7 +104,10 @@ export function setupSearchAndFilters() {
 
   elements.btnScrapeAll?.addEventListener('click', scrapeAllMatched);
   elements.btnOrganizeAll?.addEventListener('click', () => {
-    window.app?.switchTab('organizer');
+    window.app?.openOrganizerDrawer();
+  });
+  elements.btnNavOrganize?.addEventListener('click', () => {
+    window.app?.openOrganizerDrawer();
   });
 }
 
@@ -124,9 +119,7 @@ export function resetFilters() {
   state.filterWatch = 'all';
   state.searchQuery = '';
 
-  if (elements.searchInput) elements.searchInput.value = '';
   if (elements.universalSearchInput) elements.universalSearchInput.value = '';
-  if (elements.searchClear) elements.searchClear.classList.add('hidden');
   if (elements.universalSearchClear) elements.universalSearchClear.classList.add('hidden');
   if (elements.filterActress) elements.filterActress.value = '';
   if (elements.filterOrganized) elements.filterOrganized.value = 'all';
@@ -138,12 +131,10 @@ export function resetFilters() {
 }
 
 export function clearSearch() {
-  if (elements.searchInput) elements.searchInput.value = '';
   if (elements.universalSearchInput) elements.universalSearchInput.value = '';
   state.searchQuery = '';
-  elements.searchClear?.classList.add('hidden');
   elements.universalSearchClear?.classList.add('hidden');
-  elements.searchInput?.focus();
+  elements.universalSearchInput?.focus();
   renderMoviesGrid();
 }
 
@@ -232,11 +223,12 @@ export function onUniversalSearchInput(val) {
 
   if (state.activeTab === 'library') {
     state.searchQuery = q.toLowerCase();
-    if (elements.searchInput && elements.searchInput.value !== rawVal) {
-      elements.searchInput.value = rawVal;
-      elements.searchClear?.classList.toggle('hidden', rawVal === '');
-    }
     renderMoviesGrid();
+  } else if (state.activeTab === 'catalog') {
+    state.allMoviesSearch = q;
+    if (window.app?.renderCatalogView) {
+      window.app.renderCatalogView();
+    }
   } else if (state.activeTab === 'actresses') {
     if (state.collectionFilterActress === 'all') {
       state.actressSearchQuery = q;
@@ -244,19 +236,7 @@ export function onUniversalSearchInput(val) {
     } else {
       state.actressMovieSearch = q;
       renderActressCollection();
-      const stageInput = document.getElementById('actress-movie-search');
-      if (stageInput && stageInput.value !== rawVal) {
-        stageInput.value = rawVal;
-      }
     }
-  } else if (state.activeTab === 'organizer') {
-    if (window.app?.switchTab) window.app.switchTab('library');
-    state.searchQuery = q.toLowerCase();
-    if (elements.searchInput) {
-      elements.searchInput.value = rawVal;
-      elements.searchClear?.classList.toggle('hidden', rawVal === '');
-    }
-    renderMoviesGrid();
   }
 }
 
@@ -282,18 +262,31 @@ export function syncUniversalSearchPlaceholder() {
   const kbdText = isMac ? '⌘K' : 'Ctrl+K';
 
   if (state.activeTab === 'library') {
-    elements.universalSearchInput.placeholder = `Search library, SKU, actress... (${kbdText})`;
-    elements.universalSearchInput.value = elements.searchInput ? elements.searchInput.value : (state.searchQuery || '');
+    if (elements.navSearchScope) elements.navSearchScope.textContent = 'Incoming';
+    elements.universalSearchInput.placeholder = `Search incoming videos, SKU, actress... (${kbdText})`;
+    elements.universalSearchInput.value = state.searchQuery || '';
+  } else if (state.activeTab === 'catalog') {
+    if (elements.navSearchScope) elements.navSearchScope.textContent = 'Library';
+    elements.universalSearchInput.placeholder = `Search library & catalog movies by ID, title, actress, studio... (${kbdText})`;
+    elements.universalSearchInput.value = state.allMoviesSearch || '';
   } else if (state.activeTab === 'actresses') {
     if (state.collectionFilterActress === 'all') {
-      elements.universalSearchInput.placeholder = `Search followed actresses... (${kbdText})`;
+      if (state.actressHubTab === 'unfollowed' || state.actressHubTab === 'discovered') {
+        if (elements.navSearchScope) elements.navSearchScope.textContent = 'Unfollowed';
+        elements.universalSearchInput.placeholder = `Search unfollowed actresses in NAS... (${kbdText})`;
+      } else {
+        if (elements.navSearchScope) elements.navSearchScope.textContent = 'Followed';
+        elements.universalSearchInput.placeholder = `Search followed actresses... (${kbdText})`;
+      }
       elements.universalSearchInput.value = state.actressSearchQuery || '';
     } else {
+      if (elements.navSearchScope) elements.navSearchScope.textContent = state.collectionFilterActress;
       elements.universalSearchInput.placeholder = `Search ${state.collectionFilterActress}'s filmography... (${kbdText})`;
       elements.universalSearchInput.value = state.actressMovieSearch || '';
     }
   } else {
-    elements.universalSearchInput.placeholder = `Search movies, SKU, actresses... (${kbdText})`;
+    if (elements.navSearchScope) elements.navSearchScope.textContent = 'Search';
+    elements.universalSearchInput.placeholder = `Search videos, SKU, actresses... (${kbdText})`;
     elements.universalSearchInput.value = '';
   }
   elements.universalSearchClear?.classList.toggle('hidden', !elements.universalSearchInput.value);
@@ -351,19 +344,6 @@ export function groupMatches(matches) {
   return [...groups.values(), ...unmatched];
 }
 
-export function getDefaultOrganizedDestination(activeDir) {
-  if (!activeDir) return '/Volumes/home/BT/organized';
-  if (activeDir.startsWith('/Volumes/home/BT')) {
-    return '/Volumes/home/BT/organized';
-  }
-  const parts = activeDir.replace(/\\/g, '/').split('/').filter(Boolean);
-  if (parts.length > 1) {
-    parts.pop();
-    return '/' + parts.join('/') + '/organized';
-  }
-  return activeDir + '/organized';
-}
-
 export async function fetchInitialData() {
   startScanStream();
   loadActressesData();
@@ -382,8 +362,8 @@ export function startScanStream(customPath) {
   elements.scanProgressFill.style.width = '10%';
   elements.scanProgressPct.textContent = 'Scanning...';
   elements.scanProgressLabel.textContent = state.activeDir
-    ? `🔍 Scanning ${state.activeDir}...`
-    : '🔍 Discovering video files...';
+    ? `Scanning ${state.activeDir}...`
+    : 'Discovering video files...';
 
   let url = '/api/scan/stream';
   if (state.activeDir && state.activeDir !== '.') {
@@ -395,7 +375,7 @@ export function startScanStream(customPath) {
   es.addEventListener('progress', (e) => {
     try {
       const data = JSON.parse(e.data);
-      elements.scanProgressLabel.textContent = `🔍 Discovered ${data.discovered} videos (${data.matched} matched)...`;
+      elements.scanProgressLabel.textContent = `Discovered ${data.discovered} videos (${data.matched} matched)...`;
       elements.scanProgressFill.style.width = '60%';
     } catch (err) {}
   });
@@ -420,7 +400,7 @@ export function startScanStream(customPath) {
 
       elements.scanProgressFill.style.width = '100%';
       elements.scanProgressPct.textContent = '100%';
-      elements.scanProgressLabel.textContent = `✅ Scan complete: ${state.groupedMovies.length} movies (${state.rawMatches.length} files found)`;
+      elements.scanProgressLabel.textContent = `Scan complete: ${state.groupedMovies.length} movies (${state.rawMatches.length} files found)`;
 
       updateStats();
       populateFilterDropdowns();
@@ -547,6 +527,14 @@ export function renderMoviesGrid() {
 
     // Organized Filter
     if (state.filterOrganized === 'organized' && !isOrganized) return false;
+    if (state.filterOrganized === 'library') {
+      const loc = getMovieLocationInfo(movie.id);
+      if (loc.type !== 'library') return false;
+    }
+    if (state.filterOrganized === 'archive' || state.filterOrganized === 'external') {
+      const loc = getMovieLocationInfo(movie.id);
+      if (loc.type !== 'external') return false;
+    }
     if (state.filterOrganized === 'staging' && isOrganized) return false;
 
     // Scraped Filter
@@ -630,50 +618,55 @@ export function createMovieCard(movie) {
   let partBadge = '';
   if (movie.isMultiPart || movie.files.length > 1) {
     const partStr = movie.partNumbers.length > 0 ? `P${movie.partNumbers.join(', P')}` : `${movie.files.length} parts`;
-    partBadge = `<span class="badge-status badge-multipart" title="${movie.files.length} video files"><i data-lucide="layers"></i> ${partStr}</span>`;
+    partBadge = `<span class="badge-status badge-multipart" title="${movie.files.length} video files"><span class="material-symbols-outlined icon">layers</span> ${partStr}</span>`;
   }
 
   // Scraped Badge
   let scrapedBadge = '';
   if (isScraped) {
-    scrapedBadge = `<span class="badge-status badge-scraped" title="Metadata scraped from R18.dev"><i data-lucide="check-circle-2"></i> Scraped</span>`;
+    scrapedBadge = `<span class="badge-status badge-scraped" title="Metadata scraped from R18.dev"><span class="material-symbols-outlined icon">check_circle</span> Scraped</span>`;
   } else if (movie.id) {
-    scrapedBadge = `<span class="badge-status badge-unscraped" title="Needs metadata scrape"><i data-lucide="sparkles"></i> Unscraped</span>`;
+    scrapedBadge = `<span class="badge-status badge-unscraped" title="Needs metadata scrape"><span class="material-symbols-outlined icon">bolt</span> Unscraped</span>`;
   } else {
-    scrapedBadge = `<span class="badge-status badge-staging" title="No JAV ID matched"><i data-lucide="help-circle"></i> Unmatched</span>`;
+    scrapedBadge = `<span class="badge-status badge-staging" title="No JAV ID matched"><span class="material-symbols-outlined icon">help</span> Unmatched</span>`;
   }
 
-  // Organized Badge
+  // Organized & Storage Location Badge
   let organizedBadge = '';
-  if (isOrganized) {
-    organizedBadge = `<span class="badge-status badge-organized clickable" title="Organized in Jellyfin (Click to open in Finder)" onclick="event.stopPropagation(); window.app.openFolder('${id}')" role="button" tabindex="0"><i data-lucide="folder-check"></i> Organized ↗</span>`;
+  const loc = getMovieLocationInfo(movie.id);
+  if (loc.type === 'library') {
+    organizedBadge = `<span class="badge-status badge-library clickable" title="In Library (/organized) - Click to open in Finder" onclick="event.stopPropagation(); window.app.openFolder('${id}')" role="button" tabindex="0"><span class="material-symbols-outlined icon">check_circle</span> In Library ↗</span>`;
+  } else if (loc.type === 'external') {
+    organizedBadge = `<span class="badge-status badge-archive clickable" title="Outside Library: ${escapeHtml(loc.folderPath)} - Click to open in Finder" onclick="event.stopPropagation(); window.app.openFolder('${id}')" role="button" tabindex="0"><span class="material-symbols-outlined icon">inventory_2</span> ${escapeHtml(loc.label)} ↗</span>`;
   } else if (movie.id) {
-    organizedBadge = `<span class="badge-status badge-staging" title="Pending NAS organize"><i data-lucide="inbox"></i> Staging</span>`;
+    organizedBadge = `<span class="badge-status badge-staging" title="Pending NAS organize"><span class="material-symbols-outlined icon">inbox</span> Staging</span>`;
   }
 
   // Watched & Fav Badges
-  const watchedCoverBadge = uState.is_watched ? '<span class="badge-status badge-watched" title="Watched"><i data-lucide="eye"></i></span>' : '';
-  const favCoverBadge = uState.is_favorite ? '<span class="badge-status badge-fav" title="Favorited"><i data-lucide="heart"></i></span>' : '';
-  const ratingStr = uState.user_rating ? '⭐'.repeat(uState.user_rating) : '';
+  const watchedCoverBadge = uState.is_watched ? '<span class="badge-status badge-watched" title="Watched"><span class="material-symbols-outlined icon">visibility</span></span>' : '';
+  const favCoverBadge = uState.is_favorite ? '<span class="badge-status badge-fav" title="Favorited"><span class="material-symbols-outlined icon">favorite</span></span>' : '';
+  const ratingStr = uState.user_rating ? Array.from({length: uState.user_rating}).map(() => '<span class="material-symbols-outlined icon star-filled">star</span>').join('') : '';
 
   // Date Badge
   let dateBadge = '';
   if (meta?.release_date) {
-    dateBadge = `<span class="card-date-badge is-release" title="Official Release Date"><i data-lucide="calendar"></i> Rel: ${escapeHtml(meta.release_date)}</span>`;
+    dateBadge = `<span class="card-date-badge is-release" title="Official Release Date"><span class="material-symbols-outlined icon">calendar_month</span> Rel: ${escapeHtml(meta.release_date)}</span>`;
   } else if (movie.files[0]?.mod_time) {
-    dateBadge = `<span class="card-date-badge" title="File Creation / Modification Date"><i data-lucide="clock"></i> File: ${escapeHtml(movie.files[0].mod_time.slice(0, 10))}</span>`;
+    dateBadge = `<span class="card-date-badge" title="File Creation / Modification Date"><span class="material-symbols-outlined icon">schedule</span> File: ${escapeHtml(movie.files[0].mod_time.slice(0, 10))}</span>`;
   }
 
   // Actresses
   const actressesHtml = (meta?.actresses || []).slice(0, 3).map(act => {
     const isFollowed = state.actresses.some(a => a.actress.name.toLowerCase() === act.name.toLowerCase());
-    return `<span class="actress-chip ${isFollowed ? 'followed' : ''}">${isFollowed ? '⭐ ' : ''}${escapeHtml(act.name)}</span>`;
+    return `<span class="actress-chip ${isFollowed ? 'followed' : ''}">${isFollowed ? '<span class="material-symbols-outlined icon star-icon">star</span> ' : ''}${escapeHtml(act.name)}</span>`;
   }).join('');
 
   card.innerHTML = `
     <div class="card-cover-wrapper">
       <img class="card-cover-img" src="${coverUrl}" alt="Jacket cover for ${escapeHtml(id)}" onerror="this.src='/placeholder.png'" loading="lazy" />
-      <div class="card-overlay-badge">${escapeHtml(id)}</div>
+      <div class="card-overlay-badge ${loc.badgeClass}" title="${escapeHtml(loc.titleText)}">
+        <span class="material-symbols-outlined icon" style="font-size: 0.72rem; vertical-align: -1px; margin-right: 2px;">${loc.icon}</span>${escapeHtml(id)}
+      </div>
       <div class="card-overlay-status">
         ${partBadge}
         ${watchedCoverBadge}

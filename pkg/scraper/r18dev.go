@@ -72,6 +72,7 @@ type Client struct {
 	userAgent  string
 	language   string // "en" or "ja"
 	cache      MovieCache
+	dumpStore  *DumpStore
 	mu         sync.Mutex
 	lastReq    time.Time
 }
@@ -94,12 +95,23 @@ func NewClient(timeout time.Duration) *Client {
 		},
 		userAgent: DefaultUA,
 		language:  "en", // Default to English metadata
+		dumpStore: DefaultDumpStore(),
 	}
 }
 
 // SetCache attaches a persistent disk cache to the client.
 func (c *Client) SetCache(cache MovieCache) {
 	c.cache = cache
+}
+
+// SetDumpStore attaches or overrides the offline dump store.
+func (c *Client) SetDumpStore(ds *DumpStore) {
+	c.dumpStore = ds
+}
+
+// DumpStore returns the currently attached offline dump store.
+func (c *Client) DumpStore() *DumpStore {
+	return c.dumpStore
 }
 
 // SetLanguage sets the metadata language preference ("en" or "ja").
@@ -133,6 +145,16 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 	if c.cache != nil {
 		if cached, found := c.cache.GetMovie(combinedID); found && cached != nil {
 			return cached, nil
+		}
+	}
+
+	// 2. Check offline R18.dev Dump Store (Tier-1 local SQLite dump, sub-millisecond)
+	if c.dumpStore != nil {
+		if movie, found := c.dumpStore.GetMovie(id, c.language); found && movie != nil {
+			if c.cache != nil {
+				_ = c.cache.SetMovie(movie)
+			}
+			return movie, nil
 		}
 	}
 

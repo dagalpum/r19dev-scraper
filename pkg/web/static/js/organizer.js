@@ -18,11 +18,49 @@ export function appendOrganizerLog(text) {
   }
 }
 
+export function openOrganizerDrawer() {
+  if (!elements.drawerOrganizer) return;
+  elements.drawerOrganizer.classList.remove('hidden');
+  elements.drawerOrganizerBackdrop?.classList.remove('hidden');
+  document.body.classList.add('drawer-open');
+
+  // Pre-fill source dir if currentDir is available and input is empty
+  if (elements.orgSrcDir && !elements.orgSrcDir.value && state.currentDir) {
+    elements.orgSrcDir.value = state.currentDir;
+  }
+}
+
+export function closeOrganizerDrawer() {
+  if (!elements.drawerOrganizer) return;
+  elements.drawerOrganizer.classList.add('hidden');
+  elements.drawerOrganizerBackdrop?.classList.add('hidden');
+  document.body.classList.remove('drawer-open');
+}
+
+export function toggleOrganizerExpand() {
+  if (!elements.drawerOrganizer) return;
+  const isExpanded = elements.drawerOrganizer.classList.toggle('expanded');
+  if (elements.iconExpandOrganizer) {
+    elements.iconExpandOrganizer.textContent = isExpanded ? 'close_fullscreen' : 'open_in_full';
+  }
+}
+
 export function setupOrganizer() {
+  elements.btnCloseOrganizer?.addEventListener('click', closeOrganizerDrawer);
+  elements.drawerOrganizerBackdrop?.addEventListener('click', closeOrganizerDrawer);
+  elements.btnExpandOrganizer?.addEventListener('click', toggleOrganizerExpand);
   elements.btnClearLog?.addEventListener('click', clearOrganizerLog);
   elements.btnCopyLog?.addEventListener('click', copyOrganizerLog);
   elements.btnResumeScroll?.addEventListener('click', resumeAutoScroll);
   elements.btnToggleAutoscroll?.addEventListener('click', toggleAutoScroll);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elements.drawerOrganizer && !elements.drawerOrganizer.classList.contains('hidden')) {
+      if (elements.modalHistory && !elements.modalHistory.classList.contains('hidden')) return;
+      if (elements.modalMovie && !elements.modalMovie.classList.contains('hidden')) return;
+      closeOrganizerDrawer();
+    }
+  });
 
   elements.organizerLog?.addEventListener('scroll', () => {
     const el = elements.organizerLog;
@@ -72,10 +110,10 @@ export function startOrganizeStream() {
   elements.orgProgressBox.classList.remove('hidden');
   elements.orgProgressFill.style.width = '0%';
   elements.orgProgressPct.textContent = '0%';
-  elements.orgProgressLabel.textContent = '🚀 Preparing organize pipeline...';
+  elements.orgProgressLabel.textContent = 'Preparing organize pipeline...';
   elements.btnStartOrganize.disabled = true;
 
-  elements.organizerLog.textContent = `🚀 Starting organize from ${src} -> ${dest} (DryRun: ${dryRun})...\n\n`;
+  elements.organizerLog.textContent = `Starting organize from ${src} -> ${dest} (DryRun: ${dryRun})...\n\n`;
   state.logAutoScroll = true;
   if (elements.logScrollBadge) {
     elements.logScrollBadge.textContent = 'Auto-Scroll: ON';
@@ -123,7 +161,7 @@ export function startOrganizeStream() {
         line += `   Video: ${item.target_video}\n`;
       }
       if (!item.success && item.error) {
-        line += `   ❌ ข้อผิดพลาด: ${item.error}\n`;
+        line += `   [FAIL] Error: ${item.error}\n`;
       }
       appendOrganizerLog(line);
     } catch (err) {}
@@ -134,9 +172,9 @@ export function startOrganizeStream() {
       const data = JSON.parse(e.data);
       elements.orgProgressFill.style.width = '100%';
       elements.orgProgressPct.textContent = '100%';
-      elements.orgProgressLabel.textContent = `✨ Finished! Organized ${data.success_count} / ${data.total} movies.`;
-
-      appendOrganizerLog(`\n✨ Complete! Successfully processed ${data.success_count}/${data.total} movies.\n`);
+      elements.orgProgressLabel.textContent = `Finished! Organized ${data.success_count} / ${data.total} movies.`;
+      elements.btnStartOrganize.disabled = false;
+      appendOrganizerLog(`\n[DONE] Complete! Successfully processed ${data.success_count}/${data.total} movies.\n`);
       showToast(`Organize complete: ${data.success_count} movies processed!`, 'success');
 
       renderMoviesGrid();
@@ -151,7 +189,7 @@ export function startOrganizeStream() {
   });
 
   es.addEventListener('error', () => {
-    appendOrganizerLog(`❌ Connection closed or error occurred.\n`);
+    appendOrganizerLog(`[ERROR] Connection closed or error occurred.\n`);
     es.close();
     state.orgEventSource = null;
     elements.btnStartOrganize.disabled = false;
@@ -175,14 +213,14 @@ export function toggleAutoScroll() {
       elements.logScrollBadge.classList.remove('paused');
     }
     elements.btnToggleAutoscroll?.classList.add('active');
-    showToast('Auto-scroll resumed ⬇️', 'info');
+    showToast('Auto-scroll resumed', 'info');
   } else {
     if (elements.logScrollBadge) {
       elements.logScrollBadge.textContent = 'Auto-Scroll: PAUSED';
       elements.logScrollBadge.classList.add('paused');
     }
     elements.btnToggleAutoscroll?.classList.remove('active');
-    showToast('Auto-scroll paused ⏸️', 'info');
+    showToast('Auto-scroll paused', 'info');
   }
 }
 
@@ -194,7 +232,7 @@ export async function copyOrganizerLog() {
   }
   try {
     await navigator.clipboard.writeText(text);
-    showToast('📋 Copied console log to clipboard!', 'success');
+    showToast('Copied console log to clipboard', 'success');
   } catch (err) {
     showToast('Failed to copy: ' + err.message, 'danger');
   }

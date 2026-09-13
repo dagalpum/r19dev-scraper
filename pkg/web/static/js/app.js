@@ -67,7 +67,10 @@ import {
   toggleAutoScroll,
   copyOrganizerLog,
   clearOrganizerLog,
-  resumeAutoScroll
+  resumeAutoScroll,
+  openOrganizerDrawer,
+  closeOrganizerDrawer,
+  toggleOrganizerExpand
 } from './organizer.js';
 
 import {
@@ -95,8 +98,25 @@ import {
   scrollShelf,
   renderActressCollection,
   renderActressHub,
-  renderChatView
+  renderChatView,
+  renderCatalogView,
+  renderAllMoviesCatalogHtml,
+  setAllMoviesStatus,
+  setAllMoviesGenre,
+  setAllMoviesStudio,
+  setAllMoviesActress,
+  setAllMoviesSort,
+  setAllMoviesDensity,
+  loadMoreAllMovies,
+  showAllAllMovies,
+  resetAllMoviesFilters
 } from './actress.js';
+
+import {
+  setupNetworkGraph,
+  openNetworkGraph,
+  closeNetworkGraph
+} from './graph.js';
 
 // =========================================================================
 // Tab Navigation
@@ -111,6 +131,11 @@ export function setupTabSwitching() {
 }
 
 export function switchTab(tabId) {
+  if (tabId === 'organizer') {
+    openOrganizerDrawer();
+    return;
+  }
+
   state.activeTab = tabId;
   (elements.tabs || []).forEach(t => {
     const isCur = t.dataset.tab === tabId;
@@ -126,6 +151,12 @@ export function switchTab(tabId) {
     } else {
       elements.navBreadcrumb?.classList.add('hidden');
     }
+  } else if (tabId === 'catalog') {
+    elements.navBreadcrumb?.classList.add('hidden');
+    elements.floatingActressNav?.classList.add('hidden');
+    loadActressesData().then(() => {
+      renderCatalogView();
+    });
   } else {
     elements.navBreadcrumb?.classList.add('hidden');
     elements.floatingActressNav?.classList.add('hidden');
@@ -147,6 +178,7 @@ export function init() {
   try { setupOrganizer(); } catch (e) { console.error('setupOrganizer failed:', e); }
   try { setupActressHub(); } catch (e) { console.error('setupActressHub failed:', e); }
   try { setupHistoryModal(); } catch (e) { console.error('setupHistoryModal failed:', e); }
+  try { setupNetworkGraph(); } catch (e) { console.error('setupNetworkGraph failed:', e); }
 
   // Initial Data Fetch
   try { fetchInitialData(); } catch (e) { console.error('fetchInitialData failed:', e); }
@@ -180,6 +212,8 @@ window.app = {
   closeHistoryModal,
   clearHistory,
   copyHistoryLog,
+  openNetworkGraph,
+  closeNetworkGraph,
 
   // Movie Detail Actions
   toggleWatched,
@@ -196,6 +230,8 @@ window.app = {
   },
   setActressSort: (s) => {
     state.actressSort = s;
+    const el = document.getElementById('actress-sort-by');
+    if (el && el.value !== s) el.value = s;
     renderActressCollection();
   },
   setActressViewMode,
@@ -228,11 +264,26 @@ window.app = {
   quickFollowDiscovered,
   loadDiscoveredActresses,
 
+  // All Movies Catalog Actions
+  renderCatalogView,
+  setAllMoviesStatus,
+  setAllMoviesGenre,
+  setAllMoviesStudio,
+  setAllMoviesActress,
+  setAllMoviesSort,
+  setAllMoviesDensity,
+  loadMoreAllMovies,
+  showAllAllMovies,
+  resetAllMoviesFilters,
+
   // File Management
   openFolder,
   openFolderEl: openFolderByEl,
 
-  // Organizer Tab
+  // NAS Organizer Drawer
+  openOrganizerDrawer,
+  closeOrganizerDrawer,
+  toggleOrganizerExpand,
   startOrganize,
   toggleAutoScroll,
   copyOrganizerLog,

@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.6.0`  
+**Current Version**: `v1.7.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
-**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
+**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper with Tier-1 sub-millisecond offline dump store, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 3-Tier Navigation Architecture (Incoming, Actresses, Library), 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
 
 The codebase is clean, thoroughly tested (100% test pass rate across all packages), modular, and fully documented.
 
@@ -18,6 +18,7 @@ The codebase is clean, thoroughly tested (100% test pass rate across all package
 | **Compilation** | ✅ Passing | Single-binary compilation via `go build -o bin/r19dev ./cmd/r19dev` |
 | **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/actress`, `pkg/cache`, `pkg/db`, and `pkg/web` |
 | **Frontend** | ✅ Modular | Native ES Modules in `pkg/web/static/js/`, zero Node.js/npm dependencies, 100% offline-ready |
+| **Offline Scraper** | ✅ Sub-ms | Tier-1 `r18_dump.db` (1.9M+ movies, 101k+ actresses, 540k+ translations) resolving in `< 1ms` |
 | **Dependencies** | ✅ Stable | Using standard library + `modernc.org/sqlite` (pure Go, zero CGO) + Charm packages (`bubbletea`, `lipgloss`) |
 | **Performance** | ✅ Fast | Zero UI lag; asynchronous IO for disk traversal, HTTP connection pooling, and live SSE streaming |
 | **Documentation** | ✅ Complete | Updated `README.md`, `OKF.md`, `CONTEXT.md`, and `HANDOFF.md` |
@@ -30,7 +31,7 @@ The codebase is clean, thoroughly tested (100% test pass rate across all package
 pkg/
 ├── scanner/              -> Safe WalkDir engine with symlink detection & timeout guards
 ├── matcher/              -> Regex engine with boundary checks, JAV ID normalizer, multipart detector
-├── scraper/              -> Domain models, R18.dev REST API client, combined ID normalizer
+├── scraper/              -> Domain models, Tier-1 offline DumpStore (r18_dump.db), R18.dev REST API client
 ├── db/                   -> Pure Go SQLite storage, migrations, auto-pruning, operation history audit trail
 ├── organizer/            -> NAS Jellyfin organization planner, multi-part merger, live progress reporter
 ├── jellyfin/             -> Kodi/Jellyfin NFO XML generator, 180-byte safe filename sanitizer, HTML viewer, asset downloader
@@ -39,7 +40,7 @@ pkg/
 ├── web/                  -> Single-binary Web UI Studio server, SSE streaming, REST API, embedded SPA frontend
 │   └── static/           -> Static web assets (embedded via embed.FS)
 │       ├── fonts/        -> Local offline fonts (Inter, JetBrains Mono, Material Symbols)
-│       ├── js/           -> Native ES modules (state, api, modal, scanner, organizer, history, actress, app)
+│       ├── js/           -> Native ES modules (state, api, modal, scanner, organizer, history, actress, graph, app)
 │       ├── vendor/       -> Offline vendor bundles (Lucide, PhotoSwipe 5)
 │       ├── index.html    -> Semantic dark-mode HTML shell (zero CDN links)
 │       └── style.css     -> CSS Design system with local @font-face rules
@@ -128,9 +129,18 @@ make test
 21. **100% Offline-Ready Architecture (Zero CDN Reliance)**:
     Bundled local `.woff2` font files in `pkg/web/static/fonts/` (`inter-variable.woff2`, `jetbrains-mono-latin.woff2`, `material-symbols-outlined.woff2`) with local `@font-face` definitions in `style.css`. All external Google Fonts CDN links are removed from `index.html`.
 22. **Native Browser ES Modules (Zero Build Step)**:
-    Frontend refactored from a monolithic 3,500-line script into 8 single-responsibility ES modules under `pkg/web/static/js/` (`state.js`, `api.js`, `modal.js`, `scanner.js`, `organizer.js`, `history.js`, `actress.js`, `app.js`). Runs natively via `<script type="module" src="/js/app.js"></script>` without Node.js or npm.
+    Frontend refactored from a monolithic script into 9 single-responsibility ES modules under `pkg/web/static/js/` (`state.js`, `api.js`, `modal.js`, `scanner.js`, `organizer.js`, `history.js`, `actress.js`, `graph.js`, `app.js`). Runs natively via `<script type="module" src="/js/app.js"></script>` without Node.js or npm.
 23. **Balanced 2-Element Directory Card & Skipped Filmography Audit**:
     Redesigned the actress directory cards with a compact status pill + monospace release date to prevent text clipping. Added a dedicated `Skipped` sub-filter tab on the actress filmography stage showing excluded titles with reasons.
+24. **Tier-1 Sub-Millisecond Offline Dump Store (`r18_dump.db`)**:
+    Integrated high-performance SQLite read-only query engine (`DumpStore` in `pkg/scraper/dump.go`) parsed from official weekly R18.dev PostgreSQL dumps. Indexes 1,902,762 movies, 101,906 actresses, 2,480,384 video-actress links, and 540,500 DeepL English translations. Queries resolve in `< 1ms` completely offline, eliminating Cloudflare HTTP 429 rate limits and error 1015 IP blocks while migrating over 97% of the library to authentic English titles.
+25. **3-Tier Navigation Architecture (User Journey Segregation)**:
+    Segregated the application into three intuitive user journeys:
+    - **📥 Incoming** (Tab 1): Ingest new downloads, scan directories, inspect SKUs, and launch the Jellyfin organizer.
+    - **👤 Actresses** (Tab 2): Followed (18) vs Unfollowed (7) performer tracking with completion % and backlog.
+    - **🎬 Library** (Tab 3): Standalone movie catalog ready to watch on NAS, featuring status filter pills (`All Works`, `In Library`, `Missing`, `Watched`, `Favorites`), multi-criteria sorting (`Release Date`, `User Rating`, `Studio/Maker`, `JAV ID`, `Title`), and dynamic density toggles.
+26. **Strict Git Safety & Database Isolation**:
+    All databases (`r19dev.db`, `r18_dump.db`), write-ahead logs, and dump archives are stored outside the Git workspace in `~/Library/Application Support/r19dev/`. Root `.gitignore` explicitly excludes `*.db`, `*.db-shm`, `*.db-wal`, `*.sql`, `*.sql.gz`, and `dumps/`. Verified 0 database files tracked or unstaged in Git.
 
 ---
 
@@ -156,6 +166,9 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **100% Offline-Ready UI (Zero CDN Reliance)**: Bundled local WOFF2 fonts and icons.
 - ✅ **Native ES Modules Frontend**: Modular JavaScript with zero Node.js/npm dependencies.
 - ✅ **Actress Directory Card Redesign & Skipped Filmography Audit**: 2-element layout and auditable exclusions.
+- ✅ **Tier-1 Sub-Millisecond Offline Dump Store (`r18_dump.db`)**: 1.9M+ movies, 101k+ actresses, 540k+ translations.
+- ✅ **3-Tier User Journey Navigation (Incoming, Actresses, Library)**: Reorganized navigation architecture.
+- ✅ **Library Catalog Hub**: Status pills (Watched, Favorites), multi-criteria sorting (Rating, Studio).
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

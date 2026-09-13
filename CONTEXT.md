@@ -42,7 +42,10 @@ r19dev-scraper/
 │   ├── scraper/              # Module 3: Metadata Retrieval & Normalization
 │   │   ├── models.go         # Data structures: Movie, Actress
 │   │   ├── normalizer.go     # Conversion: JAV ID -> R18 combined format
-│   │   ├── r18dev.go         # HTTP client communicating with R18.dev API
+│   │   ├── dump.go           # Tier-1 Offline Dump Store (sub-millisecond SQLite queries against r18_dump.db)
+│   │   ├── dump_test.go      # DumpStore unit tests
+│   │   ├── client_offline_test.go # End-to-end offline scraping tests
+│   │   ├── r18dev.go         # HTTP client & Tier-1 dump fallback communicating with R18.dev API
 │   │   └── r18dev_test.go    # Unit tests for ID normalizer
 │   ├── db/                   # Module 4: SQLite Database & Audit Trail
 │   │   ├── db.go             # SQLite engine (pure Go modernc.org/sqlite), schema, migrations, auto-pruning
@@ -66,7 +69,7 @@ r19dev-scraper/
 │   │   ├── server_test.go    # REST and streaming endpoint test suite
 │   │   └── static/           # Embedded SPA assets
 │   │       ├── fonts/        # Local offline WOFF2 fonts (Inter, JetBrains Mono, Material Symbols)
-│   │       ├── js/           # Native ES Modules (state, api, modal, scanner, organizer, history, actress, app)
+│   │       ├── js/           # Native ES Modules (state, api, modal, scanner, organizer, history, actress, graph, app)
 │   │       ├── vendor/       # Offline vendor bundles (Lucide icons, PhotoSwipe 5)
 │   │       ├── index.html    # Semantic dark-mode HTML shell (zero external CDN links)
 │   │       └── style.css     # CSS Design system with local @font-face rules
@@ -76,7 +79,7 @@ r19dev-scraper/
 │       ├── edit_modal.go     # Textinput modal for manual ID override
 │       ├── keys.go           # Key bindings definition
 │       └── styles.go         # Lip Gloss theme tokens and palette
-├── .gitignore                # Go build artifact ignore rules
+├── .gitignore                # Go build artifact & database ignore rules
 ├── Makefile                  # Build and test orchestration
 ├── README.md                 # User-facing manual and quick start
 ├── OKF.md                    # Operational Knowledge Framework & Specs
@@ -92,18 +95,35 @@ r19dev-scraper/
 * Long-running operations (organize, scan, scrape) stream real-time events over Server-Sent Events (SSE) with granular steps (`step`, `item`, `done`).
 * Global `http.Server.WriteTimeout` is kept disabled for streaming endpoints, with write deadlines reset via `rc := http.NewResponseController(w); rc.SetWriteDeadline(time.Time{})` to allow continuous processing for up to 30 minutes without disconnection.
 
-### 4.2 English Metadata Hierarchy & 180-Byte Filesystem Limits
+### 4.2 Tier-1 Offline Dump Store & Cloudflare Immunity
+* **Problem Solved**: High-volume metadata queries against the public R18.dev REST API frequently trigger Cloudflare HTTP 429 rate limits and error 1015 IP bans.
+* **Architecture**: The `pkg/scraper/dump.go` module implements `DumpStore`, opening a local read-only SQLite database `r18_dump.db` parsed from the official R18.dev weekly PostgreSQL dumps (`https://r18.dev/dumps`).
+* **Indexed Coverage**:
+  - `r18_movies`: 1,902,762 videos indexed on `content_id`, `dvd_id`, and `clean_id`.
+  - `actresses`: 101,906 performers with Romaji and Kanji names.
+  - `video_actresses`: 2,480,384 video-actress links.
+  - `translations`: 540,500 DeepL translations (`source_ja` $\rightarrow$ `target_en`). Over 97% of the library is converted to English completely offline.
+* **Latency**: Resolves queries in **`< 1ms`** (0.00s in Go tests), populating the Tier 0 disk cache without initiating any external network connections.
+* **Tiered Fallback**:
+  $$\text{Cache (Tier 0)} \longrightarrow \text{DumpStore (Tier 1)} \longrightarrow \text{Live HTTP API (Tier 2)}$$
+
+### 4.3 3-Tier Navigation Architecture (User Journey Segregation)
+* **Tab 1: 📥 Incoming**: Focused entirely on ingestion. Scans unorganized directories, groups multi-part files, checks SKUs, and launches the Jellyfin organizer drawer.
+* **Tab 2: 👤 Actresses**: Dedicated to performer collection tracking. Sub-tabs cleanly separate `Followed` (collection completion %, career span, backlog wishlist) from `Unfollowed` (performers detected in local files available for 1-click follow).
+* **Tab 3: 🎬 Library**: Complete media catalog of all titles organized and ready to watch on NAS. Features status filter pills (`All Works`, `In Library`, `Missing`, `Watched`, `Favorites`), multi-criteria sorting (`Release Date`, `User Rating`, `Studio/Maker`, `JAV ID`, `Title`), and dropdown filters (`Genre`, `Studio`, `Actress`).
+
+### 4.4 English Metadata Hierarchy & 180-Byte Filesystem Limits
 * **Naming Convention**: Folder structure follows `<Dest>/<Actress_Name>/<JAV-ID Title>/`. Actress name and movie title prioritize English metadata, falling back to Japanese only when English is absent.
 * **ENAMETOOLONG Prevention**: Single directory components are capped at $\le 180$ bytes along UTF-8 rune boundaries, preventing OS filesystem `ENAMETOOLONG` errors (255-byte limit on APFS, ext4, NTFS, and SMB shares).
 
-### 4.3 SQLite Storage Invariant, Application Support & NAS Auto-Backup
+### 4.5 SQLite Storage Invariant, Application Support & NAS Auto-Backup
 * **Engine & Path**: All application data is managed via pure Go SQLite (`modernc.org/sqlite` with WAL mode & busy timeout) stored in `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) via `os.UserConfigDir()`, protected from OS cache-cleaners.
 * **Seamless Migration**: On startup, legacy databases from `~/Library/Caches/r19dev/r19dev.db` are automatically migrated to `Application Support`.
 * **SMB Invariant & NAS Auto-Backup**: SQLite directly on SMB network shares (`smbfs`) suffers from lack of `.db-shm` `mmap` and missing Darwin `fsctl` support. Therefore, active SQLite is strictly kept on the local SSD, while atomic, defragmented snapshots (`.r19dev_backup.db`) are created on the target NAS directory using `VACUUM INTO` (via local temp file copy) after organize operations.
-* **Git Exclusion Invariant**: The database lives outside the workspace and is ignored via `.gitignore` (`*.db`, `*.db-shm`, `*.db-wal`), guaranteeing it is never committed or pushed to Git.
+* **Strict Git Exclusion Invariant**: All databases (`r19dev.db`, `r18_dump.db`), write-ahead logs, and dump files live outside the workspace and are ignored via `.gitignore` (`*.db`, `*.db-shm`, `*.db-wal`, `*.sql`, `*.sql.gz`, `dumps/`), guaranteeing zero database leaks into Git.
 * **Audit Trail**: All organize and scrape operations are logged into the `operation_history` table in SQLite. Automated pruning keeps only the last 100 entries and purges logs older than 30 days, guaranteeing zero disk clutter.
 
-### 4.4 Symlink Protection & Boundary-Safe Regexes
+### 4.6 Symlink Protection & Boundary-Safe Regexes
 * The scanner executes `os.Lstat()` on every node; symlinks are filtered out to guarantee immunity from circular loops.
 * Regex matching uses boundary assertions `(?:^|[^a-zA-Z0-9])` instead of standard `\b` to avoid splitting on underscores.
 

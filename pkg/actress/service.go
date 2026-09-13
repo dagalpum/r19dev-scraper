@@ -172,6 +172,154 @@ func (s *Service) ListDiscoveredActresses() ([]DiscoveredActress, error) {
 	return results, nil
 }
 
+// GetDiscoveredActressMovies retrieves all local NAS movies featuring an unfollowed/discovered actress.
+func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName string) ([]ReleaseItem, error) {
+	if s.database == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	actressName = strings.TrimSpace(actressName)
+	if actressName == "" {
+		return nil, fmt.Errorf("actress name cannot be empty")
+	}
+
+	query := `
+	SELECT 
+		m.id, 
+		COALESCE(m.title, m.id), 
+		COALESCE(m.original_title, ''), 
+		COALESCE(m.maker, ''), 
+		COALESCE(m.release_date, ''), 
+		COALESCE(m.cover_url, ''), 
+		COALESCE(MAX(om.target_folder), ''), 
+		COALESCE(MAX(om.target_video), ''), 
+		COALESCE(MAX(lf.file_path), ''), 
+		COALESCE(SUM(lf.size_bytes), 0), 
+		COALESCE(m.genres_json, '[]'),
+		COALESCE(u.is_watched, 0),
+		COALESCE(u.user_rating, 0),
+		COALESCE(u.is_favorite, 0)
+	FROM movies m
+	JOIN json_each(m.actresses_json) a
+	LEFT JOIN organized_movies om ON om.movie_id = m.id
+	LEFT JOIN library_files lf ON lf.movie_id = m.id
+	LEFT JOIN user_state u ON u.movie_id = m.id
+	WHERE (
+		LOWER(json_extract(a.value, '$.name')) = LOWER(?)
+		OR LOWER(json_extract(a.value, '$.ja_name')) = LOWER(?)
+		OR LOWER(json_extract(a.value, '$.name')) LIKE '%' || LOWER(?) || '%'
+	)
+	GROUP BY m.id
+	ORDER BY m.release_date DESC;
+	`
+
+	rows, err := s.database.Query(query, actressName, actressName, actressName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var rawReleases []ReleaseItem
+	for rows.Next() {
+		var r ReleaseItem
+		var orgFolder, orgVideo, libPath, genresJSON string
+		var isWatched, isFavorite int
+		if err := rows.Scan(
+			&r.MovieID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL,
+			&orgFolder, &orgVideo, &libPath,
+			&r.SizeBytes,
+			&genresJSON,
+			&isWatched, &r.UserRating, &isFavorite,
+		); err != nil {
+			return nil, err
+		}
+
+		r.IsWatched = isWatched == 1
+		r.IsFavorite = isFavorite == 1
+		r.OrganizedFolder = orgFolder
+		r.OrganizedVideo = orgVideo
+		r.LibraryPath = libPath
+
+		// If library_path is present but organized_folder is not, derive folder
+		if r.OrganizedFolder == "" && r.LibraryPath != "" {
+			r.OrganizedFolder = filepath.Dir(r.LibraryPath)
+		}
+
+		// Check if organized folder exists in default organized library if not recorded in DB
+		if r.OrganizedFolder == "" && r.MovieID != "" {
+			candidates := []string{
+				filepath.Join("/Volumes/home/BT/organized", actressName),
+			}
+			for _, actDir := range candidates {
+				if entries, err := os.ReadDir(actDir); err == nil {
+					for _, entry := range entries {
+						if entry.IsDir() && strings.Contains(strings.ToUpper(entry.Name()), strings.ToUpper(r.MovieID)) {
+							foundPath := filepath.Join(actDir, entry.Name())
+							r.OrganizedFolder = foundPath
+							_ = s.database.SetOrganized(r.MovieID, foundPath, "")
+							break
+						}
+					}
+				}
+				if r.OrganizedFolder != "" {
+					break
+				}
+			}
+		}
+
+		// Only include releases that are downloaded / locally present in NAS
+		if r.OrganizedFolder != "" || r.OrganizedVideo != "" || r.LibraryPath != "" {
+			r.IsDownloaded = true
+		} else {
+			// Not downloaded in NAS, skip for discovered local titles view
+			continue
+		}
+
+		// Calculate size if not recorded but folder/file exists
+		if r.SizeBytes == 0 {
+			if r.LibraryPath != "" {
+				if fi, fErr := os.Stat(r.LibraryPath); fErr == nil {
+					r.SizeBytes = fi.Size()
+				}
+			}
+			if r.SizeBytes == 0 && r.OrganizedFolder != "" {
+				if entries, err := os.ReadDir(r.OrganizedFolder); err == nil {
+					for _, e := range entries {
+						if !e.IsDir() {
+							if fi, fErr := e.Info(); fErr == nil {
+								r.SizeBytes += fi.Size()
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Parse genres
+		if genresJSON != "" && genresJSON != "[]" {
+			var parsedGenres []string
+			if err := json.Unmarshal([]byte(genresJSON), &parsedGenres); err == nil {
+				r.Genres = parsedGenres
+			}
+		}
+
+		if r.CoverURL == "" && r.MovieID != "" {
+			r.CoverURL = "/api/images/" + r.MovieID
+		}
+
+		r.Title = CleanMovieTitle(r.Title)
+		rawReleases = append(rawReleases, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	releases := deduplicateReleases(rawReleases)
+	return releases, nil
+}
+
+
 // GetActressSummary retrieves all known releases for an actress, cross-referencing download and watch status.
 func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*ActressSummary, error) {
 	if s.database == nil {

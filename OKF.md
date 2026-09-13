@@ -92,6 +92,26 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - Headers: Standard browser `User-Agent`, `Referer: https://r18.dev/`, `Accept: application/json`.
   - Non-200 / 404 responses are translated into strongly-typed errors without crashing.
 
+### 3.4 Tier-1 Offline Dump Store (`pkg/scraper/dump.go`)
+
+To permanently eliminate Cloudflare rate limiting (HTTP 429 and error 1015 IP ban), R19DEV integrates an offline query engine reading directly from PostgreSQL weekly dumps distributed by `https://r18.dev/dumps`:
+
+* **Data Model & Ingestion**:
+  - Offline SQLite database: `~/Library/Application Support/r19dev/r18_dump.db` (~471 MB).
+  - Stream-parsed from `r18dotdev_dump_YYYY-MM-DD.sql.gz` in under 35 seconds.
+  - Extracted & indexed datasets:
+    - `r18_movies`: **1,902,762 videos** with `content_id`, `dvd_id`, `clean_id`, `title_en`, `title_ja`, `maker_name_en`, `release_date`, and `jacket_full_url`.
+    - `actresses`: **101,906 performers** with Romaji & Kanji names, and DMM profile photos.
+    - `video_actresses`: **2,480,384 video-actress relationships**.
+    - `translations`: **540,500 DeepL translations** (`source_ja` $\rightarrow$ `target_en`) seamlessly backfilling English titles when `title_en` is missing.
+* **Concurrent Read-Only Performance**:
+  - Opened with `file:%s?mode=ro&_pragma=busy_timeout(3000)&_pragma=query_only(true)` — zero locking contention, safe for concurrent scans.
+  - Sub-millisecond lookup latency (**`< 1ms`** / 0.00s in unit tests).
+* **Metadata Resolution Sequence in `Client.Scrape`**:
+  1. **Tier 0**: In-memory / filesystem JSON cache (`~/.cache/r19dev/metadata/{combined_id}.json`).
+  2. **Tier 1**: `DumpStore.GetMovie(id, lang)` from `r18_dump.db`. Resolves English title, maker, dates, jackets, and full actress list completely offline. Populates Tier 0 cache upon return.
+  3. **Tier 2**: Fallback to live R18.dev HTTP API only if the movie was released after the dump cutoff date.
+
 ### 3.5 Database & Audit Trail (`pkg/db`)
 
 * **Storage Engine**: Pure Go SQLite (`modernc.org/sqlite` without CGO), stored at `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) via `os.UserConfigDir()`.
@@ -110,7 +130,7 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - The History Modal features a dedicated `[💾 Backup DB]` button.
 * **Schema & Relations**:
   - `actresses`: Tracked performers with Japanese/Romaji names, `r18_id INTEGER DEFAULT 0` for direct R18.dev links, follower status, and notes.
-  - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, actresses, genres, screenshots).
+  - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, actresses, genres, screenshots). Over 97% of titles populated with authentic English titles.
   - `user_state`: User watch state (`is_watched`), ratings (1–5 ⭐), and favorites (`is_favorite`).
   - `library_files`: Scanned file catalog with size, part number, and destination paths.
   - `organized_movies`: Maps `movie_id` to `target_folder` and `target_video` for instant status detection and One-Click Finder access.
@@ -128,10 +148,11 @@ The matcher converts irregular filenames into normalized JAV IDs.
   - Automatically prunes records older than 30 days: `DELETE FROM operation_history WHERE created_at < datetime('now', '-30 days')`.
   - Automatically enforces a 100-run ceiling: `DELETE FROM operation_history WHERE id NOT IN (SELECT id FROM operation_history ORDER BY id DESC LIMIT 100)`.
   - Maintains a tiny database footprint (< 5MB) with zero `.log` file clutter on user disks.
-* **Local Storage & Git Exclusion Policy**:
-  - File name: `r19dev.db`.
-  - Location: `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux).
-  - Git status: Resides outside the Git workspace; root `.gitignore` explicitly blocks `*.db`, `*.db-shm`, and `*.db-wal`. Local databases are strictly never committed or pushed to Git.
+* **Local Storage & Strict Git Exclusion Policy**:
+  - Application DB: `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux).
+  - Dump DB: `~/Library/Application Support/r19dev/r18_dump.db`.
+  - Compressed Dumps: `~/Library/Application Support/r19dev/dumps/`.
+  - Git status: Resides outside the Git workspace; root `.gitignore` explicitly blocks `*.db`, `*.db-shm`, `*.db-wal`, `*.sql`, `*.sql.gz`, and `dumps/`. Local databases and dumps are strictly **never committed or pushed to Git**.
 
 ### 3.6 Jellyfin Organizer Pipeline (`pkg/organizer` & `pkg/jellyfin`)
 
@@ -172,10 +193,15 @@ The matcher converts irregular filenames into normalized JAV IDs.
     - `scanner.js`: Media discovery stream, multi-part grouping, grid density, sorting, and directory rescan.
     - `organizer.js`: Jellyfin organizer stream, terminal log console, and auto-scroll controller.
     - `history.js`: Operation history modal and SQLite audit log inspection.
-    - `actress.js`: Actress Hub (Followed/Discovered directory, Bento profile, dedicated filmography stage, and Chat mode).
-    - `app.js`: Application bootstrap, tab routing, and `window.app` public interface binding.
+    - `actress.js`: Actress Hub (Followed/Unfollowed directory, Bento profile, dedicated filmography stage, and Chat mode).
+    - `graph.js`: Force-directed relationship network graph (actresses, film styles, and studios).
+    - `app.js`: Application bootstrap, 3-tier navigation tab routing, and `window.app` public interface binding.
+* **3-Tier Navigation Architecture (User Journey Segregation)**:
+  - **Tab 1: 📥 Incoming**: File intake and staging area for scanning unorganized downloads, matching SKUs, and triggering the Jellyfin organizer drawer.
+  - **Tab 2: 👤 Actresses**: Focused performer tracking. Sub-tabs strictly separated into `Followed` (collection progress, backlog wishlist) and `Unfollowed` (performers found in local files eligible for quick follow).
+  - **Tab 3: 🎬 Library**: Complete media catalog of all titles organized and ready to watch on NAS. Features status filter pills (`All Works`, `In Library`, `Missing`, `Watched`, `Favorites`), multi-criteria sorting (`Release Date`, `User Rating`, `Studio/Maker`, `JAV ID`, `Title`), and dropdown filters (`Genre`, `Studio`, `Actress`).
 * **Universal Search in Sticky Top Header**:
-  - Pinned centered glassmorphic search input (`#universal-search-input`) with context-aware routing (Library files/SKU, Followed Actress Directory, or Active Actress Filmography).
+  - Pinned centered glassmorphic search input (`#universal-search-input`) with context-aware routing (Incoming files/SKU, Followed Actress Directory, or Library catalog).
   - Global keyboard shortcuts: `⌘K` (macOS) / `Ctrl+K` (Windows/Linux) and `/` (when browsing) to focus; `Esc` to clear/blur.
   - Synchronized two-way with in-page stage search inputs.
 * **Sticky Breadcrumb & Floating Quick Navigation**:
@@ -196,8 +222,8 @@ The matcher converts irregular filenames into normalized JAV IDs.
 
 ### 3.8 Actress Hub: 2-Column Bento UI & Rich Metadata Engine
 
-* **Followed & Discovered Actresses Directory**:
-  - **Dual Sub-Tabs**: Toggle between `Followed Actresses` (active tracking) and `Discovered in NAS Library` (untracked performers with files found in local storage, with 1-click Quick Follow).
+* **Followed & Unfollowed Actresses Directory**:
+  - **Dual Sub-Tabs**: Toggle between `Followed Actresses` (active tracking) and `Unfollowed Actresses` (untracked performers with files found in local storage, with 1-click Quick Follow).
   - **Balanced 2-Element Card Layout**: Compact status pill `[ ✓ SNOS-140 ]` (emerald green if downloaded, rose/amber with download icon if missing) paired with a clean monospace release date `2026-03-24` (or `Recent`), preventing text overflow across all card widths.
   - **Multi-Layer Gatekeeper**: Strips compilation titles (総集編, BEST), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers).
   - **Canonical SKU Prioritization**: Smart deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
@@ -208,7 +234,7 @@ The matcher converts irregular filenames into normalized JAV IDs.
     - **Identity Bento**: 140px HD avatar with hover zoom, Romaji/Kanji names, verified R18 ID badge, and dynamic **Career Span** (`📅 2021 – 2026`).
     - **Storage & Library Bento**: Highlight of **Total NAS Storage** in GB (`TotalSizeBytes`), completion progress bar, and average file size (`Avg X.X GB / file`).
     - **Top Genres Bento**: Interactive tag cloud of the actress's top 8 most frequent categories (`TopGenres`). Clicking any genre chip dynamically filters her filmography on the right stage.
-    - **Quick Actions Bento**: Direct `[📂 Open in Finder]` on NAS, `[🌐 R18.dev Profile ↗]`, and `[🔄 Refresh Releases]`.
+    - **Quick Actions Bento**: Direct `[📂 Open in Finder]` on NAS, `[🌐 R18.dev Profile ↗]`, and `[🔄 Check Releases]`.
   - **Right Filmography Main Stage**:
     - **In-Page Real-Time Search**: Instant filtering by movie ID or title substring.
     - **Sub-Filter Pills**: `All Works`, `In Library`, `Missing`, and **`Skipped`**.
@@ -230,6 +256,7 @@ The matcher converts irregular filenames into normalized JAV IDs.
 | **Noise Prefix in Filename** | `4k2.com@kavr00428_1_8k.mp4` | Matcher strips `4k2.com@`, parses `kavr00428` as `KAVR-428`, identifies part 1. |
 | **VR 5-Digit zero padding** | `sivr00045` | Normalizer correctly maps to `SIVR-045` (3-digit minimum format) and `sivr00045` for R18.dev. |
 | **Excessive Title Length** | Title > 250 characters (`CJOD-505`) | `SanitizeFilename` caps directory component at 180 bytes along UTF-8 boundaries, avoiding `ENAMETOOLONG`. |
+| **Cloudflare Rate Limiting (429/1015)** | Massive scrapes trigger IP ban | Engine transparently routes queries to Tier-1 offline SQLite dump (`r18_dump.db`) in `< 1ms`, completely eliminating external HTTP traffic for 1.9M+ titles. |
 | **Long-Running Organize Stream** | Connection closed at 60s | Global `WriteTimeout` removed, `SetWriteDeadline(time.Time{})` applied on SSE response controller. |
 | **Multi-Part Video (CD1/CD2)** | Sibling parts in directory | Consolidated into a single Jellyfin folder with `-cd1.mp4`, `-cd2.mp4` naming. |
 | **Network Failure during Scrape** | 503 / DNS / Timeout | UI displays clear warning badge in the detail panel with retry hint or manual ID override. |

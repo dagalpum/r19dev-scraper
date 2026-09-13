@@ -31,14 +31,22 @@ export const state = {
   activeActressName: null,
   actressSearchQuery: '',
   actressViewMode: 'collection',
-  actressSort: 'pct-desc',
+  actressSort: 'latest-desc',
   collectionFilterActress: 'all',
   collectionSubFilter: 'all',
   actressMovieSearch: '',
   actressMovieSort: 'date-desc',
   actressGenreFilter: null,
-  actressHubTab: 'followed', // 'followed' | 'discovered'
+  actressHubTab: 'followed', // 'followed' | 'unfollowed'
   discoveredActresses: [],   // Unfollowed actresses with files in NAS
+  allMoviesFilterStatus: 'library', // Default to 'library' (Ready to Watch in NAS)
+  allMoviesFilterGenre: '',
+  allMoviesFilterStudio: '',
+  allMoviesFilterActress: '',
+  allMoviesSort: 'date-desc',
+  allMoviesSearch: '',
+  allMoviesViewDensity: 'grid',
+  allMoviesPageLimit: 72,
 };
 
 // Cached DOM Selectors
@@ -47,6 +55,7 @@ export const elements = {
   panes: document.querySelectorAll('.tab-pane'),
   countLibrary: document.getElementById('count-library'),
   countActresses: document.getElementById('count-actresses'),
+  countCatalog: document.getElementById('count-catalog'),
   labelActiveDir: document.getElementById('label-active-dir'),
   btnRescan: document.getElementById('btn-rescan'),
 
@@ -54,10 +63,12 @@ export const elements = {
   navBreadcrumb: document.getElementById('nav-breadcrumb'),
   navBreadcrumbActressName: document.getElementById('nav-breadcrumb-actress-name'),
   navSearchBox: document.getElementById('nav-search-box'),
+  navSearchScope: document.getElementById('nav-search-scope'),
   universalSearchInput: document.getElementById('universal-search-input'),
   navSearchKbd: document.getElementById('nav-search-kbd'),
   universalSearchClear: document.getElementById('universal-search-clear'),
   floatingActressNav: document.getElementById('floating-actress-nav'),
+  btnNavOrganize: document.getElementById('btn-nav-organize'),
 
   // Progress Bars
   scanProgressBox: document.getElementById('scan-progress-box'),
@@ -92,6 +103,7 @@ export const elements = {
   btnResetFilters: document.getElementById('btn-reset-filters'),
   sortSelect: document.getElementById('sort-by') || document.getElementById('sort-select'),
   densityButtons: document.querySelectorAll('.btn-density'),
+  densityToggles: document.querySelectorAll('.btn-density-toggle'),
   btnGridShowcase: document.getElementById('btn-grid-showcase'),
   btnGridDense: document.getElementById('btn-grid-dense'),
   btnScrapeAll: document.getElementById('btn-scrape-all'),
@@ -144,7 +156,12 @@ export const elements = {
   btnCloseDrawer: document.getElementById('btn-close-drawer'),
   drawerContent: document.getElementById('drawer-content'),
 
-  // Organizer
+  // NAS Organizer Drawer
+  drawerOrganizer: document.getElementById('drawer-organizer'),
+  drawerOrganizerBackdrop: document.getElementById('drawer-organizer-backdrop'),
+  btnCloseOrganizer: document.getElementById('btn-close-organizer'),
+  btnExpandOrganizer: document.getElementById('btn-expand-organizer'),
+  iconExpandOrganizer: document.getElementById('icon-expand-organizer'),
   orgSrcDir: document.getElementById('org-src-dir'),
   orgDestRoot: document.getElementById('org-dest-root'),
   orgDryRun: document.getElementById('org-dry-run'),
@@ -203,6 +220,137 @@ export function cleanMovieId(id) {
 export function getHighResScreenshotUrl(url) {
   if (!url) return '';
   return url.replace(/-(\d+)\.jpg$/i, 'jp-$1.jpg');
+}
+
+export function getDefaultOrganizedDestination(activeDir) {
+  if (!activeDir) return '/Volumes/home/BT/organized';
+  if (activeDir.startsWith('/Volumes/home/BT')) {
+    return '/Volumes/home/BT/organized';
+  }
+  const parts = activeDir.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (parts.length > 1) {
+    parts.pop();
+    return '/' + parts.join('/') + '/organized';
+  }
+  return activeDir + '/organized';
+}
+
+export function getMovieLocationInfo(movieId, explicitFolder = '', isDownloaded = null) {
+  if (!movieId) {
+    return {
+      type: 'missing',
+      label: 'Missing',
+      icon: 'cancel',
+      badgeClass: 'badge-missing',
+      folderPath: '',
+      destRoot: '',
+      isStandard: false,
+      titleText: 'Missing from Storage',
+      subText: 'No local video file found for this title'
+    };
+  }
+
+  const folderPath = explicitFolder || state.organizedFolders[movieId] || '';
+  const destRoot = elements.orgDestRoot?.value?.trim() || getDefaultOrganizedDestination(state.activeDir);
+
+  const cleanFolder = (folderPath || '').replace(/\\/g, '/');
+  const cleanDest = (destRoot || '').replace(/\\/g, '/');
+
+  if (cleanFolder) {
+    // Standard Jellyfin Library location
+    if (cleanFolder.startsWith(cleanDest)) {
+      return {
+        type: 'library',
+        label: 'In Library',
+        icon: 'check_circle',
+        badgeClass: 'badge-library',
+        folderPath: folderPath,
+        destRoot: destRoot,
+        isStandard: true,
+        titleText: 'In Library (Ready for playback)',
+        subText: 'Stored in Jellyfin NAS Library'
+      };
+    }
+
+    // Outside standard library root (e.g. /Archive/..., /JD/..., /Misc/...)
+    let locName = 'Archive';
+    const lower = cleanFolder.toLowerCase();
+    if (lower.includes('/archive')) {
+      locName = 'Archive';
+    } else if (lower.includes('/misc')) {
+      locName = 'Misc';
+    } else if (lower.includes('/sorted')) {
+      locName = 'Sorted';
+    } else if (lower.includes('/jd')) {
+      locName = 'JD';
+    } else {
+      const parts = cleanFolder.split('/').filter(Boolean);
+      if (parts.length > 2) {
+        locName = parts[parts.length - 2];
+      } else {
+        locName = 'External';
+      }
+    }
+
+    return {
+      type: 'external',
+      label: `In ${locName}`,
+      locName: locName,
+      icon: 'inventory_2',
+      badgeClass: 'badge-archive',
+      folderPath: folderPath,
+      destRoot: destRoot,
+      isStandard: false,
+      titleText: `External Storage (Stored in ${locName})`,
+      subText: `Metadata ready, located outside ${destRoot}`
+    };
+  }
+
+  const isOrganized = Boolean(state.organizedStatus[movieId]);
+  if (isOrganized) {
+    return {
+      type: 'library',
+      label: 'In Library',
+      icon: 'check_circle',
+      badgeClass: 'badge-library',
+      folderPath: destRoot,
+      destRoot: destRoot,
+      isStandard: true,
+      titleText: 'In Library (Ready for playback)',
+      subText: 'Stored in Jellyfin NAS Library'
+    };
+  }
+
+  // Check if file exists in scanned active staging batch or explicit dl flag
+  const hasLocalMatch = state.groupedMovies.some(m => m.id && m.id.toUpperCase() === movieId.toUpperCase());
+  const isDl = isDownloaded !== null ? Boolean(isDownloaded) : hasLocalMatch;
+
+  if (!isDl && !hasLocalMatch) {
+    return {
+      type: 'missing',
+      label: 'Missing',
+      icon: 'cancel',
+      badgeClass: 'badge-missing',
+      folderPath: '',
+      destRoot: destRoot,
+      isStandard: false,
+      titleText: 'Missing from Storage',
+      subText: 'No local video file found for this title'
+    };
+  }
+
+  // Staging / pending organization (file is present in scanned staging directory)
+  return {
+    type: 'staging',
+    label: 'Staging',
+    icon: 'inbox',
+    badgeClass: 'badge-staging',
+    folderPath: '',
+    destRoot: destRoot,
+    isStandard: false,
+    titleText: 'Pending Organization',
+    subText: state.activeDir ? `Located in incoming folder: ${state.activeDir}` : 'Waiting to organize into Jellyfin'
+  };
 }
 
 export function showToast(message, type = 'info') {

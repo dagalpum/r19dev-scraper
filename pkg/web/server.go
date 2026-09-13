@@ -116,6 +116,7 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/actresses/unfollow", s.handleActressUnfollow)
 	mux.HandleFunc("/api/actresses/releases", s.handleActressReleases)
 	mux.HandleFunc("/api/actresses/discovered", s.handleDiscoveredActresses)
+	mux.HandleFunc("/api/actresses/discovered/movies", s.handleDiscoveredActressMovies)
 	mux.HandleFunc("/api/organize", s.handleOrganize)
 	mux.HandleFunc("/api/organize/stream", s.handleOrganizeStream)
 	mux.HandleFunc("/api/open-folder", s.handleOpenFolder)
@@ -216,12 +217,12 @@ func (s *Server) Start(openBrowserOnStart bool) error {
 	defer ln.Close()
 
 	if s.port != originalPort {
-		fmt.Printf("⚠️  Port %d is already in use, automatically switched to port %d\n", originalPort, s.port)
+		fmt.Printf("[PORT] Port %d is already in use, automatically switched to port %d\n", originalPort, s.port)
 	}
 
 	serverURL := fmt.Sprintf("http://localhost:%d", s.port)
-	fmt.Printf("🚀 R19DEV Studio Web UI running at: %s\n", serverURL)
-	fmt.Printf("📂 Target Directory: %s\n", s.targetDir)
+	fmt.Printf("[READY] R19DEV Studio Web UI running at: %s\n", serverURL)
+	fmt.Printf("[DIR] Target Directory: %s\n", s.targetDir)
 
 	if openBrowserOnStart {
 		go func() {
@@ -344,6 +345,15 @@ func (s *Server) handleScrape(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		writeJSONError(w, "missing movie id", http.StatusBadRequest)
 		return
+	}
+
+	// Fast check: return from local SQLite database if already scraped and not forcing refresh
+	force := r.URL.Query().Get("force") == "true"
+	if s.db != nil && !force {
+		if existing, dbErr := s.db.GetMovie(id); dbErr == nil && existing != nil && existing.Title != "" {
+			writeJSON(w, existing)
+			return
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -523,6 +533,24 @@ func (s *Server) handleDiscoveredActresses(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, map[string]any{"actresses": actresses})
+}
+
+func (s *Server) handleDiscoveredActressMovies(w http.ResponseWriter, r *http.Request) {
+	if s.actressService == nil {
+		writeJSONError(w, "actress service not initialized", http.StatusInternalServerError)
+		return
+	}
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+	if name == "" {
+		writeJSONError(w, "actress name required", http.StatusBadRequest)
+		return
+	}
+	movies, err := s.actressService.GetDiscoveredActressMovies(r.Context(), name)
+	if err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"movies": movies})
 }
 
 func defaultOrganizedDir(targetDir string) string {
@@ -775,7 +803,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var logBuf strings.Builder
-	logBuf.WriteString(fmt.Sprintf("🚀 Starting organize from %s -> %s (DryRun: %v)...\n\n", srcDir, destDir, dryRun))
+	logBuf.WriteString(fmt.Sprintf("[START] Starting organize from %s -> %s (DryRun: %v)...\n\n", srcDir, destDir, dryRun))
 
 	startData, _ := json.Marshal(map[string]any{
 		"phase": "start",
@@ -871,7 +899,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 			logBuf.WriteString(fmt.Sprintf("   Video: %s\n", targetVideo))
 		}
 		if errMsg != "" {
-			logBuf.WriteString(fmt.Sprintf("   ❌ ข้อผิดพลาด: %s\n", errMsg))
+			logBuf.WriteString(fmt.Sprintf("   [ERROR] ข้อผิดพลาด: %s\n", errMsg))
 		}
 
 		itemData, _ := json.Marshal(map[string]any{
@@ -891,7 +919,7 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	doneMsg := fmt.Sprintf("จัดระเบียบเสร็จสมบูรณ์ %d/%d ไฟล์", successCount, len(validMatches))
-	logBuf.WriteString(fmt.Sprintf("\n✨ Complete! Successfully processed %d/%d movies.\n", successCount, len(validMatches)))
+	logBuf.WriteString(fmt.Sprintf("\n[DONE] Complete! Successfully processed %d/%d movies.\n", successCount, len(validMatches)))
 
 	// Save to SQLite operation_history
 	if s.db != nil && len(validMatches) > 0 {
@@ -903,9 +931,9 @@ func (s *Server) handleOrganizeStream(w http.ResponseWriter, r *http.Request) {
 	if s.db != nil && !dryRun && destDir != "" && successCount > 0 {
 		backupPath := filepath.Join(destDir, ".r19dev_backup.db")
 		if bErr := s.db.BackupTo(backupPath); bErr == nil {
-			logBuf.WriteString(fmt.Sprintf("💾 [Auto-Backup] Successfully saved database snapshot -> %s\n", backupPath))
+			logBuf.WriteString(fmt.Sprintf("[BACKUP] Successfully saved database snapshot -> %s\n", backupPath))
 		} else {
-			logBuf.WriteString(fmt.Sprintf("⚠️  [Auto-Backup] Warning: failed to save database snapshot: %v\n", bErr))
+			logBuf.WriteString(fmt.Sprintf("[BACKUP] Warning: failed to save database snapshot: %v\n", bErr))
 		}
 	}
 
@@ -1288,14 +1316,14 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if targetPath == "" {
-		fmt.Printf("⚠️  [Finder] Folder path not found for movie_id: '%s', actress: '%s', path: '%s'\n", req.MovieID, req.Actress, req.Path)
+		fmt.Printf("[FINDER] Folder path not found for movie_id: '%s', actress: '%s', path: '%s'\n", req.MovieID, req.Actress, req.Path)
 		writeJSONError(w, "folder path not found for movie", http.StatusNotFound)
 		return
 	}
 
 	// Verify target exists
 	if fi, err := os.Stat(targetPath); err != nil {
-		fmt.Printf("⚠️  [Finder] Path not found on filesystem: %s (%v)\n", targetPath, err)
+		fmt.Printf("[FINDER] Path not found on filesystem: %s (%v)\n", targetPath, err)
 		writeJSONError(w, fmt.Sprintf("path not found: %v", err), http.StatusNotFound)
 		return
 	} else if !fi.IsDir() {
@@ -1303,12 +1331,12 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := OpenFolder(targetPath); err != nil {
-		fmt.Printf("❌ [Finder] Error opening folder: %v\n", err)
+		fmt.Printf("[FINDER] Error opening folder: %v\n", err)
 		writeJSONError(w, fmt.Sprintf("failed to open folder: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Printf("📂 [Finder] Successfully opened in Finder: %s\n", targetPath)
+	fmt.Printf("[FINDER] Successfully opened in Finder: %s\n", targetPath)
 	writeJSON(w, map[string]any{"success": true, "path": targetPath})
 }
 

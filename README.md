@@ -8,15 +8,24 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 
 ### 🌐 1. Modern Web UI Studio (`r19dev web`)
 - **Embedded Single Binary**: Built using Go's `embed.FS` — zero external runtime dependencies, zero Node.js required. Runs natively on macOS, Linux, or NAS servers.
+- **⚡ Tier-1 Sub-Millisecond Offline Scraper (`r18_dump.db`)**:
+  - Automatically queries a local SQLite database dump parsed from official R18.dev weekly dumps (`https://r18.dev/dumps`).
+  - **1,902,762 movies**, **101,906 actresses**, **2,480,384 video-actress links**, and **540,500 DeepL English translations** indexed locally.
+  - Queries return in **`< 1ms` (0.00s)** completely offline, eliminating Cloudflare HTTP 429 rate limits and IP blocks.
+  - Graceful fallback: live HTTP queries are only executed for brand-new releases not yet present in the dump.
+- **🗺️ Reorganized 3-Tier Navigation (User Journey Architecture)**:
+  - **📥 Incoming** (Tab 1): Ingest new downloads, scan, rename, and batch organize.
+  - **👤 Actresses** (Tab 2): Track followed performers, view solo collection completion %, and browse missing backlog.
+  - **🎬 Library** (Tab 3): Standalone catalog for browsing all ready-to-watch titles on NAS with multi-criteria sorting (Date, Rating, Studio, Title) and status filters (All, In Library, Missing, Watched, Favorites).
 - **🔌 100% Offline-Ready UI (Zero External CDN Dependencies)**:
   - All web fonts and icons are embedded locally in `pkg/web/static/fonts/` (`inter-variable.woff2`, `jetbrains-mono-latin.woff2`, `material-symbols-outlined.woff2`).
   - Works seamlessly on completely air-gapped local networks or offline NAS environments without broken icons or external Google Fonts CDN reliance.
 - **🧩 Native ES Modules Architecture (`pkg/web/static/js/`)**:
-  - Frontend codebase refactored from a monolithic script into 8 modular native browser ES modules (`state.js`, `api.js`, `modal.js`, `scanner.js`, `organizer.js`, `history.js`, `actress.js`, `app.js`).
+  - Frontend codebase refactored from a monolithic script into 9 modular native browser ES modules (`state.js`, `api.js`, `modal.js`, `scanner.js`, `organizer.js`, `history.js`, `actress.js`, `graph.js`, `app.js`).
   - Zero build step, zero npm/Webpack/Vite tooling needed — runs natively in all modern browsers.
 - **🔍 Universal Search in Sticky Top Header**:
   - Centered glassmorphism search input (`#universal-search-input`) pinned to the fixed navbar.
-  - **Context-Aware Routing**: Automatically searches library files & SKU in Library tab, followed actresses in Directory view, and actress filmography in the Bento stage view.
+  - **Context-Aware Routing**: Automatically searches incoming files & SKU in Incoming tab, followed actresses in Directory view, and movie catalog in Library view.
   - **Keyboard Shortcuts**: Instant focus via **`⌘K`** (macOS) / **`Ctrl+K`** (Windows/Linux) or **`/`** (when browsing); **`Esc`** clears or blurs. Fully synchronized two-way with in-page search bars.
 - **🚀 Sticky Breadcrumb & Floating Quick Navigation**:
   - Sticky Breadcrumb on top navbar (`[← All Actresses] / {Actress Name}`) accessible from any scroll depth.
@@ -30,10 +39,10 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
 
 ### ⭐ 2. Actress Hub: 2-Column Bento Profile & Filmography Stage
-- **🗂️ Followed & Discovered Actresses Directory**:
-  - **Sub-Tabs (`Followed` vs. `Discovered in NAS`)**:
+- **🗂️ Followed & Unfollowed Actresses Directory**:
+  - **Sub-Tabs (`Followed` vs. `Unfollowed`)**:
     - **Followed Actresses**: Solo filmographies, completion metrics, and latest release status for your tracked performers.
-    - **Discovered in NAS Library**: Automatic discovery of performers found in your local video files who are not yet tracked, with 1-click Quick Follow.
+    - **Unfollowed Actresses**: Discovered performers found in local video files who are not yet tracked, with 1-click Follow.
   - **Balanced 2-Element Card Layout**:
     - **Left**: High-contrast status pill `[ ✓ SNOS-140 ]` (emerald green if downloaded in NAS, rose/amber with download icon if missing).
     - **Right**: Monospace release date `2026-03-24` (or `Recent`). Clean, compact, and immune to line breaks or text clipping.
@@ -179,21 +188,28 @@ make build
 ## 🛠️ Architecture & Tech Stack
  
 - **Language**: Go 1.22+
-- **Database**: Pure Go SQLite (`modernc.org/sqlite` - zero CGO required) with WAL mode & busy timeout
-  - **File Name**: `r19dev.db`
-  - **Local Path**: `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) — safe from macOS cache-cleaner purges.
-  - **Auto-Migration**: Automatically migrates legacy database from `~/Library/Caches/r19dev/r19dev.db` seamlessly on boot.
-  - **NAS Auto-Backup Snapshot**: Automatically creates a crash-consistent, defragmented single-file backup (`.r19dev_backup.db`) on the target NAS organized share using `VACUUM INTO` on organize completion.
-  - **Disaster Recovery**: Automatically restores state from NAS `.r19dev_backup.db` if starting on a new machine.
-  - **UI / API Backup Download**: Dedicated `/api/db/backup?download=1` endpoint and `[💾 Backup DB]` button in the Web UI History Modal for instant one-click downloads.
-  - **Git Status**: Ignored via `.gitignore` (`*.db`, `*.db-shm`, `*.db-wal`), strictly local, **never committed to Git**.
+- **Databases & Offline Metadata**:
+  - **App Database (`r19dev.db`)**: Pure Go SQLite (`modernc.org/sqlite` - zero CGO required) with WAL mode & busy timeout. Stores user states, watched/favorite flags, ratings, tracked actresses, and library cache.
+    - **Local Path**: `~/Library/Application Support/r19dev/r19dev.db` (macOS) or `~/.config/r19dev/r19dev.db` (Linux) — safe from macOS cache-cleaner purges.
+    - **Auto-Migration**: Automatically migrates legacy database from `~/Library/Caches/r19dev/r19dev.db` seamlessly on boot.
+    - **NAS Auto-Backup Snapshot**: Automatically creates a crash-consistent, defragmented single-file backup (`.r19dev_backup.db`) on the target NAS organized share using `VACUUM INTO` on organize completion.
+    - **Disaster Recovery**: Automatically restores state from NAS `.r19dev_backup.db` if starting on a new machine.
+    - **UI / API Backup Download**: Dedicated `/api/db/backup?download=1` endpoint and `[💾 Backup DB]` button in the Web UI History Modal for instant one-click downloads.
+  - **Tier-1 Offline Dump Store (`r18_dump.db`)**:
+    - **Local Path**: `~/Library/Application Support/r19dev/r18_dump.db` (~471 MB).
+    - **Coverage**: 1.9M+ movies, 101k+ actresses, 2.48M+ video-actress links, and 540k+ DeepL translations.
+    - **Read-Only Concurrency**: Opened with `mode=ro&query_only=true` for lightning-fast concurrent sub-millisecond reads without locking.
+  - **Git Safety**: All SQLite databases, write-ahead logs, and dump archives (`*.db`, `*.db-shm`, `*.db-wal`, `*.sql`, `*.sql.gz`, `dumps/`) are strictly ignored by `.gitignore` and kept outside repository source trees — **never committed to Git**.
+- **Metadata Resolution Hierarchy**:
+  - **Tier 0**: Memory / Local JSON file cache (`~/.cache/r19dev/metadata/`).
+  - **Tier 1**: Offline SQLite Dump Store (`r18_dump.db`) — **`< 1ms`** query speed, zero network dependency.
+  - **Tier 2**: Live R18.dev REST API (`https://r18.dev`) — throttled with exponential backoff, invoked only for new titles.
 - **TUI Framework**: Charm Bubble Tea (`tea.Model`), Lip Gloss styling
 - **Web Frontend**:
   - **Architecture**: Native Browser ES Modules (`pkg/web/static/js/`) with zero Node.js/npm dependencies and zero build step.
   - **Styling**: Vanilla CSS Design System with CSS custom properties (`style.css`), dark mode glassmorphism, responsive grid.
   - **Offline Fonts & Icons**: 100% offline-ready with local bundled `.woff2` files (`/fonts/inter-variable.woff2`, `/fonts/jetbrains-mono-latin.woff2`, `/fonts/material-symbols-outlined.woff2`). Zero CDN dependencies.
   - **Distribution**: Single-binary embedding via Go `embed.FS`.
-- **Metadata Source**: R18.dev REST API with persistent LRU disk caching (`~/.cache/r19dev` or `~/Library/Caches/r19dev`)
 - **Organize Pipeline**: Atomic file rename with cross-filesystem copy fallback, sanitized filenames, XML generator, and HTTP client asset downloader.
 - **Audit Logging**: SQLite-backed `operation_history` table with 30-day / 100-run auto-retention policy.
 

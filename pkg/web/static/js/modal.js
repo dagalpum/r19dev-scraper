@@ -3,10 +3,11 @@
  * Native ES Module
  */
 
-import { state, elements, escapeHtml, getHighResScreenshotUrl } from './state.js';
-import { scrapeMovie } from './api.js';
+import { state, elements, escapeHtml, getHighResScreenshotUrl, getMovieLocationInfo } from './state.js';
+import { scrapeMovie, fetchMovie } from './api.js';
 import { closeHistoryModal } from './history.js';
 import { closeActressProfileDrawer } from './actress.js';
+import { closeNetworkGraph } from './graph.js';
 
 export function setupModals() {
   elements.btnCloseModal?.addEventListener('click', closeModal);
@@ -23,6 +24,8 @@ export function setupModals() {
     if (e.key === 'Escape') {
       if (!elements.lightbox?.classList.contains('hidden')) {
         closeLightbox();
+      } else if (!document.getElementById('modal-network-graph')?.classList.contains('hidden')) {
+        closeNetworkGraph();
       } else if (!elements.drawerActressProfile?.classList.contains('hidden')) {
         closeActressProfileDrawer();
       } else if (!elements.modalMovie?.classList.contains('hidden')) {
@@ -40,8 +43,19 @@ export async function openMovieDetail(movie) {
 
   let meta = state.metadata[movie.id];
   if (!meta && movie.id) {
-    elements.modalContent.innerHTML = '<div style="text-align: center; padding: 4rem;"><span style="font-size: 2rem;">⚡</span><br><br>Fetching metadata from R18.dev...</div>';
-    meta = await scrapeMovie(movie.id);
+    // 1. Check local SQLite first (<2ms) - completely silent, no toast, no network delay!
+    meta = await fetchMovie(movie.id);
+  }
+
+  if (!meta && movie.id) {
+    // 2. Only if truly not in local DB, fetch from scraper silently with in-modal loading
+    elements.modalContent.innerHTML = `
+      <div style="text-align: center; padding: 4rem;">
+        <span class="material-symbols-outlined spin" style="font-size: 2.5rem; color: var(--primary);">progress_activity</span>
+        <div style="margin-top: 1rem; color: var(--text-muted); font-size: 0.95rem;">Fetching metadata from R18.dev...</div>
+      </div>
+    `;
+    meta = await scrapeMovie(movie.id, { silent: true });
   }
 
   renderModalContent(movie, meta);
@@ -63,6 +77,7 @@ export function renderModalContent(movie, meta) {
   const id = movie.id || 'UNMATCHED';
   const uState = state.userStates[id] || {};
   const isOrganized = Boolean(state.organizedStatus[id]);
+  const loc = getMovieLocationInfo(id);
   const coverUrl = meta?.cover_url || meta?.poster_url || (id !== 'UNMATCHED' ? '/api/images/' + id : '');
 
   // Multi-part files list
@@ -70,7 +85,7 @@ export function renderModalContent(movie, meta) {
   if (movie.files && movie.files.length > 0) {
     multipartHtml = `
       <div class="multipart-box">
-        <h4>📦 Video Files & Parts (${movie.files.length})</h4>
+        <h4><span class="material-symbols-outlined icon">inventory_2</span> Video Files & Parts (${movie.files.length})</h4>
         ${movie.files.map((f, idx) => `
           <div class="multipart-item">
             <span><strong>Part ${idx + 1}:</strong> ${escapeHtml(f.name)}</span>
@@ -93,7 +108,7 @@ export function renderModalContent(movie, meta) {
           <div style="font-weight: 700; font-size: 0.95rem; color: #fff;">${escapeHtml(act.name)}</div>
           <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.6rem;">${escapeHtml(act.ja_name || '')}</div>
           <button class="btn btn-secondary btn-sm" onclick="window.app.toggleFollowActress('${escapeHtml(act.name)}')">
-            ${isFollowed ? '⭐ Following' : '+ Follow'}
+            ${isFollowed ? '<span class="material-symbols-outlined icon">star</span> Following' : '<span class="material-symbols-outlined icon">person_add</span> Follow'}
           </button>
         </div>
       `;
@@ -165,24 +180,52 @@ export function renderModalContent(movie, meta) {
         <h2 id="modal-movie-title">${escapeHtml(meta?.title || movie.files[0]?.name || 'No title')}</h2>
         <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem;">
           <span class="card-id" style="font-size: 0.95rem; font-weight: 700;">${escapeHtml(id)}</span>
-          <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-radius: 6px;" onclick="window.app.copyMovieId('${escapeHtml(id)}', event)" title="Copy ${escapeHtml(id)}">📋 Copy ID</button>
+          <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-radius: 6px;" onclick="window.app.copyMovieId('${escapeHtml(id)}', event)" title="Copy ${escapeHtml(id)}"><span class="material-symbols-outlined icon">content_copy</span> Copy ID</button>
         </div>
         <div class="ja-title">${escapeHtml(meta?.original_title || '')}</div>
 
-        ${isOrganized ? `
-          <div class="modal-folder-banner" role="region" aria-label="Organized Destination Folder">
-            <div class="folder-banner-info">
-              <span class="folder-banner-icon">📁</span>
-              <div class="folder-banner-text">
-                <span class="folder-banner-label">Jellyfin Destination Folder:</span>
-                <code class="folder-banner-path" title="${escapeHtml(state.organizedFolders[id] || '')}">${escapeHtml(state.organizedFolders[id] || 'Organized in Library')}</code>
-              </div>
+        <!-- Location Status Indicator Card -->
+        <div class="modal-location-card ${loc.type === 'library' ? 'in-library' : (loc.type === 'external' ? 'outside-library' : 'in-staging')}" role="region" aria-label="Media Storage Location">
+          <div class="location-main">
+            <div class="location-header-row">
+              <span class="location-chip ${loc.badgeClass}">
+                <span class="material-symbols-outlined icon">${loc.icon}</span>
+                <span>${escapeHtml(loc.label)}</span>
+              </span>
+              <span class="location-title-text">${escapeHtml(loc.titleText)}</span>
             </div>
-            <button class="btn btn-secondary btn-sm btn-open-folder" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(state.organizedFolders[id] || '')}" onclick="window.app.openFolderEl(this, event)">
-              <i data-lucide="external-link"></i> Open in Finder
-            </button>
+            ${loc.folderPath ? `
+              <div class="location-path-row">
+                <span class="material-symbols-outlined path-icon">folder</span>
+                <code class="location-path-code" title="${escapeHtml(loc.folderPath)}">${escapeHtml(loc.folderPath)}</code>
+              </div>
+            ` : `
+              <div class="location-sub-text">${escapeHtml(loc.subText)}</div>
+            `}
           </div>
-        ` : ''}
+
+          <div class="location-actions">
+            ${loc.type === 'library' ? `
+              <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(loc.folderPath)}" onclick="window.app.openFolderEl(this, event)">
+                <span class="material-symbols-outlined icon">folder_open</span> Open in Finder
+              </button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Re-run Jellyfin organize">
+                <span class="material-symbols-outlined icon">sync</span> Re-organize
+              </button>
+            ` : (loc.type === 'external' ? `
+              <button class="btn btn-primary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Move and organize into Library destination">
+                <span class="material-symbols-outlined icon">drive_file_move</span> Move to Library
+              </button>
+              <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(loc.folderPath)}" onclick="window.app.openFolderEl(this, event)">
+                <span class="material-symbols-outlined icon">folder_open</span> Open in Finder
+              </button>
+            ` : `
+              <button class="btn btn-primary btn-sm" onclick="window.app.organizeSingle('${id}')">
+                <span class="material-symbols-outlined icon">folder_zip</span> Organize for Jellyfin
+              </button>
+            `)}
+          </div>
+        </div>
 
         <!-- Interactive Status Controls -->
         <div class="modal-controls">
@@ -193,31 +236,18 @@ export function renderModalContent(movie, meta) {
                 <button class="star-btn ${uState.user_rating >= num ? 'active' : ''}"
                         role="radio" aria-checked="${uState.user_rating >= num ? 'true' : 'false'}"
                         aria-label="Rate ${num} stars"
-                        onclick="window.app.setRating('${id}', ${num})">⭐</button>
+                        onclick="window.app.setRating('${id}', ${num})"><span class="material-symbols-outlined icon">star</span></button>
               `).join('')}
             </div>
           </div>
 
           <button class="btn btn-secondary ${uState.is_watched ? 'btn-primary' : ''}" onclick="window.app.toggleWatched('${id}')">
-            ${uState.is_watched ? '👁️ Watched' : '👓 Mark Watched'}
+            ${uState.is_watched ? '<span class="material-symbols-outlined icon">visibility</span> Watched' : '<span class="material-symbols-outlined icon">visibility_off</span> Mark Watched'}
           </button>
 
           <button class="btn btn-secondary ${uState.is_favorite ? 'btn-accent' : ''}" onclick="window.app.toggleFavorite('${id}')">
-            ${uState.is_favorite ? '❤️ Favorited' : '🤍 Favorite'}
+            ${uState.is_favorite ? '<span class="material-symbols-outlined icon">favorite</span> Favorited' : '<span class="material-symbols-outlined icon">favorite_border</span> Favorite'}
           </button>
-
-          ${isOrganized ? `
-            <button class="btn btn-secondary" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(state.organizedFolders[id] || '')}" onclick="window.app.openFolderEl(this, event)">
-              📂 Open Folder
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Re-run Jellyfin organize">
-              🔄 Re-organize
-            </button>
-          ` : `
-            <button class="btn btn-primary" onclick="window.app.organizeSingle('${id}')">
-              📂 Organize for Jellyfin
-            </button>
-          `}
         </div>
 
         <!-- Multi-Part Files -->
@@ -249,14 +279,14 @@ export function renderModalContent(movie, meta) {
       </div>
 
       ${actressGrid ? `
-        <div class="gallery-section-title">🎭 Featured Cast</div>
+        <div class="gallery-section-title"><span class="material-symbols-outlined icon">person</span> Featured Cast</div>
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
           ${actressGrid}
         </div>
       ` : ''}
 
       ${screenshotsGrid ? `
-        <div class="gallery-section-title">📸 Sample Screenshots (${meta.sample_screenshots.length})</div>
+        <div class="gallery-section-title"><span class="material-symbols-outlined icon">photo_library</span> Sample Screenshots (${meta.sample_screenshots.length})</div>
         <div class="modal-gallery-grid">
           ${screenshotsGrid}
         </div>

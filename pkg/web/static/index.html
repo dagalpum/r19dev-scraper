@@ -26,18 +26,19 @@
 
       <nav class="nav-tabs" role="tablist" aria-label="Main Navigation">
         <button id="tab-btn-library" class="nav-tab active" data-tab="library" role="tab" aria-selected="true" aria-controls="tab-library" onclick="window.app.switchTab('library')">
-          <span class="material-symbols-outlined tab-icon" aria-hidden="true">video_library</span>
-          <span>Library</span>
-          <span class="badge-count" id="count-library" aria-label="Total files">0</span>
+          <span class="material-symbols-outlined tab-icon" aria-hidden="true">inbox</span>
+          <span>Incoming</span>
+          <span class="badge-count" id="count-library" aria-label="Total incoming files">0</span>
         </button>
         <button id="tab-btn-actresses" class="nav-tab" data-tab="actresses" role="tab" aria-selected="false" aria-controls="tab-actresses" onclick="window.app.switchTab('actresses')">
-          <span class="material-symbols-outlined tab-icon" aria-hidden="true">star</span>
+          <span class="material-symbols-outlined tab-icon" aria-hidden="true">person</span>
           <span>Actresses</span>
           <span class="badge-count" id="count-actresses" aria-label="Followed actresses count">0</span>
         </button>
-        <button id="tab-btn-organizer" class="nav-tab" data-tab="organizer" role="tab" aria-selected="false" aria-controls="tab-organizer" onclick="window.app.switchTab('organizer')">
-          <span class="material-symbols-outlined tab-icon" aria-hidden="true">folder_managed</span>
-          <span>NAS Organizer</span>
+        <button id="tab-btn-catalog" class="nav-tab" data-tab="catalog" role="tab" aria-selected="false" aria-controls="tab-catalog" onclick="window.app.switchTab('catalog')">
+          <span class="material-symbols-outlined tab-icon" aria-hidden="true">movie</span>
+          <span>Library</span>
+          <span class="badge-count" id="count-catalog" aria-label="Library movies count">0</span>
         </button>
       </nav>
 
@@ -52,22 +53,26 @@
           <span class="nav-breadcrumb-current" id="nav-breadcrumb-actress-name">JULIA</span>
         </div>
 
-        <!-- Universal Search Input with Cmd+K -->
+        <!-- Universal Search Input with Cmd+K and Context Scope -->
         <div class="nav-search-box" id="nav-search-box">
+          <span class="nav-search-scope" id="nav-search-scope">Incoming</span>
           <span class="material-symbols-outlined nav-search-icon" aria-hidden="true">search</span>
-          <input type="text" id="universal-search-input" class="nav-search-input" placeholder="Search library, actresses, SKU... (⌘K)" autocomplete="off" spellcheck="false">
+          <input type="text" id="universal-search-input" class="nav-search-input" placeholder="Search incoming videos, SKU, actress... (⌘K)" autocomplete="off" spellcheck="false">
           <kbd class="nav-search-kbd" id="nav-search-kbd">⌘K</kbd>
-          <button id="universal-search-clear" class="btn-clear-search hidden" title="Clear search (Esc)" aria-label="Clear search">✕</button>
+          <button id="universal-search-clear" class="btn-clear-search hidden" title="Clear search (Esc)" aria-label="Clear search"><span class="material-symbols-outlined icon">close</span></button>
         </div>
       </div>
 
       <div class="nav-actions">
         <div class="dir-badge" id="nav-active-dir" title="Current Directory" tabindex="0" aria-label="Current Directory">
-          <span class="dir-icon" aria-hidden="true">📂</span>
+          <span class="material-symbols-outlined dir-icon" aria-hidden="true">folder</span>
           <span class="dir-name" id="label-active-dir">/</span>
         </div>
+        <button id="btn-nav-organize" class="btn btn-secondary btn-icon" title="Open NAS Organizer Drawer" aria-label="Open NAS Organizer Drawer" onclick="window.app.openOrganizerDrawer()">
+          <span class="material-symbols-outlined icon" aria-hidden="true">folder_managed</span> Organize
+        </button>
         <button id="btn-rescan" class="btn btn-secondary btn-icon" title="Rescan Directory" aria-label="Rescan Directory">
-          <span class="icon" aria-hidden="true">🔄</span> Rescan
+          <span class="material-symbols-outlined icon" aria-hidden="true">sync</span> Rescan
         </button>
       </div>
     </header>
@@ -81,7 +86,7 @@
         <!-- Live Scan Progress Bar -->
         <div id="scan-progress-box" class="progress-box hidden" role="region" aria-label="Scan Progress">
           <div class="progress-info">
-            <span id="scan-progress-label" aria-live="polite">🔍 Scanning directory for videos...</span>
+            <span id="scan-progress-label" aria-live="polite"><span class="material-symbols-outlined icon" style="font-size: 1.05rem; vertical-align: middle;">search</span> Scanning directory for videos...</span>
             <span id="scan-progress-pct" class="progress-pct">0%</span>
           </div>
           <div class="progress-track" role="progressbar" id="scan-progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Scan Progress Bar">
@@ -93,14 +98,14 @@
         <div id="op-progress-box" class="op-progress-box hidden" role="region" aria-label="Operation Progress" aria-live="polite">
           <div class="op-progress-header">
             <div class="op-title-row">
-              <span class="op-icon" id="op-icon">⚡</span>
-              <strong class="op-title" id="op-title">กำลังประมวลผล...</strong>
+              <span class="op-icon" id="op-icon"><span class="material-symbols-outlined icon">bolt</span></span>
+              <strong class="op-title" id="op-title">Processing...</strong>
               <span class="op-badge" id="op-counter">1 / 10</span>
             </div>
             <span class="op-pct" id="op-pct">0%</span>
           </div>
           <div class="op-detail-row">
-            <span class="op-message" id="op-message">กำลังเริ่มการทำงาน...</span>
+            <span class="op-message" id="op-message">Initializing operation...</span>
           </div>
           <div class="progress-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
             <div class="progress-fill" id="op-progress-fill" style="width: 0%"></div>
@@ -108,44 +113,36 @@
         </div>
 
         <!-- Unified Compact Command Panel -->
-        <div class="library-command-panel" role="toolbar" aria-label="Library Command Controls">
-          <!-- Row 1: Search, Sort, Density, Actions -->
+        <div class="library-command-panel" role="toolbar" aria-label="Incoming Command Controls">
+          <!-- Row 1: Sort, Density Toggle, Actions -->
           <div class="command-row-primary">
-            <div class="search-box">
-              <label for="search-input" class="sr-only">Search library</label>
-              <span class="search-icon" aria-hidden="true">🔍</span>
-              <input type="text" id="search-input" placeholder="Search by JAV ID, title, actress, studio..." autocomplete="off">
-              <button id="search-clear" class="btn-clear hidden" aria-label="Clear search" onclick="window.app.clearSearch()">×</button>
-            </div>
-
             <div class="sort-box">
-              <label for="sort-by" class="sr-only">Sort by</label>
+              <label for="sort-by" class="sort-label">Sort:</label>
               <select id="sort-by" class="select-dropdown" aria-label="Sort by">
-                <option value="date-desc" selected>📅 Release Date (Newest)</option>
-                <option value="id-asc">🔤 JAV ID (A-Z)</option>
-                <option value="id-desc">🔤 JAV ID (Z-A)</option>
-                <option value="name-asc">📄 Filename (A-Z)</option>
-                <option value="size-desc">💾 File Size (Large-Small)</option>
+                <option value="date-desc" selected>Release Date (Newest)</option>
+                <option value="id-asc">JAV ID (A-Z)</option>
+                <option value="id-desc">JAV ID (Z-A)</option>
+                <option value="name-asc">Filename (A-Z)</option>
+                <option value="size-desc">File Size (Large-Small)</option>
               </select>
             </div>
 
-            <!-- Cards Per Row Density Selector -->
-            <div class="density-group" role="group" aria-label="Cards per row view density">
-              <span class="density-label" id="density-label">Cards:</span>
-              <button class="btn-density" data-cols="1" title="1 card per row (Showcase cover)" aria-label="1 card per row" onclick="window.app.setDensity(this.dataset.cols)">1</button>
-              <button class="btn-density" data-cols="2" title="2 cards per row (Large cover)" aria-label="2 cards per row" onclick="window.app.setDensity(this.dataset.cols)">2</button>
-              <button class="btn-density" data-cols="3" title="3 cards per row" aria-label="3 cards per row" onclick="window.app.setDensity(this.dataset.cols)">3</button>
-              <button class="btn-density" data-cols="4" title="4 cards per row" aria-label="4 cards per row" onclick="window.app.setDensity(this.dataset.cols)">4</button>
-              <button class="btn-density" data-cols="5" title="5 cards per row" aria-label="5 cards per row" onclick="window.app.setDensity(this.dataset.cols)">5</button>
-              <button class="btn-density active" data-cols="auto" title="Auto responsive" aria-label="Auto responsive" onclick="window.app.setDensity(this.dataset.cols)">Auto</button>
+            <!-- View Density 2-Mode Segmented Toggle -->
+            <div class="density-group" role="group" aria-label="Card view density">
+              <button class="btn-density-toggle active" data-density="auto" title="Standard Grid" aria-label="Standard Grid" onclick="window.app.setDensity('auto')">
+                <span class="material-symbols-outlined icon" aria-hidden="true">grid_view</span>
+              </button>
+              <button class="btn-density-toggle" data-density="compact" title="Compact Grid" aria-label="Compact Grid" onclick="window.app.setDensity('compact')">
+                <span class="material-symbols-outlined icon" aria-hidden="true">view_compact</span>
+              </button>
             </div>
 
             <div class="action-buttons">
               <button id="btn-scrape-all" class="btn btn-primary btn-sm" aria-label="Scrape all matched movies" onclick="window.app.scrapeAll()">
-                <span class="icon" aria-hidden="true">⚡</span> Scrape All
+                <span class="material-symbols-outlined icon" aria-hidden="true">bolt</span> Scrape All
               </button>
-              <button id="btn-organize-all" class="btn btn-accent btn-sm" aria-label="Batch organize to NAS" onclick="window.app.switchTab('organizer')">
-                <span class="icon" aria-hidden="true">📂</span> Batch Organize
+              <button id="btn-organize-all" class="btn btn-accent btn-sm" aria-label="Open NAS Organizer Drawer" onclick="window.app.openOrganizerDrawer()">
+                <span class="material-symbols-outlined icon" aria-hidden="true">folder_managed</span> Batch Organize
               </button>
             </div>
           </div>
@@ -154,50 +151,52 @@
           <div class="command-row-secondary">
             <div class="filters-wrap">
               <div class="filter-item">
-                <label for="filter-actress" class="filter-label">🎭 Actress</label>
+                <label for="filter-organized" class="filter-label">Storage</label>
+                <select id="filter-organized" class="select-dropdown select-filter">
+                  <option value="all">All Storage</option>
+                  <option value="staging">In Staging (Pending)</option>
+                  <option value="library">In Library (/organized)</option>
+                  <option value="archive">In Archive / External</option>
+                  <option value="organized">Any Organized</option>
+                </select>
+              </div>
+
+              <div class="filter-item">
+                <label for="filter-scraped" class="filter-label">Metadata</label>
+                <select id="filter-scraped" class="select-dropdown select-filter">
+                  <option value="all">All Metadata</option>
+                  <option value="scraped">Scraped</option>
+                  <option value="unscraped">Pending</option>
+                  <option value="unmatched">Unmatched</option>
+                </select>
+              </div>
+
+              <div class="filter-item">
+                <label for="filter-actress" class="filter-label">Actress</label>
                 <select id="filter-actress" class="select-dropdown select-filter">
                   <option value="">All Actresses</option>
                 </select>
               </div>
 
               <div class="filter-item">
-                <label for="filter-organized" class="filter-label">📁 Library</label>
-                <select id="filter-organized" class="select-dropdown select-filter">
-                  <option value="all">All Library</option>
-                  <option value="organized">📂 In Jellyfin</option>
-                  <option value="staging">📥 Staging</option>
-                </select>
-              </div>
-
-              <div class="filter-item">
-                <label for="filter-scraped" class="filter-label">⚡ Metadata</label>
-                <select id="filter-scraped" class="select-dropdown select-filter">
-                  <option value="all">All Scrape Status</option>
-                  <option value="scraped">🟢 Scraped</option>
-                  <option value="unscraped">🟡 Pending</option>
-                  <option value="unmatched">⚪ Unmatched</option>
-                </select>
-              </div>
-
-              <div class="filter-item">
-                <label for="filter-genre" class="filter-label">🏷️ Genre</label>
+                <label for="filter-genre" class="filter-label">Genre</label>
                 <select id="filter-genre" class="select-dropdown select-filter">
                   <option value="">All Genres</option>
                 </select>
               </div>
 
               <div class="filter-item">
-                <label for="filter-watch" class="filter-label">👁️ Watched</label>
+                <label for="filter-watch" class="filter-label">Watch</label>
                 <select id="filter-watch" class="select-dropdown select-filter">
                   <option value="all">All Watch Status</option>
-                  <option value="watched">👁️ Watched</option>
-                  <option value="unwatched">👓 Unwatched</option>
-                  <option value="favorites">❤️ Favorites</option>
+                  <option value="watched">Watched</option>
+                  <option value="unwatched">Unwatched</option>
+                  <option value="favorites">Favorites</option>
                 </select>
               </div>
 
               <button id="btn-reset-filters" class="btn btn-secondary btn-sm hidden" title="Reset all filters to default" onclick="window.app.resetFilters()">
-                ✕ Reset
+                <span class="material-symbols-outlined icon">close</span> Reset
               </button>
             </div>
 
@@ -218,7 +217,7 @@
 
         <!-- Empty State -->
         <div id="library-empty" class="empty-state hidden">
-          <div class="empty-icon" aria-hidden="true">📁</div>
+          <div class="empty-icon" aria-hidden="true"><span class="material-symbols-outlined icon" style="font-size: 3.5rem;">folder</span></div>
           <h3>No videos found</h3>
           <p>Scan a directory containing video files (.mp4, .mkv, .avi) to get started.</p>
         </div>
@@ -233,43 +232,38 @@
             <span class="actress-hub-subtitle" id="actress-hub-subtitle">Solo filmographies & Jellyfin collection progress</span>
           </div>
 
-          <!-- ACTRESS SUBTABS: FOLLOWED vs DISCOVERED IN NAS -->
+          <!-- ACTRESS SUBTABS: FOLLOWED, UNFOLLOWED -->
           <div class="actress-subtabs" id="actress-subtabs" role="tablist" aria-label="Actress Categories">
             <button id="subtab-btn-followed" class="actress-subtab-btn active" role="tab" aria-selected="true" onclick="window.app.switchActressSubTab('followed')">
               <span class="material-symbols-outlined icon">star</span>
               <span>Followed</span>
               <span class="badge-subcount" id="count-subtab-followed">0</span>
             </button>
-            <button id="subtab-btn-discovered" class="actress-subtab-btn" role="tab" aria-selected="false" onclick="window.app.switchActressSubTab('discovered')">
+            <button id="subtab-btn-unfollowed" class="actress-subtab-btn" role="tab" aria-selected="false" onclick="window.app.switchActressSubTab('unfollowed')">
               <span class="material-symbols-outlined icon">folder</span>
-              <span>Discovered in NAS</span>
-              <span class="badge-subcount" id="count-subtab-discovered">0</span>
+              <span>Unfollowed</span>
+              <span class="badge-subcount" id="count-subtab-unfollowed">0</span>
             </button>
           </div>
 
           <div class="actress-toolbar-controls">
-            <div class="actress-search-box">
-              <span class="material-symbols-outlined search-icon" aria-hidden="true">search</span>
-              <input type="text" id="actress-search-input" placeholder="Search actresses..." autocomplete="off" oninput="window.app.searchActresses(this.value)" />
-            </div>
-
             <div class="actress-sort-box" id="actress-sort-box">
               <select id="actress-sort-by" class="select-dropdown" aria-label="Sort actresses by" onchange="window.app.setActressSort(this.value)">
-                <option value="pct-desc" selected>% Completed (High → Low)</option>
+                <option value="latest-desc" selected>Latest Release (Newest First)</option>
+                <option value="pct-desc">% Completed (High → Low)</option>
+                <option value="lib-desc">Most in Library (Owned Titles)</option>
+                <option value="size-desc">Storage Used (Largest First)</option>
                 <option value="completed-first">100% Completed Only</option>
                 <option value="in-progress">In Progress Only</option>
                 <option value="missing-desc">Most Missing</option>
+                <option value="total-desc">Total Catalog Works</option>
                 <option value="name-asc">Name (A → Z)</option>
-                <option value="total-desc">Total Solo Works</option>
               </select>
             </div>
 
             <div class="actress-view-actions">
-              <button id="btn-hub-refresh" class="btn btn-secondary btn-sm" title="Refresh all actress releases" onclick="window.app.refreshAllActresses(this)">
-                <span class="material-symbols-outlined icon">sync</span> Refresh
-              </button>
-              <button id="btn-hub-add" class="btn btn-primary btn-sm" title="Follow new actress" onclick="window.app.promptAddActress()">
-                <span class="material-symbols-outlined icon">person_add</span> Follow
+              <button id="btn-hub-refresh" class="btn btn-secondary btn-sm" title="Check for new releases on R18.dev" onclick="window.app.refreshAllActresses(this)">
+                <span class="material-symbols-outlined icon">sync</span> Check Releases
               </button>
             </div>
           </div>
@@ -289,93 +283,117 @@
         </div>
       </section>
 
-      <!-- TAB 3: NAS ORGANIZER -->
-      <section id="tab-organizer" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-organizer">
-        <div class="organizer-card">
-          <h2>📂 NAS Jellyfin Directory Organizer</h2>
-          <p class="organizer-desc">
-            Organizes matched videos into the official Jellyfin structure:
-            <code>{Destination}/{Actress}/{JAV-ID} {Title}/</code>
-            with full metadata, high-res posters, fanart, and sample screenshots.
-          </p>
-
-          <form id="form-organizer" class="organizer-form" onsubmit="event.preventDefault()">
-            <div class="form-group">
-              <label for="org-src-dir">Source Directory (Current Videos)</label>
-              <input type="text" id="org-src-dir" class="form-input" placeholder="/Volumes/home/BT/2026" required />
-            </div>
-
-            <div class="form-group">
-              <label for="org-dest-root">Jellyfin Destination Root (NAS Library)</label>
-              <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/BT/organized" required />
-            </div>
-
-            <div class="form-options">
-              <label class="checkbox-label" for="org-dry-run">
-                <input type="checkbox" id="org-dry-run" checked />
-                <span><strong>Dry Run Mode:</strong> Preview folder actions safely without moving files</span>
-              </label>
-            </div>
-
-            <div class="form-actions">
-              <button type="button" id="btn-start-organize" class="btn btn-primary btn-lg" onclick="window.app.startOrganize()">
-                <span class="icon" aria-hidden="true">🚀</span> Start Organize
-              </button>
-            </div>
-          </form>
-
-          <!-- Live Organize Progress Bar -->
-          <div id="org-progress-box" class="progress-box hidden" role="region" aria-label="Organize Progress">
-            <div class="progress-info">
-              <span id="org-progress-label" aria-live="polite">Organizing movies...</span>
-              <span id="org-progress-pct" class="progress-pct">0%</span>
-            </div>
-            <div class="progress-track" role="progressbar" id="org-progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Organize Progress Bar">
-              <div class="progress-fill" id="org-progress-fill" style="width: 0%"></div>
-            </div>
+      <!-- TAB 3: LIBRARY & MASTER CATALOG -->
+      <section id="tab-catalog" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-catalog">
+        <div class="actress-view-bar catalog-view-bar">
+          <div class="actress-header-info">
+            <h2 class="actress-hub-title" id="catalog-title">Library Movies</h2>
+            <span class="actress-hub-subtitle" id="catalog-subtitle">Organized movies in Jellyfin NAS storage &amp; complete catalog</span>
           </div>
-
-          <!-- Organizer Console Log -->
-          <div class="organizer-log-wrapper">
-            <div class="log-header">
-              <div class="log-header-left">
-                <span class="log-status-dot"></span>
-                <span>Console Log</span>
-                <span id="log-scroll-badge" class="log-badge-auto">Auto-Scroll: ON</span>
-              </div>
-              <div class="log-header-actions">
-                <button id="btn-toggle-autoscroll" class="btn-log-action active" title="Toggle Auto-Scroll" aria-label="Toggle Auto-Scroll" onclick="window.app.toggleAutoScroll()">
-                  <span id="autoscroll-icon">⏸️</span> <span id="autoscroll-text">Auto-Scroll</span>
-                </button>
-                <button id="btn-copy-log" class="btn-log-action" title="Copy Log to Clipboard" aria-label="Copy console log" onclick="window.app.copyOrganizerLog()">
-                  📋 Copy
-                </button>
-                <button id="btn-view-history" class="btn-log-action" title="View past operations history" aria-label="View history" onclick="window.app.openHistoryModal()">
-                  📜 History
-                </button>
-                <button id="btn-clear-log" class="btn-log-action btn-clear-log" title="Clear console log" aria-label="Clear console log" onclick="window.app.clearOrganizerLog()">
-                  🗑️ Clear
-                </button>
-              </div>
-            </div>
-            <div class="log-container">
-              <pre id="organizer-log" class="console-log" aria-live="polite">Ready. Click "Start Organize" to preview or process files.</pre>
-              <button id="btn-resume-scroll" class="btn-resume-scroll hidden" title="Scroll to bottom and resume auto-scroll" onclick="window.app.resumeAutoScroll()">
-                ⬇️ New logs below (Click to resume)
-              </button>
-            </div>
-          </div>
+        </div>
+        <div id="catalog-collection-view" class="catalog-collection-view">
+          <!-- Dynamically populated All Movies Catalog -->
         </div>
       </section>
 
     </main>
+
+    <!-- SLIDE-OVER NAS ORGANIZER DRAWER -->
+    <div id="drawer-organizer-backdrop" class="drawer-backdrop hidden" onclick="window.app.closeOrganizerDrawer()"></div>
+    <aside id="drawer-organizer" class="drawer-organizer hidden" aria-label="NAS Jellyfin Organizer">
+      <div class="drawer-header">
+        <div class="drawer-header-title">
+          <span class="material-symbols-outlined icon drawer-title-icon">folder_managed</span>
+          <div>
+            <h3>NAS Jellyfin Organizer</h3>
+            <span class="drawer-subtitle">Move and structure matched files into Jellyfin folders</span>
+          </div>
+        </div>
+        <div class="drawer-header-actions">
+          <button id="btn-expand-organizer" class="btn-icon-sm" title="Toggle Expanded View" aria-label="Toggle Expanded View" onclick="window.app.toggleOrganizerExpand()">
+            <span id="icon-expand-organizer" class="material-symbols-outlined icon">open_in_full</span>
+          </button>
+          <button id="btn-close-organizer" class="btn-icon-sm" title="Close Organizer Drawer (Esc)" aria-label="Close Organizer Drawer" onclick="window.app.closeOrganizerDrawer()">
+            <span class="material-symbols-outlined icon">close</span>
+          </button>
+        </div>
+      </div>
+      <div class="drawer-body organizer-drawer-body">
+        <form id="form-organizer" class="organizer-form" onsubmit="event.preventDefault()">
+          <div class="form-group">
+            <label for="org-src-dir">Source Directory (Current Videos)</label>
+            <input type="text" id="org-src-dir" class="form-input" placeholder="/Volumes/home/BT/2026" required />
+          </div>
+
+          <div class="form-group">
+            <label for="org-dest-root">Jellyfin Destination Root (NAS Library)</label>
+            <input type="text" id="org-dest-root" class="form-input" placeholder="/Volumes/home/BT/organized" required />
+          </div>
+
+          <div class="form-options">
+            <label class="checkbox-label" for="org-dry-run">
+              <input type="checkbox" id="org-dry-run" checked />
+              <span><strong>Dry Run Mode:</strong> Preview folder actions safely without moving files</span>
+            </label>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" id="btn-start-organize" class="btn btn-primary btn-lg" onclick="window.app.startOrganize()">
+              <span class="material-symbols-outlined icon" aria-hidden="true">rocket_launch</span> Start Organize
+            </button>
+          </div>
+        </form>
+
+        <!-- Live Organize Progress Bar -->
+        <div id="org-progress-box" class="progress-box hidden" role="region" aria-label="Organize Progress">
+          <div class="progress-info">
+            <span id="org-progress-label" aria-live="polite">Organizing movies...</span>
+            <span id="org-progress-pct" class="progress-pct">0%</span>
+          </div>
+          <div class="progress-track" role="progressbar" id="org-progress-bar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Organize Progress Bar">
+            <div class="progress-fill" id="org-progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <!-- Organizer Console Log -->
+        <div class="organizer-log-wrapper">
+          <div class="log-header">
+            <div class="log-header-left">
+              <span class="log-status-dot"></span>
+              <span>Console Log</span>
+              <span id="log-scroll-badge" class="log-badge-auto">Auto-Scroll: ON</span>
+            </div>
+            <div class="log-header-actions">
+              <button id="btn-toggle-autoscroll" class="btn-log-action active" title="Toggle Auto-Scroll" aria-label="Toggle Auto-Scroll" onclick="window.app.toggleAutoScroll()">
+                <span id="autoscroll-icon" class="material-symbols-outlined icon">pause</span> <span id="autoscroll-text">Auto-Scroll</span>
+              </button>
+              <button id="btn-copy-log" class="btn-log-action" title="Copy Log to Clipboard" aria-label="Copy console log" onclick="window.app.copyOrganizerLog()">
+                <span class="material-symbols-outlined icon">content_copy</span> Copy
+              </button>
+              <button id="btn-view-history" class="btn-log-action" title="View past operations history" aria-label="View history" onclick="window.app.openHistoryModal()">
+                <span class="material-symbols-outlined icon">history</span> History
+              </button>
+              <button id="btn-clear-log" class="btn-log-action btn-clear-log" title="Clear console log" aria-label="Clear console log" onclick="window.app.clearOrganizerLog()">
+                <span class="material-symbols-outlined icon">delete</span> Clear
+              </button>
+            </div>
+          </div>
+          <div class="log-container">
+            <pre id="organizer-log" class="console-log" aria-live="polite">Ready. Click "Start Organize" to preview or process files.</pre>
+            <button id="btn-resume-scroll" class="btn-resume-scroll hidden" title="Scroll to bottom and resume auto-scroll" onclick="window.app.resumeAutoScroll()">
+              <span class="material-symbols-outlined icon" style="vertical-align: middle;">arrow_downward</span> New logs below (Click to resume)
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
 
     <!-- SLIDE-OVER PROFILE DRAWER -->
     <div id="drawer-profile-backdrop" class="drawer-backdrop hidden" onclick="window.app.closeActressProfileDrawer()"></div>
     <aside id="drawer-actress-profile" class="drawer-profile hidden" aria-label="Actress Profile & Statistics">
       <div class="drawer-header">
         <h3>Actress Profile & Stats</h3>
-        <button id="btn-close-drawer" class="btn-icon-sm" aria-label="Close Profile Drawer" onclick="window.app.closeActressProfileDrawer()">✕</button>
+        <button id="btn-close-drawer" class="btn-icon-sm" aria-label="Close Profile Drawer" onclick="window.app.closeActressProfileDrawer()"><span class="material-symbols-outlined icon">close</span></button>
       </div>
       <div id="drawer-content" class="drawer-body">
         <!-- Populated via app.js -->
@@ -385,7 +403,7 @@
     <!-- MOVIE DETAIL MODAL / INSPECTOR (Full-Width Hero Cover) -->
     <div id="modal-movie" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-movie-title">
       <div class="modal-card">
-        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close dialog" onclick="window.app.closeModal()">×</button>
+        <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close dialog" onclick="window.app.closeModal()"><span class="material-symbols-outlined icon">close</span></button>
 
         <div class="modal-body" id="modal-content">
           <!-- Dynamically populated via app.js -->
@@ -398,16 +416,16 @@
       <div class="modal-card modal-card-history">
         <div class="modal-header">
           <div class="modal-header-title">
-            <span class="modal-icon">📜</span>
+            <span class="modal-icon"><span class="material-symbols-outlined icon" style="font-size: 1.6rem;">history</span></span>
             <div>
               <h2 id="modal-history-title" class="modal-title">Operation History &amp; Logs</h2>
-              <span class="modal-subtitle">บันทึกประวัติการจัดระเบียบย้อนหลังในฐานข้อมูล SQLite</span>
+              <span class="modal-subtitle">Historical organization logs &amp; SQLite database records</span>
             </div>
           </div>
           <div class="modal-header-actions">
-            <button id="btn-backup-db" class="btn-log-action" title="Download SQLite database snapshot backup" onclick="window.location.href='/api/db/backup?download=1'">💾 Backup DB</button>
-            <button id="btn-clear-history" class="btn-log-action btn-danger" title="Clear all history" onclick="window.app.clearHistory()">🗑️ Clear All</button>
-            <button id="btn-close-history" class="btn-modal-close" title="Close (Esc)" onclick="window.app.closeHistoryModal()">×</button>
+            <button id="btn-backup-db" class="btn-log-action" title="Download SQLite database snapshot backup" onclick="window.location.href='/api/db/backup?download=1'"><span class="material-symbols-outlined icon">database</span> Backup DB</button>
+            <button id="btn-clear-history" class="btn-log-action btn-danger" title="Clear all history" onclick="window.app.clearHistory()"><span class="material-symbols-outlined icon">delete</span> Clear All</button>
+            <button id="btn-close-history" class="btn-modal-close" title="Close (Esc)" onclick="window.app.closeHistoryModal()"><span class="material-symbols-outlined icon">close</span></button>
           </div>
         </div>
         <div class="modal-body-history">
@@ -418,9 +436,89 @@
           <div class="history-detail-panel">
             <div class="history-detail-header" id="history-detail-header">
               <span id="history-detail-title">Select an operation to view details</span>
-              <button id="btn-copy-history-log" class="btn-log-action hidden" title="Copy Log" onclick="window.app.copyHistoryLog()">📋 Copy Log</button>
+              <button id="btn-copy-history-log" class="btn-log-action hidden" title="Copy Log" onclick="window.app.copyHistoryLog()"><span class="material-symbols-outlined icon">content_copy</span> Copy Log</button>
             </div>
             <pre class="console-log history-console-log" id="history-log-view">Select an operation from the left to view its complete audit log.</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RELATIONSHIP & KNOWLEDGE NETWORK GRAPH MODAL -->
+    <div id="modal-network-graph" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-graph-title">
+      <div class="modal-card modal-card-graph">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon"><span class="material-symbols-outlined icon" style="font-size: 1.6rem; color: #a78bfa;">hub</span></span>
+            <div>
+              <h2 id="modal-graph-title" class="modal-title">Relationship &amp; Knowledge Graph</h2>
+              <span class="modal-subtitle">Relationship Network: Actresses · Film Styles · Studios (Force-Directed Simulation)</span>
+            </div>
+          </div>
+          <div class="modal-header-actions">
+            <!-- Search in Graph -->
+            <div class="graph-search-wrap">
+              <span class="material-symbols-outlined icon">search</span>
+              <input type="text" id="graph-search-input" placeholder="Search actress, genre..." autocomplete="off" />
+              <button id="graph-search-clear" class="graph-search-clear hidden" title="Clear search">×</button>
+            </div>
+            <!-- Type Filters -->
+            <div class="graph-filter-toggles">
+              <label class="graph-toggle-item toggle-actress">
+                <input type="checkbox" id="graph-toggle-actress" checked />
+                <span class="toggle-indicator"></span> Actresses
+              </label>
+              <label class="graph-toggle-item toggle-genre">
+                <input type="checkbox" id="graph-toggle-genre" checked />
+                <span class="toggle-indicator"></span> Genres
+              </label>
+              <label class="graph-toggle-item toggle-studio">
+                <input type="checkbox" id="graph-toggle-studio" checked />
+                <span class="toggle-indicator"></span> Studios
+              </label>
+            </div>
+            <button id="btn-close-graph" class="btn-modal-close" title="Close (Esc)" onclick="window.app.closeNetworkGraph()"><span class="material-symbols-outlined icon">close</span></button>
+          </div>
+        </div>
+
+        <div class="modal-body-graph">
+          <div class="graph-canvas-container" id="graph-canvas-container">
+            <canvas id="network-graph-canvas"></canvas>
+
+            <!-- Floating Canvas Toolbar Controls -->
+            <div class="graph-floating-controls">
+              <button class="btn-graph-ctrl" id="btn-graph-zoom-in" title="Zoom In">
+                <span class="material-symbols-outlined">zoom_in</span>
+              </button>
+              <button class="btn-graph-ctrl" id="btn-graph-zoom-out" title="Zoom Out">
+                <span class="material-symbols-outlined">zoom_out</span>
+              </button>
+              <button class="btn-graph-ctrl" id="btn-graph-reset" title="Reset View &amp; Center">
+                <span class="material-symbols-outlined">center_focus_strong</span>
+              </button>
+              <span class="graph-ctrl-sep"></span>
+              <button class="btn-graph-ctrl" id="btn-graph-pause" title="Pause / Resume Physics">
+                <span class="material-symbols-outlined" id="icon-graph-pause">pause</span>
+              </button>
+            </div>
+
+            <!-- Legend Badge Overlay -->
+            <div class="graph-legend-badge">
+              <div class="legend-item"><span class="legend-dot dot-actress"></span> Actresses</div>
+              <div class="legend-item"><span class="legend-dot dot-genre"></span> Genres</div>
+              <div class="legend-item"><span class="legend-dot dot-studio"></span> Studios</div>
+              <span class="legend-hint">Scroll to zoom · Drag background to pan · Drag node to reposition</span>
+            </div>
+
+            <!-- Side Inspector Drawer -->
+            <div class="graph-inspector hidden" id="graph-inspector">
+              <button class="btn-inspector-close" id="btn-inspector-close" title="Close details">
+                <span class="material-symbols-outlined">close</span>
+              </button>
+              <div class="inspector-body" id="graph-inspector-body">
+                <!-- Dynamic node details rendered here -->
+              </div>
+            </div>
           </div>
         </div>
       </div>

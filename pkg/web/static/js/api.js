@@ -14,7 +14,9 @@ import { renderActressHub, renderActressCollection } from './actress.js';
 export function showOpProgress(icon, title, countStr, pct, message) {
   if (!elements.opProgressBox) return;
   elements.opProgressBox.classList.remove('hidden');
-  elements.opIcon.textContent = icon;
+
+  const iconName = icon || 'info';
+  elements.opIcon.innerHTML = `<span class="material-symbols-outlined icon">${iconName}</span>`;
   elements.opTitle.textContent = title;
   elements.opCounter.textContent = countStr || '';
   elements.opPct.textContent = `${pct}%`;
@@ -32,32 +34,55 @@ export function hideOpProgress(delayMs = 1500) {
 // =========================================================================
 // Scraper API
 // =========================================================================
-export async function scrapeMovie(id) {
+export async function fetchMovie(id) {
+  if (!id) return null;
+  if (state.metadata[id]) return state.metadata[id];
+
+  try {
+    const res = await fetch(`/api/movie/${encodeURIComponent(id)}`);
+    if (res.ok) {
+      const movie = await res.json();
+      if (movie && movie.id) {
+        state.metadata[id] = movie;
+        return movie;
+      }
+    }
+  } catch (err) {}
+
+  return null;
+}
+
+export async function scrapeMovie(id, { silent = false } = {}) {
   if (!id) return null;
   try {
-    showOpProgress('⚡', `กำลัง Scrape ${id}`, '1 / 1', 25, `กำลังค้นหาข้อมูล ${id} จาก R18.dev API...`);
-    showToast(`Scraping ${id}...`, 'info');
+    if (!silent) {
+      showOpProgress('bolt', `Scraping ${id}`, '1 / 1', 25, `Fetching metadata for ${id} from R18.dev API...`);
+      showToast(`Scraping ${id}...`, 'info');
+    }
 
-    // Intermediate step: download cover image
-    setTimeout(() => {
-      showOpProgress('⚡', `กำลัง Scrape ${id}`, '1 / 1', 65, `กำลังดาวน์โหลดและแคชภาพปก ${id}...`);
-    }, 500);
-
-    const res = await fetch(`/api/scrape/${id}`, { method: 'POST' });
+    const res = await fetch(`/api/scrape/${encodeURIComponent(id)}`, { method: 'POST' });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
     const movie = await res.json();
     state.metadata[id] = movie;
     updateStats();
     populateFilterDropdowns();
     renderMoviesGrid();
 
-    showOpProgress('✅', `Scrape ${id} สำเร็จ!`, '1 / 1', 100, `บันทึกข้อมูลและภาพปก ${id} ลงระบบเรียบร้อย`);
-    showToast(`Scraped ${id}!`, 'success');
-    hideOpProgress(1800);
+    if (!silent) {
+      showOpProgress('check_circle', `Scraped ${id} successfully!`, '1 / 1', 100, `Saved metadata and artwork for ${id}`);
+      showToast(`Scraped ${id}!`, 'success');
+      hideOpProgress(1800);
+    }
     return movie;
   } catch (err) {
-    showOpProgress('❌', `Scrape ${id} ไม่สำเร็จ`, '1 / 1', 100, `ข้อผิดพลาด: ${err.message}`);
-    showToast(`Scrape failed for ${id}: ${err.message}`, 'danger');
-    hideOpProgress(3000);
+    if (!silent) {
+      showOpProgress('cancel', `Scrape failed for ${id}`, '1 / 1', 100, `Error: ${err.message}`);
+      showToast(`Scrape failed for ${id}: ${err.message}`, 'danger');
+      hideOpProgress(3000);
+    }
     return null;
   }
 }
@@ -69,7 +94,7 @@ export async function scrapeAllMatched() {
     return;
   }
 
-  showOpProgress('⚡', 'กำลัง Batch Scrape', `0 / ${matched.length}`, 0, `กำลังเตรียมการ Scrape ทั้งหมด ${matched.length} เรื่อง...`);
+  showOpProgress('bolt', 'Batch Scraping', `0 / ${matched.length}`, 0, `Preparing to scrape ${matched.length} movies...`);
   showToast(`Batch scraping ${matched.length} movies...`, 'info');
 
   let url = `/api/scrape/stream?path=${encodeURIComponent(state.activeDir || '.')}`;
@@ -78,14 +103,14 @@ export async function scrapeAllMatched() {
   es.addEventListener('start', (e) => {
     try {
       const data = JSON.parse(e.data);
-      showOpProgress('⚡', 'กำลัง Batch Scrape', `0 / ${data.total}`, 0, `เริ่ม Scrape ข้อมูล ${data.total} เรื่อง...`);
+      showOpProgress('bolt', 'Batch Scraping', `0 / ${data.total}`, 0, `Starting batch scrape of ${data.total} movies...`);
     } catch (err) {}
   });
 
   es.addEventListener('step', (e) => {
     try {
       const data = JSON.parse(e.data);
-      showOpProgress('⚡', `กำลัง Scrape ${data.movie_id}`, `${data.index} / ${data.total}`, data.percent || 0, data.message);
+      showOpProgress('bolt', `Scraping ${data.movie_id}`, `${data.index} / ${data.total}`, data.percent || 0, data.message);
     } catch (err) {}
   });
 
@@ -98,14 +123,14 @@ export async function scrapeAllMatched() {
         populateFilterDropdowns();
         renderMoviesGrid();
       }
-      showOpProgress('⚡', `Scraped ${data.movie_id}`, `${data.index} / ${data.total}`, data.percent || 0, data.message || `บันทึก ${data.movie_id} สำเร็จ`);
+      showOpProgress('bolt', `Scraped ${data.movie_id}`, `${data.index} / ${data.total}`, data.percent || 0, data.message || `Saved ${data.movie_id}`);
     } catch (err) {}
   });
 
   es.addEventListener('done', (e) => {
     try {
       const data = JSON.parse(e.data);
-      showOpProgress('✅', 'Batch Scrape เสร็จสมบูรณ์', `${data.success_count || data.success} / ${data.total}`, 100, data.message || `สำเร็จทั้งหมด ${data.success_count || data.success} เรื่อง`);
+      showOpProgress('check_circle', 'Batch Scrape Completed', `${data.success_count || data.success} / ${data.total}`, 100, data.message || `Processed ${data.success_count || data.success} movies successfully`);
       showToast(`Batch scraping completed: ${data.success_count || data.success}/${data.total} movies!`, 'success');
     } catch (err) {}
     es.close();
@@ -130,12 +155,12 @@ export async function toggleWatched(id) {
 export async function toggleFavorite(id) {
   const cur = state.userStates[id]?.is_favorite || false;
   await updateUserState(id, { is_favorite: !cur });
-  showToast(!cur ? `Added ${id} to Favorites ❤️` : `Removed ${id} from Favorites`, 'info');
+  showToast(!cur ? `Added ${id} to Favorites` : `Removed ${id} from Favorites`, 'info');
 }
 
 export async function setRating(id, rating) {
   await updateUserState(id, { user_rating: rating });
-  showToast(`Rated ${id}: ${'⭐'.repeat(rating)}`, 'success');
+  showToast(`Rated ${id}: ${rating} / 5 stars`, 'success');
 }
 
 export async function updateUserState(id, updates) {
@@ -174,7 +199,7 @@ export async function toggleFollowActress(name) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name })
       });
-      showToast(`Followed ${name} ⭐`, 'success');
+      showToast(`Followed ${name}`, 'success');
       await loadActressesData();
       renderMoviesGrid();
       if (state.selectedMovieId) {
@@ -216,6 +241,16 @@ export async function loadActressesData() {
     const elFollowed = document.getElementById('count-subtab-followed');
     if (elFollowed) elFollowed.textContent = state.actresses.length;
 
+    // Calculate unique movies across all actresses for All Movies Catalog
+    const allMoviesSet = new Set();
+    state.actresses.forEach(entry => {
+      (entry.releases || []).forEach(rel => {
+        if (rel.movie_id) allMoviesSet.add(rel.movie_id);
+      });
+    });
+    const elAllMovies = document.getElementById('count-subtab-all-movies');
+    if (elAllMovies) elAllMovies.textContent = allMoviesSet.size;
+
     // Also load discovered actresses in NAS
     await loadDiscoveredActresses();
 
@@ -243,42 +278,60 @@ export async function loadDiscoveredActresses() {
     const res = await fetch('/api/actresses/discovered');
     const data = await res.json();
     state.discoveredActresses = data.actresses || [];
-    const elDiscovered = document.getElementById('count-subtab-discovered');
-    if (elDiscovered) elDiscovered.textContent = state.discoveredActresses.length;
+    const elUnfollowed = document.getElementById('count-subtab-unfollowed') || document.getElementById('count-subtab-discovered');
+    if (elUnfollowed) elUnfollowed.textContent = state.discoveredActresses.length;
   } catch (err) {
     console.error('Failed to load discovered actresses:', err);
+  }
+}
+
+export async function fetchDiscoveredActressMovies(name) {
+  if (!name) return [];
+  try {
+    const res = await fetch(`/api/actresses/discovered/movies?name=${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data.movies || [];
+  } catch (err) {
+    console.warn(`Failed to fetch discovered movies for ${name}:`, err);
+    return [];
   }
 }
 
 export function switchActressSubTab(tab) {
   state.actressHubTab = tab || 'followed';
   const btnFollowed = document.getElementById('subtab-btn-followed');
-  const btnDiscovered = document.getElementById('subtab-btn-discovered');
+  const btnUnfollowed = document.getElementById('subtab-btn-unfollowed') || document.getElementById('subtab-btn-discovered');
+
   const isFollowed = state.actressHubTab === 'followed';
 
   if (btnFollowed) {
     btnFollowed.classList.toggle('active', isFollowed);
     btnFollowed.setAttribute('aria-selected', String(isFollowed));
   }
-  if (btnDiscovered) {
-    btnDiscovered.classList.toggle('active', !isFollowed);
-    btnDiscovered.setAttribute('aria-selected', String(!isFollowed));
+  if (btnUnfollowed) {
+    btnUnfollowed.classList.toggle('active', !isFollowed);
+    btnUnfollowed.setAttribute('aria-selected', String(!isFollowed));
   }
 
   const titleEl = document.getElementById('actress-hub-title');
   const subtitleEl = document.getElementById('actress-hub-subtitle');
+  const toolbarControls = document.querySelector('.actress-toolbar-controls');
   const sortBox = document.getElementById('actress-sort-box');
 
   if (isFollowed) {
     if (titleEl) titleEl.textContent = 'Followed Actresses';
     if (subtitleEl) subtitleEl.textContent = 'Solo filmographies & Jellyfin collection progress';
+    if (toolbarControls) toolbarControls.classList.remove('hidden');
     if (sortBox) sortBox.classList.remove('hidden');
   } else {
-    if (titleEl) titleEl.textContent = 'Discovered in NAS Library';
-    if (subtitleEl) subtitleEl.textContent = 'Actresses found in your video library who are not yet followed';
-    if (sortBox) sortBox.classList.add('hidden');
+    if (titleEl) titleEl.textContent = 'Unfollowed Actresses';
+    if (subtitleEl) subtitleEl.textContent = 'Actresses found in your NAS storage who are not yet followed';
+    if (toolbarControls) toolbarControls.classList.add('hidden');
   }
 
+  // Clear single actress selection to show the catalog/grid view
+  state.collectionFilterActress = 'all';
   renderActressCollection();
 }
 
@@ -311,10 +364,10 @@ export async function quickFollowDiscovered(name, jaName, imageUrl, btn) {
 
 export async function refreshAllActresses(btn) {
   if (btn) btn.classList.add('loading-spin');
-  showToast('Refreshing all actress releases... 🔄', 'info');
+  showToast('Refreshing all actress releases...', 'info');
   try {
     await loadActressesData();
-    showToast('All actress releases updated! ✅', 'success');
+    showToast('All actress releases updated!', 'success');
   } catch (err) {
     showToast('Error refreshing releases: ' + err.message, 'danger');
   } finally {
@@ -324,10 +377,10 @@ export async function refreshAllActresses(btn) {
 
 export async function refreshSingleActress(name, btn) {
   if (btn) btn.classList.add('loading-spin');
-  showToast(`Checking releases for ${name}... 🔄`, 'info');
+  showToast(`Checking releases for ${name}...`, 'info');
   try {
     await loadActressesData();
-    showToast(`Releases for ${name} up to date! ✅`, 'success');
+    showToast(`Releases for ${name} up to date!`, 'success');
   } catch (err) {
     showToast(`Error updating releases: ${err.message}`, 'danger');
   } finally {
@@ -339,7 +392,7 @@ export async function trackTitleToActress(actressName) {
   const id = prompt(`Enter JAV ID to track for ${actressName} (e.g. SNOS-373):`);
   if (!id || !id.trim()) return;
   const cleanId = id.trim().toUpperCase();
-  showToast(`Fetching metadata for ${cleanId} from R18.dev... ⚡`, 'info');
+  showToast(`Fetching metadata for ${cleanId} from R18.dev...`, 'info');
   try {
     const res = await fetch(`/api/scrape/${encodeURIComponent(cleanId)}`);
     if (!res.ok) {
@@ -347,7 +400,7 @@ export async function trackTitleToActress(actressName) {
       throw new Error(err.error || 'Failed to fetch metadata');
     }
     const data = await res.json();
-    showToast(`Tracked ${cleanId}: ${data.title ? data.title.slice(0, 35) + '...' : ''} 🎉`, 'success');
+    showToast(`Tracked ${cleanId}: ${data.title ? data.title.slice(0, 35) + '...' : ''}`, 'success');
     await loadActressesData();
   } catch (err) {
     showToast(`Error tracking ${cleanId}: ${err.message}`, 'danger');
@@ -361,7 +414,7 @@ export async function followActressFromInput() {
     return;
   }
   try {
-    showToast(`Adding and following ${name}... ⏳`, 'info');
+    showToast(`Adding and following ${name}...`, 'info');
     await fetch('/api/actresses/follow', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -369,7 +422,7 @@ export async function followActressFromInput() {
     });
     if (elements.inputActressName) elements.inputActressName.value = '';
     state.activeActressName = name;
-    showToast(`Followed ${name} ⭐`, 'success');
+    showToast(`Followed ${name}`, 'success');
     await loadActressesData();
   } catch (err) {
     showToast('Error following actress: ' + err.message, 'danger');
@@ -454,13 +507,16 @@ export function refreshActiveActress(btn) {
 // =========================================================================
 export async function organizeSingle(id) {
   const movie = state.groupedMovies.find(m => m.id === id);
-  if (!movie) return;
+  const srcFile = movie?.files?.[0]?.path || '';
+  const dest = elements.orgDestRoot?.value?.trim() || getDefaultOrganizedDestination(state.activeDir);
 
-  const dest = elements.orgDestRoot.value.trim() || getDefaultOrganizedDestination(state.activeDir);
-  showOpProgress('📂', `กำลังจัดระเบียบ ${id}`, '0 / 6', 5, `กำลังเริ่มจัดระเบียบ ${id} สำหรับ Jellyfin...`);
+  showOpProgress('folder', `Organizing ${id}`, '0 / 6', 5, `Preparing Jellyfin directory for ${id}...`);
   showToast(`Organizing ${id} for Jellyfin...`, 'info');
 
   let url = `/api/organize/stream?movie_id=${encodeURIComponent(id)}&destination=${encodeURIComponent(dest)}&dry_run=false`;
+  if (srcFile) {
+    url += `&source_file=${encodeURIComponent(srcFile)}`;
+  }
   const es = new EventSource(url);
 
   es.addEventListener('step', (e) => {
@@ -469,7 +525,7 @@ export async function organizeSingle(id) {
       const stepNum = data.step_current || 1;
       const totalSteps = data.step_total || 6;
       const pct = Math.min(95, Math.round((stepNum / totalSteps) * 100));
-      showOpProgress('📂', `กำลังจัดระเบียบ ${data.movie_id}`, `${stepNum} / ${totalSteps}`, pct, data.message);
+      showOpProgress('folder', `Organizing ${data.movie_id}`, `${stepNum} / ${totalSteps}`, pct, data.message);
     } catch (err) {}
   });
 
@@ -486,10 +542,10 @@ export async function organizeSingle(id) {
           const cur = state.groupedMovies.find(m => m.id === id);
           if (cur) renderModalContent(cur, state.metadata[id]);
         }
-        showOpProgress('✅', `จัดระเบียบ ${id} สำเร็จ!`, '6 / 6', 100, `บันทึกที่: ${data.target_folder || 'organized'}`);
-        showToast(`✅ จัดระเบียบ ${id} เรียบร้อยแล้ว!`, 'success');
+        showOpProgress('check_circle', `Organized ${id} successfully!`, '6 / 6', 100, `Saved to: ${data.target_folder || 'organized'}`);
+        showToast(`Organized ${id} successfully!`, 'success');
       } else {
-        showOpProgress('❌', `จัดระเบียบ ${id} ไม่สำเร็จ`, '6 / 6', 100, `ข้อผิดพลาด: ${data.error || 'Unknown error'}`);
+        showOpProgress('cancel', `Failed to organize ${id}`, '6 / 6', 100, `Error: ${data.error || 'Unknown error'}`);
         showToast(`Error: ${data.error}`, 'danger');
       }
     } catch (err) {}
@@ -508,7 +564,7 @@ export async function organizeSingle(id) {
 
 export async function openFolder(id, path, actressName) {
   const targetFolder = path || state.organizedFolders[id] || '';
-  showToast('📂 กำลังเปิดโฟลเดอร์ใน Finder...', 'info');
+  showToast('Opening folder in Finder...', 'info');
   try {
     const res = await fetch('/api/open-folder', {
       method: 'POST',
@@ -519,9 +575,9 @@ export async function openFolder(id, path, actressName) {
     if (!res.ok) {
       throw new Error(data.error || 'Failed to open folder');
     }
-    showToast(`📂 เปิดโฟลเดอร์เรียบร้อย: ${data.path}`, 'success');
+    showToast(`Folder opened: ${data.path}`, 'success');
   } catch (err) {
-    showToast(`ไม่สามารถเปิดโฟลเดอร์ได้: ${err.message}`, 'danger');
+    showToast(`Failed to open folder: ${err.message}`, 'danger');
   }
 }
 
@@ -537,7 +593,7 @@ export function copyMovieId(id, e) {
   if (e) e.stopPropagation();
   if (!id) return;
   navigator.clipboard.writeText(id).then(() => {
-    showToast(`Copied ${id} to clipboard! 📋`, 'success');
+    showToast(`Copied ${id} to clipboard!`, 'success');
   }).catch(() => {
     showToast(`Failed to copy ${id}`, 'danger');
   });

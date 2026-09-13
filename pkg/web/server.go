@@ -120,6 +120,8 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/organize", s.handleOrganize)
 	mux.HandleFunc("/api/organize/stream", s.handleOrganizeStream)
 	mux.HandleFunc("/api/open-folder", s.handleOpenFolder)
+	mux.HandleFunc("/api/play-movie", s.handlePlayMovie)
+	mux.HandleFunc("/api/video/", s.handleVideoStream)
 	mux.HandleFunc("/api/history", s.handleHistory)
 	mux.HandleFunc("/api/history/detail", s.handleHistoryDetail)
 	mux.HandleFunc("/api/db/backup", s.handleDatabaseBackup)
@@ -1467,4 +1469,183 @@ func (s *Server) handleDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 		"timestamp":   time.Now().Format(time.RFC3339),
 	})
 }
+
+func (s *Server) handlePlayMovie(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		MovieID  string `json:"movie_id"`
+		FilePath string `json:"file_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	videoPath := strings.TrimSpace(req.FilePath)
+	if videoPath == "" && req.MovieID != "" {
+		if s.db != nil {
+			_, targetVideo, _ := s.db.GetOrganizedDetails(req.MovieID)
+			videoPath = targetVideo
+			if videoPath == "" {
+				_ = s.db.QueryRow("SELECT file_path FROM library_files WHERE UPPER(movie_id) = UPPER(?) LIMIT 1", req.MovieID).Scan(&videoPath)
+			}
+		}
+	}
+
+	// Fallback: search organized folders on disk
+	if videoPath == "" && req.MovieID != "" {
+		candidates := []string{
+			"/Volumes/home/BT/organized",
+			filepath.Join(filepath.Dir(s.targetDir), "organized"),
+			filepath.Join(s.targetDir, "organized"),
+			s.targetDir,
+		}
+		for _, libDir := range candidates {
+			if entries, err := os.ReadDir(libDir); err == nil {
+				for _, actEntry := range entries {
+					if !actEntry.IsDir() {
+						continue
+					}
+					actDir := filepath.Join(libDir, actEntry.Name())
+					if movieEntries, mErr := os.ReadDir(actDir); mErr == nil {
+						for _, mEntry := range movieEntries {
+							if mEntry.IsDir() && strings.Contains(strings.ToUpper(mEntry.Name()), strings.ToUpper(req.MovieID)) {
+								movieDir := filepath.Join(actDir, mEntry.Name())
+								if vEntries, vErr := os.ReadDir(movieDir); vErr == nil {
+									for _, ve := range vEntries {
+										if !ve.IsDir() {
+											ext := strings.ToLower(filepath.Ext(ve.Name()))
+											if ext == ".mp4" || ext == ".mkv" || ext == ".avi" || ext == ".wmv" || ext == ".ts" || ext == ".m4v" {
+												videoPath = filepath.Join(movieDir, ve.Name())
+												break
+											}
+										}
+									}
+								}
+							}
+							if videoPath != "" {
+								break
+							}
+						}
+					}
+					if videoPath != "" {
+						break
+					}
+				}
+			}
+			if videoPath != "" {
+				break
+			}
+		}
+	}
+
+	if videoPath == "" {
+		writeJSONError(w, "video file not found for movie", http.StatusNotFound)
+		return
+	}
+
+	if _, err := os.Stat(videoPath); err != nil {
+		writeJSONError(w, fmt.Sprintf("video file inaccessible: %v", err), http.StatusNotFound)
+		return
+	}
+
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", videoPath)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", videoPath)
+	default:
+		cmd = exec.Command("xdg-open", videoPath)
+	}
+
+	if err := cmd.Start(); err != nil {
+		writeJSONError(w, fmt.Sprintf("failed to launch media player: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, map[string]any{
+		"success":   true,
+		"movie_id":  req.MovieID,
+		"file_path": videoPath,
+		"message":   "Playing video in system media player",
+	})
+}
+
+func (s *Server) handleVideoStream(w http.ResponseWriter, r *http.Request) {
+	movieID := strings.ToUpper(strings.TrimPrefix(r.URL.Path, "/api/video/"))
+	if movieID == "" {
+		http.Error(w, "movie_id required", http.StatusBadRequest)
+		return
+	}
+
+	var videoPath string
+	if s.db != nil {
+		_, targetVideo, _ := s.db.GetOrganizedDetails(movieID)
+		videoPath = targetVideo
+		if videoPath == "" {
+			_ = s.db.QueryRow("SELECT file_path FROM library_files WHERE UPPER(movie_id) = UPPER(?) LIMIT 1", movieID).Scan(&videoPath)
+		}
+	}
+
+	// Disk fallback
+	if videoPath == "" {
+		candidates := []string{
+			"/Volumes/home/BT/organized",
+			filepath.Join(filepath.Dir(s.targetDir), "organized"),
+			filepath.Join(s.targetDir, "organized"),
+			s.targetDir,
+		}
+		for _, libDir := range candidates {
+			if entries, err := os.ReadDir(libDir); err == nil {
+				for _, actEntry := range entries {
+					if !actEntry.IsDir() {
+						continue
+					}
+					actDir := filepath.Join(libDir, actEntry.Name())
+					if movieEntries, mErr := os.ReadDir(actDir); mErr == nil {
+						for _, mEntry := range movieEntries {
+							if mEntry.IsDir() && strings.Contains(strings.ToUpper(mEntry.Name()), movieID) {
+								movieDir := filepath.Join(actDir, mEntry.Name())
+								if vEntries, vErr := os.ReadDir(movieDir); vErr == nil {
+									for _, ve := range vEntries {
+										if !ve.IsDir() {
+											ext := strings.ToLower(filepath.Ext(ve.Name()))
+											if ext == ".mp4" || ext == ".mkv" || ext == ".m4v" {
+												videoPath = filepath.Join(movieDir, ve.Name())
+												break
+											}
+										}
+									}
+								}
+							}
+							if videoPath != "" {
+								break
+							}
+						}
+					}
+					if videoPath != "" {
+						break
+					}
+				}
+			}
+			if videoPath != "" {
+				break
+			}
+		}
+	}
+
+	if videoPath == "" {
+		http.Error(w, "video file not found", http.StatusNotFound)
+		return
+	}
+
+	// Serve with HTTP Range support
+	http.ServeFile(w, r, videoPath)
+}
+
 

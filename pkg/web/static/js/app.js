@@ -29,7 +29,8 @@ import {
   organizeSingle,
   openFolder,
   openFolderByEl,
-  copyMovieId
+  copyMovieId,
+  playMovie
 } from './api.js';
 
 import {
@@ -40,7 +41,9 @@ import {
   renderModalContent,
   openGallery,
   openLightbox,
-  closeLightbox
+  closeLightbox,
+  watchInBrowser,
+  closeVideoPlayer
 } from './modal.js';
 
 import {
@@ -222,6 +225,9 @@ window.app = {
   toggleFollowActress,
   organizeSingle,
   copyMovieId,
+  playMovie,
+  watchInBrowser,
+  closeVideoPlayer,
 
   // Actress Hub: Collection & Filmography
   searchActresses: (q) => {

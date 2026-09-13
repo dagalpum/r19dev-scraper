@@ -598,3 +598,24 @@ export function copyMovieId(id, e) {
     showToast(`Failed to copy ${id}`, 'danger');
   });
 }
+
+export async function playMovie(id, filePath = '', e) {
+  if (e) e.stopPropagation();
+  if (!id) return;
+  showToast(`▶ Launching ${id} in media player...`, 'info');
+  try {
+    const res = await fetch('/api/play-movie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ movie_id: id, file_path: filePath })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to play movie');
+    }
+    showToast(`▶ Playing ${id}`, 'success');
+  } catch (err) {
+    showToast(`Failed to play ${id}: ${err.message}`, 'danger');
+  }
+}
+

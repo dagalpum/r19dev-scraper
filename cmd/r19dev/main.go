@@ -14,6 +14,7 @@ import (
 	"github.com/dagalp/r19dev-scraper/pkg/cache"
 	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
+	"github.com/dagalp/r19dev-scraper/pkg/migrator"
 	"github.com/dagalp/r19dev-scraper/pkg/organizer"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
@@ -101,6 +102,9 @@ func main() {
 
 	case "organize":
 		runOrganize(args[1:])
+
+	case "migrate":
+		runMigrate(args[1:])
 
 	case "cache-clear", "clear-cache":
 		if err := cache.Default().Clear(); err != nil {
@@ -442,6 +446,84 @@ func runOrganize(args []string) {
 	fmt.Printf("\n✨ Finished! Successfully organized %d/%d movies into %s\n", successCount, len(matches), absDest)
 }
 
+func runMigrate(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [--dry-run] [--no-tui] [--no-update-html]")
+		os.Exit(1)
+	}
+
+	srcDir := args[0]
+	destRoot := "/Volumes/home/BT/organized"
+	dryRun := false
+	autoConfirm := false
+	noTUI := false
+	updateExisting := true
+
+	for i := 1; i < len(args); i++ {
+		a := args[i]
+		if a == "--dry-run" || a == "-n" {
+			dryRun = true
+		} else if a == "--yes" || a == "-y" {
+			autoConfirm = true
+		} else if a == "--no-tui" {
+			noTUI = true
+		} else if a == "--no-update-html" {
+			updateExisting = false
+		} else if !strings.HasPrefix(a, "-") && destRoot == "/Volumes/home/BT/organized" && i == 1 {
+			destRoot = a
+		}
+	}
+
+	absSrc, err := filepath.Abs(srcDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid source path: %v\n", err)
+		os.Exit(1)
+	}
+	absDest, err := filepath.Abs(destRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid destination path: %v\n", err)
+		os.Exit(1)
+	}
+
+	cfg := migrator.Config{
+		SourceDir:      absSrc,
+		DestRoot:       absDest,
+		DryRun:         dryRun,
+		AutoConfirm:    autoConfirm,
+		UpdateExisting: updateExisting,
+		NoTUI:          noTUI,
+	}
+
+	ctx := context.Background()
+	var summary *migrator.Summary
+	if noTUI {
+		summary, err = migrator.RunCLI(ctx, cfg)
+	} else {
+		summary, err = migrator.RunTUI(ctx, cfg)
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Migration error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if summary != nil {
+		fmt.Println("\n==================================================")
+		if dryRun {
+			fmt.Println("🏁 MIGRATION DRY-RUN SUMMARY:")
+			fmt.Printf("   🔍 Would Organize: %d movies\n", summary.OrganizedCount)
+		} else {
+			fmt.Println("🏁 MIGRATION COMPLETE SUMMARY:")
+			fmt.Printf("   ✅ Successfully Organized: %d movies\n", summary.OrganizedCount)
+			fmt.Printf("   🔄 Updated Existing HTML: %d files\n", summary.UpdatedHTMLNum)
+		}
+		fmt.Printf("   ℹ️  Duplicates Handled: %d\n", summary.DuplicateCount)
+		fmt.Printf("   ⚠️  Skipped Files: %d\n", summary.SkippedCount)
+		fmt.Printf("   ❌ Errors: %d\n", summary.ErrorCount)
+		fmt.Printf("   ⏱  Duration: %s\n", summary.Duration.Round(time.Second))
+		fmt.Println("==================================================")
+	}
+}
 
 func printHelp() {
 	fmt.Println(`🎬 R19DEV Scraper - JAV Scanner, Matcher, Actress Tracker & NAS Jellyfin Organizer
@@ -475,6 +557,13 @@ Usage:
                               - Generates Standalone movie.html
                               - Downloads High-Res poster.jpg & fanart.jpg
                               - Downloads Sample screenshots into extrafanart/
+
+  r19dev migrate <src> [dest] [--dry-run] [--no-tui]
+                              Fast batch migration & reorganization using local dump DB
+                              - Interactive TUI progress bar with live stats & activity log
+                              - Reuses local assets (poster, fanart, extrafanart/) instantly
+                              - Generates Jellyfin NFO and Cinematic movie.html
+                              - Batch-updates existing movie.html files in destination
 
   r19dev clear-cache          Clear local metadata and image cache
   r19dev --version            Show version

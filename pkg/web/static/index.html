@@ -411,6 +411,14 @@
       </div>
     </div>
 
+    <!-- IN-BROWSER VIDEO PLAYER MODAL -->
+    <div id="modal-video-player" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-label="Video Player">
+      <div class="video-player-box">
+        <button id="btn-close-video-player" class="btn-close-video" title="Close Player (Esc)" onclick="window.app.closeVideoPlayer()"><span class="material-symbols-outlined icon">close</span></button>
+        <video id="in-browser-video" controls preload="metadata" playsinline></video>
+      </div>
+    </div>
+
     <!-- OPERATION HISTORY MODAL -->
     <div id="modal-history" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-history-title">
       <div class="modal-card modal-card-history">

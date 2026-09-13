@@ -15,6 +15,11 @@ export function setupModals() {
     if (e.target === elements.modalMovie) closeModal();
   });
 
+  document.getElementById('btn-close-video-player')?.addEventListener('click', closeVideoPlayer);
+  document.getElementById('modal-video-player')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modal-video-player') closeVideoPlayer();
+  });
+
   elements.btnCloseLightbox?.addEventListener('click', closeLightbox);
   elements.lightbox?.addEventListener('click', (e) => {
     if (e.target === elements.lightbox) closeLightbox();
@@ -22,7 +27,9 @@ export function setupModals() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (!elements.lightbox?.classList.contains('hidden')) {
+      if (!document.getElementById('modal-video-player')?.classList.contains('hidden')) {
+        closeVideoPlayer();
+      } else if (!elements.lightbox?.classList.contains('hidden')) {
         closeLightbox();
       } else if (!document.getElementById('modal-network-graph')?.classList.contains('hidden')) {
         closeNetworkGraph();
@@ -206,18 +213,24 @@ export function renderModalContent(movie, meta) {
 
           <div class="location-actions">
             ${loc.type === 'library' ? `
-              <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(loc.folderPath)}" onclick="window.app.openFolderEl(this, event)">
-                <span class="material-symbols-outlined icon">folder_open</span> Open in Finder
+              <button class="btn btn-primary btn-sm" onclick="window.app.playMovie('${escapeHtml(id)}')" title="Launch in system default media player (VLC, IINA, QuickTime)">
+                <span class="material-symbols-outlined icon">play_arrow</span> Play Video
+              </button>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.watchInBrowser('${escapeHtml(id)}')" title="Stream video directly in browser modal">
+                <span class="material-symbols-outlined icon">smart_display</span> In Browser
+              </button>
+              <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(loc.folderPath)}" onclick="window.app.openFolderEl(this, event)" title="Open movie directory in Finder">
+                <span class="material-symbols-outlined icon">folder_open</span> Finder
               </button>
               <button class="btn btn-outline-secondary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Re-run Jellyfin organize">
-                <span class="material-symbols-outlined icon">sync</span> Re-organize
+                <span class="material-symbols-outlined icon">sync</span>
               </button>
             ` : (loc.type === 'external' ? `
               <button class="btn btn-primary btn-sm" onclick="window.app.organizeSingle('${id}')" title="Move and organize into Library destination">
                 <span class="material-symbols-outlined icon">drive_file_move</span> Move to Library
               </button>
               <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(loc.folderPath)}" onclick="window.app.openFolderEl(this, event)">
-                <span class="material-symbols-outlined icon">folder_open</span> Open in Finder
+                <span class="material-symbols-outlined icon">folder_open</span> Finder
               </button>
             ` : `
               <button class="btn btn-primary btn-sm" onclick="window.app.organizeSingle('${id}')">
@@ -398,3 +411,28 @@ export function closeLightbox() {
   elements.lightbox.classList.add('hidden');
   elements.lightboxImg.src = '';
 }
+
+export function watchInBrowser(id) {
+  if (!id) return;
+  const modalPlayer = document.getElementById('modal-video-player');
+  const videoEl = document.getElementById('in-browser-video');
+  if (!modalPlayer || !videoEl) return;
+
+  videoEl.src = `/api/video/${encodeURIComponent(id)}`;
+  modalPlayer.classList.remove('hidden');
+  videoEl.play().catch(() => {});
+}
+
+export function closeVideoPlayer() {
+  const modalPlayer = document.getElementById('modal-video-player');
+  const videoEl = document.getElementById('in-browser-video');
+  if (videoEl) {
+    videoEl.pause();
+    videoEl.removeAttribute('src');
+    videoEl.load();
+  }
+  if (modalPlayer) {
+    modalPlayer.classList.add('hidden');
+  }
+}
+

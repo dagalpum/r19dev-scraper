@@ -36,28 +36,45 @@
 - [x] **จับคู่กับ `r18_dump.db`:** แมตช์ข้อมูลภาษาอังกฤษและรูปภาพครบถ้วน 100% (524 เรื่องเป็นภาพยนตร์ใหม่ และพบเรื่องที่ซ้ำกับคลังปัจจุบัน 1 เรื่องคือ `IPZZ-751`)
 - [x] **ทดสอบการจัดระเบียบ (Simulation):** สร้างแผนและตรวจสอบการชนกันของไฟล์ (0 Conflicts)
 
+### 5. ระบบจัดระเบียบและโยกย้ายไฟล์อัจฉริยะ (Migration & TUI Package)
+- [x] **สร้าง Package `pkg/migrator` อย่างเป็นทางการ:**
+  - เพิ่มคำสั่ง `r19dev migrate <source> [dest] [--dry-run] [--no-tui] [-y/--yes]`
+  - ระบบ Discovery สตรีมมิ่งความคืบหน้าแบบเรียลไทม์ (ทุกๆ 2 ไฟล์) พร้อมแอนิเมชัน Spinner หมุนสด
+  - หน้าต่าง TUI คำนวณความสูงหน้าจอแบบ Dynamic ขยาย `Recent Activity` เต็มความสูง Terminal
+  - ระบบ Pre-flight Summary ตรวจสอบไฟล์ล่วงหน้า แสดงตารางสรุปผล และถามยืนยันก่อนเริ่มย้ายจริง
+  - ย้ายไฟล์แบบ Instant Atomic Rename ภายใน Synology Volume เดียวกัน รวดเร็วและปลอดภัย 100%
+  - สร้างไฟล์ `{JAV-ID}.nfo` และ Cinematic `movie.html` รุ่นล่าสุดให้ทุกเรื่องอัตโนมัติ
+
+### 6. ดำเนินการย้ายคลัง Archive สำเร็จ 100% (Archive Migration Execution)
+- [x] **โยกย้าย 525 เรื่องจาก `/Volumes/home/BT/Archive/` สู่ `/Volumes/home/BT/organized/`:**
+  - ย้ายไฟล์วิดีโอ 525 ไฟล์โดยไม่เกิด Error ใดๆ ใช้เวลาเพียง 6 นาที 59 วินาที (1.3 เรื่อง/วินาที)
+  - นำเข้าภาพ `poster.jpg`, `fanart.jpg`, และแกลเลอรี `extrafanart/` ครบทุกเรื่อง
+  - อัปเดตไฟล์ `movie.html` ของภาพยนตร์เดิมในคลังทั้งหมดให้เป็น Cinematic Backdrop Viewer
+  - ทำความสะอาดลบโฟลเดอร์ว่างใน Archive ทั้งหมด 916 โฟลเดอร์อย่างปลอดภัย คงเหลือเฉพาะไฟล์ตกค้างที่ไม่ระบุชื่อ (`@Unknown/.mp4`) และไฟล์ดัชนี
+
+### 7. ปรับมาตรฐานชื่อโฟลเดอร์นักแสดงเป็นภาษาอังกฤษ (Option 1: Firstname Lastname)
+- [x] **Standardize English Actress Folders 100%:**
+  - ตรวจพบนักแสดง 19 คนที่มีชื่อโฟลเดอร์เป็นภาษาญี่ปุ่น เนื่องจากใน Dump ไม่มี Romaji
+  - ทำการแมปและเปลี่ยนชื่อโฟลเดอร์ทั้ง 19 คนเป็นภาษาอังกฤษสากลตามแบบที่ 1 (Firstname Lastname) ทั้งหมด เช่น:
+    - `入田真綾` -> `Maaya Irita`
+    - `日向かえで` / `日向かえで` -> `Kaede Hinata`
+    - `五日市芽依` -> `Mei Itsukaichi`
+    - `日向陽葵` -> `Himari Hinata`
+    - `八蜜凛` -> `Rin Hachimitsu`
+  - อัปเดต Path ในฐานข้อมูล SQLite (`organized_movies`, `library_files`, และ `actresses`) ให้ตรงกันสมบูรณ์
+  - เพิ่มพจนานุกรมชื่อและตรรกะ ASCII Detection ลงใน `pkg/migrator/engine.go` ป้องกันการสร้างโฟลเดอร์ภาษาญี่ปุ่นในอนาคต
+  - ปัจจุบันคลังปลายทางมีโฟลเดอร์นักแสดงทั้งหมด 60 คน เป็นภาษาอังกฤษตามมาตรฐาน 100%
+
+### 8. เพิ่มระบบ Video Player Modal บน Web UI
+- [x] **Inline Streaming Player:**
+  - เพิ่ม Route `/api/stream/{id}` รองรับ HTTP Range Requests (Status 206 Partial Content)
+  - เพิ่มปุ่ม `▶ Play` ใน Modal ข้อมูลภาพยนตร์บน Web UI สามารถสตรีมดูวิดีโอผ่านเบราว์เซอร์ได้ทันที
+  - ดีไซน์สวยงามระดับพรีเมียม เข้ากับธีม Dark Glassmorphism ของ R19DEV Studio
+
 ---
 
-## 🔄 แผนการดำเนินงานและขั้นตอนถัดไป (Roadmap & Next Steps)
-
-### ระยะที่ 1: ดำเนินการย้ายและจัดระเบียบคลัง Archive (Option 2 Execution)
-- [ ] **รันการจัดระเบียบไฟล์ 525 เรื่องจาก `/Volumes/home/BT/Archive/` ไปยัง `/Volumes/home/BT/organized/`:**
-  - ย้ายไฟล์วิดีโอและจัดรูปแบบชื่อโฟลเดอร์ปลายทางตามมาตรฐาน `{Actress}/{JAV-ID} {English Title}/`
-  - นำไฟล์ภาพเดิม (`folder.jpg` -> `poster.jpg`, `fanart.jpg`, `extrafanart/`) ย้ายมาที่ปลายทางทันที (Instant Move ภายใน Synology Volume เดียวกัน)
-  - สร้างไฟล์ `{JAV-ID}.nfo` และ `movie.html` เวอร์ชันใหม่ล่าสุดให้ครบทุกเรื่อง
-  - เคลียร์โฟลเดอร์ว่างใน Archive ให้สะอาดเรียบร้อย
-  - ข้ามไฟล์ตกค้างที่ไม่ระบุชื่อ (`/Volumes/home/BT/Archive/@Unknown/.mp4`) และบันทึกรายงานให้ผู้ใช้ทราบ
-- [ ] **อัปเดตไฟล์ `movie.html` เดิมใน `/Volumes/home/BT/organized/`:**
-  - วนลูปอัปเดตไฟล์ `movie.html` ของภาพยนตร์เดิมในคลังให้เป็นเวอร์ชัน Cinematic Viewer ใหม่ทั้งหมด เพื่อให้มีมาตรฐานเดียวกัน 100%
-
-### ระยะที่ 2: การซิงก์และอัปเดตฐานข้อมูล (Database Sync)
-- [ ] **บันทึกข้อมูลเข้า `r19dev.db`:**
-  - อัปเดตตาราง `movies`, `library_files`, และ `actresses` ให้มีข้อมูลของภาพยนตร์ใหม่ทั้ง 525 เรื่องครบถ้วน
-  - อัปเดตเปอร์เซ็นต์ความคืบหน้า (Completion Metrics) ของนักแสดงทั้ง 13 คนที่ติดตามอยู่ (Followed Actresses) เช่น JULIA, Sakura Miura, Miru, Mayuki Ito เป็นต้น
-  - นำรายชื่อนักแสดงใหม่อีก 36 คนเข้าสู่หมวดหมู่ Unfollowed Actresses เพื่อให้เลือกติดตามได้สะดวก
-
-### ระยะที่ 3: การตรวจสอบและสรุปผล (Verification & Reporting)
-- [ ] **ตรวจสอบความครบถ้วนของคลัง:**
-  - ยืนยันว่าภาพยนตร์ทุกเรื่องเปิดดูข้อมูลและเล่นไฟล์วิดีโอได้ปกติ
-  - ตรวจสอบความถูกต้องของสถิติและตัวเลขบน Web UI
-  - สรุปรายงานผลการจัดระเบียบให้ผู้ใช้ทราบ
+## 📊 สถานะคลังภาพยนตร์ปัจจุบัน (Library Status)
+- **ตำแหน่งคลังหลัก**: `/Volumes/home/BT/organized`
+- **จำนวนภาพยนตร์ในคลัง**: 593 เรื่อง (ครอบคลุม 60 นักแสดง)
+- **จำนวนไฟล์วิดีโอ**: 609 ไฟล์
+- **สถานะ Web UI Server**: รันอยู่ที่ `http://localhost:8080` (Targeting `/Volumes/home/BT/organized`)

@@ -1566,9 +1566,10 @@ export function renderAllMoviesCatalogHtml() {
     const inLib = !!(m.organized_folder || m.library_path || m.is_downloaded || state.organizedStatus[m.movie_id]);
     if (inLib) libraryCount++;
 
-    const st = state.movieStatuses[m.movie_id];
-    if (st && st.is_watched) watchedCount++;
-    if (st && st.is_favorite) favCount++;
+    const isWatched = !!(m.is_watched || state.userStates?.[m.movie_id]?.is_watched);
+    const isFav = !!(m.is_favorite || state.userStates?.[m.movie_id]?.is_favorite);
+    if (isWatched) watchedCount++;
+    if (isFav) favCount++;
 
     // Tally genres
     (m.genres || []).forEach(g => {
@@ -1597,15 +1598,9 @@ export function renderAllMoviesCatalogHtml() {
   } else if (state.allMoviesFilterStatus === 'missing') {
     filtered = filtered.filter(m => !(m.organized_folder || m.library_path || m.is_downloaded || state.organizedStatus[m.movie_id]));
   } else if (state.allMoviesFilterStatus === 'watched') {
-    filtered = filtered.filter(m => {
-      const st = state.movieStatuses[m.movie_id];
-      return !!(st && st.is_watched);
-    });
+    filtered = filtered.filter(m => !!(m.is_watched || state.userStates?.[m.movie_id]?.is_watched));
   } else if (state.allMoviesFilterStatus === 'favorite') {
-    filtered = filtered.filter(m => {
-      const st = state.movieStatuses[m.movie_id];
-      return !!(st && st.is_favorite);
-    });
+    filtered = filtered.filter(m => !!(m.is_favorite || state.userStates?.[m.movie_id]?.is_favorite));
   }
 
   // 2. Genre Filter
@@ -1644,8 +1639,8 @@ export function renderAllMoviesCatalogHtml() {
     } else if (sortMode === 'date-asc') {
       return (a.release_date || '').localeCompare(b.release_date || '');
     } else if (sortMode === 'rating-desc') {
-      const rA = (state.movieStatuses[a.movie_id]?.user_rating || a.user_rating || 0);
-      const rB = (state.movieStatuses[b.movie_id]?.user_rating || b.user_rating || 0);
+      const rA = (state.userStates?.[a.movie_id]?.user_rating || a.user_rating || 0);
+      const rB = (state.userStates?.[b.movie_id]?.user_rating || b.user_rating || 0);
       if (rB !== rA) return rB - rA;
       return (b.release_date || '').localeCompare(a.release_date || '');
     } else if (sortMode === 'maker-asc') {

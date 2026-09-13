@@ -46,6 +46,7 @@ graph TD
 The scanner is responsible for file discovery and validation.
 
 * **Traversal Mechanism**: Uses `filepath.WalkDir` with `context.Context` cancellation checks every 100 files to prevent indefinite blocking on network-attached storage (NAS) or large file trees.
+* **Directory Pruning & Network Traversal Optimization**: Checks `d.IsDir()` immediately upon entering directory traversal and executes `filepath.SkipDir` for `.actors`, `extrafanart`, `@eaDir`, and hidden dot folders (`.`) without executing redundant `os.Lstat` syscalls. This completely eliminates network SMB latency bottlenecks, speeding up scans of archives with thousands of asset images from timeouts down to seconds.
 * **Symlink Defense**: Checks `lstat.Mode() & os.ModeSymlink != 0`. Symlink directories are skipped (`filepath.SkipDir`) and symlink files are bypassed to prevent circular loops or out-of-boundary access.
 * **Filter Criteria**:
   * **Extension Set**: Validates against a fast hash set `map[string]struct{}` (default: `.mp4`, `.mkv`, `.avi`, `.wmv`, `.flv`, `.iso`, `.ts`, `.m4v`, `.mov`).
@@ -171,7 +172,13 @@ To permanently eliminate Cloudflare rate limiting (HTTP 429 and error 1015 IP ba
   - **180-Byte Hard Limit**: Truncates names strictly at $\le 180$ bytes without splitting UTF-8 multi-byte runes, preventing `ENAMETOOLONG` errors on APFS, ext4, NTFS, and SMB shares (where `NAME_MAX` is 255 bytes).
 * **Metadata & Asset Generation**:
   - `<JAV-ID>.nfo`: Full XML metadata with premiered date, year, actors, plot, MPAA rating, and unique IDs.
-  - `movie.html`: Standalone offline dark-mode HTML summary page with gallery lightbox.
+  - `movie.html` (Cinematic Offline-First Interactive Viewer):
+    - **Ambient Backdrop Hero**: Features full-width `fanart.jpg` backdrop with cinematic blur and dark gradient overlay, mirroring modern streaming UI aesthetics (Netflix, Apple TV).
+    - **Direct Play Action Bar**: Prominent `▶ Play Movie` button launching the local file in the OS default player (VLC, IINA, QuickTime) and a `🖥️ Watch in Browser` modal player with HTML5 `<video controls>`.
+    - **Multi-Part Video Routing**: Automatically detects multi-part files (e.g. `-pt1.mp4`, `-pt2.mp4` / `-cd1`, `-cd2`) and renders distinct `▶ Play Part 1` and `▶ Play Part 2` buttons.
+    - **In-Page Lightbox Gallery**: Browsing sample screenshots opens a fluid, full-screen in-page modal without opening disruptive new browser tabs. Supports keyboard navigation (`←` / `→` arrows, `Esc` to close) and image counter (`X / Y`).
+    - **Utility Toolbar**: One-click JAV ID copy (`📋 {JAV-ID}`) with floating toast notification, `🎬 Watch Trailer` button, and direct deep-link back to `🏠 R19dev Hub`.
+    - **Local Asset Auto-Discovery**: Intelligently scans local `extrafanart/` and video files on disk, ensuring 100% offline functionality with zero external CDN dependencies.
   - Asset Downloader: Full jacket cover (`poster.jpg`), backdrop (`fanart.jpg`), and sample screenshots (`extrafanart/fanart{N}.jpg`).
 * **One-Click Reveal**: Backend `POST /api/open-folder` invokes native file managers (`open` on macOS Finder, `explorer` on Windows, `xdg-open` on Linux) with direct resolution for both actress folders and specific movie directories.
 

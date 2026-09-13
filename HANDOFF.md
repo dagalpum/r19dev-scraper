@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.7.0`  
+**Current Version**: `v1.8.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
-**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper with Tier-1 sub-millisecond offline dump store, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 3-Tier Navigation Architecture (Incoming, Actresses, Library), 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, and automated NAS Jellyfin organizer with SQLite audit trail.
+**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper with Tier-1 sub-millisecond offline dump store, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 3-Tier Navigation Architecture (Incoming, Actresses, Library), 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, automated NAS Jellyfin organizer with SQLite audit trail, and Cinematic Offline-First `movie.html` Interactive Viewer.
 
 The codebase is clean, thoroughly tested (100% test pass rate across all packages), modular, and fully documented.
 
@@ -169,6 +169,9 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Tier-1 Sub-Millisecond Offline Dump Store (`r18_dump.db`)**: 1.9M+ movies, 101k+ actresses, 540k+ translations.
 - ✅ **3-Tier User Journey Navigation (Incoming, Actresses, Library)**: Reorganized navigation architecture.
 - ✅ **Library Catalog Hub**: Status pills (Watched, Favorites), multi-criteria sorting (Rating, Studio).
+- ✅ **Cinematic Standalone `movie.html` Interactive Viewer**: Ambient backdrop hero with blur, direct `Play Movie` CTA, in-browser HTML5 `<video>` modal player, smart multi-part play buttons, in-page Lightbox gallery with keyboard navigation, one-click JAV ID copy with toast, and local asset auto-discovery.
+- ✅ **High-Speed SMB Network Scanner Traversal**: Immediate directory pruning of `.actors`, `extrafanart`, `@eaDir`, and hidden directories at `d.IsDir()`, reducing scan times across large NAS archives from timeouts to seconds.
+- ✅ **Web Studio Library Tab & Favicon Stability**: Fixed `TypeError` in `actress.js` and added native SVG favicon handler.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

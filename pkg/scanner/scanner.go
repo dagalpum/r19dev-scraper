@@ -151,6 +151,10 @@ func (s *Scanner) ScanStream(ctx context.Context, rootPath string, chunkSize int
 		}
 
 		if d.IsDir() {
+			name := d.Name()
+			if path != absPath && (name == ".actors" || name == "extrafanart" || name == "@eaDir" || strings.HasPrefix(name, ".")) {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 

@@ -74,7 +74,15 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
   - **Filesystem Safety**: Names are safely capped at 180 bytes with UTF-8 boundary validation to prevent OS filesystem `ENAMETOOLONG` errors (255-byte `NAME_MAX`).
 - **Consolidation**: Consolidates multi-part videos (e.g. `SNOS-038-cd1.mp4`, `SNOS-038-cd2.mp4`) into single unified Jellyfin movie entries.
 - **Jellyfin Metadata (.nfo)**: Generates official Kodi/Jellyfin Movie NFO XML with title, original title, plot, studio, release date, runtime, actresses with thumbnail URLs, genres, watched status, and user ratings.
-- **Standalone `movie.html`**: Generates a responsive, standalone dark-mode summary page with embedded actress cards and sample screenshots for offline browsing.
+- **🎬 Cinematic Standalone `movie.html` (Offline-First Interactive Viewer)**:
+  - **Ambient Backdrop Hero**: Features full-width `fanart.jpg` backdrop with cinematic blur and dark gradient overlay, mirroring modern streaming UI aesthetics (Netflix, Apple TV).
+  - **Direct Play Action Bar**: Includes prominent `▶ Play Movie` button launching the video in your OS default player (VLC, IINA, QuickTime) and a `🖥️ Watch in Browser` pop-up HTML5 video player.
+  - **Smart Multi-Part Handling**: Automatically detects multi-part files (e.g. `-pt1.mp4`, `-pt2.mp4` / `cd1`, `cd2`) and renders dedicated `▶ Play Part 1` and `▶ Play Part 2` buttons.
+  - **In-Page Lightbox Gallery**: Browsing sample screenshots opens a fluid, full-screen in-page modal without opening disruptive new browser tabs. Supports keyboard navigation (`←` / `→` arrows, `Esc` to close) and image counter.
+  - **Utility Toolbar**: One-click JAV ID copy (`📋 {JAV-ID}`) with floating toast notification, `🎬 Watch Trailer` button, and direct deep-link back to `🏠 R19dev Hub`.
+  - **Local Asset Auto-Discovery**: Intelligently scans local `extrafanart/` and video files on disk, ensuring 100% offline functionality with zero external CDN dependencies.
+- **⚡ High-Speed SMB Network Scanner**:
+  - Optimized directory crawler instantly skips non-video directories (`.actors`, `extrafanart`, `@eaDir`, and hidden directories) without redundant `os.Lstat` calls, reducing network SMB traversal times across thousands of files from timeouts down to seconds.
 - **High-Res Assets & Resilient Serving**: Downloads full-resolution `poster.jpg` (cover jacket), `fanart.jpg` (backdrop), and all sample gallery screenshots into `extrafanart/`. The web server features a multi-tier fallback for `/api/images/{id}` (RAM cache $\rightarrow$ local organized disk poster $\rightarrow$ remote DMM/R18 fetch) ensuring posters are always displayed.
 - **One-Click Reveal in Finder / File Manager**: Click `[📂 Open in Finder]` directly on any card or modal to immediately reveal the organized files in macOS Finder, Windows Explorer, or Linux.
 - **Safe Dry-Run Mode**: Supports `--dry-run` to preview all target folder moves and asset creations safely before applying changes.

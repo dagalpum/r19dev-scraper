@@ -182,7 +182,7 @@ func OrganizeMatchWithProgress(ctx context.Context, match *matcher.MatchResult, 
 	if reporter != nil {
 		reporter("write_html", 4, 6, "กำลังสร้างไฟล์ HTML Viewer (movie.html)...")
 	}
-	if err := jellyfin.WriteHTML(movie, userState, plan.HTMLPath); err != nil {
+	if err := jellyfin.WriteHTML(movie, userState, plan.HTMLPath, filepath.Base(plan.TargetVideo)); err != nil {
 		plan.Error = fmt.Sprintf("warning: failed to write HTML: %v", err)
 	}
 

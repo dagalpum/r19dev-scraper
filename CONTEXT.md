@@ -55,7 +55,7 @@ r19dev-scraper/
 │   │   └── organizer_test.go # Plan & execution tests with dry-run verification
 │   ├── jellyfin/             # Module 6: Jellyfin Metadata & Media Assets
 │   │   ├── nfo.go            # Kodi/Jellyfin NFO XML generator & 180-byte safe filename sanitizer
-│   │   ├── html.go           # Standalone offline dark-mode HTML viewer generator
+│   │   ├── html.go           # Cinematic offline-first HTML viewer (backdrop hero, embedded player, lightbox, multi-part)
 │   │   ├── assets.go         # Asset downloader (poster, fanart, extrafanart) with granular progress
 │   │   └── jellyfin_test.go  # Tests for NFO XML, HTML, and DMM URL upgrader
 │   ├── actress/              # Module 7: Actress Tracking Service
@@ -191,6 +191,17 @@ r19dev-scraper/
   - `actress.js`: Actress Hub (Followed/Discovered directory, Bento profile, dedicated filmography stage, and Chat mode).
   - `app.js`: Application bootstrap, tab routing, and `window.app` public interface binding.
 * **Single-Binary Zero-Node Philosophy**: No Node.js runtime, npm dependencies, or Webpack/Vite bundler steps required. Browsers execute ES modules natively via `<script type="module" src="/js/app.js"></script>`, maintaining the pure `go build` single-binary distribution.
+
+### 4.15 Cinematic Offline-First `movie.html` Architecture
+* **Ambient Backdrop Hero**: Features full-width `fanart.jpg` backdrop with 30px CSS blur and dark linear gradient overlay. Falls back smoothly to blurred `poster.jpg` if `fanart.jpg` is absent.
+* **Direct Play Action Bar**: Prominent `▶ Play Movie` button launches the file in the OS default video player (VLC, IINA, QuickTime). The `🖥️ Watch in Browser` button toggles a pop-up HTML5 `<video controls>` player modal directly within the web browser.
+* **Smart Multi-Part Video Detection**: Automatically identifies multi-part video sets (e.g. `-pt1.mp4`, `-pt2.mp4` or `-cd1`, `-cd2`) and renders dedicated `▶ Play Part 1` and `▶ Play Part 2` buttons.
+* **In-Page Lightbox Gallery**: In-page modal with zero external dependencies; replaces jarring new-tab image links with a full-screen carousel supporting `←` / `→` arrow keys, `Esc` to close, and an image counter.
+* **Local Asset Auto-Discovery**: Automatically inspects the local `extrafanart/` folder and video files on disk, ensuring 100% complete rich media galleries and multi-part play buttons even when using offline dump records that lack online screenshot URLs.
+
+### 4.16 High-Speed SMB Network Traversal Optimization
+* **Direct Directory Pruning**: The directory crawler in `pkg/scanner/scanner.go` evaluates `d.IsDir()` immediately upon entering directory traversal and executes `filepath.SkipDir` for `.actors`, `extrafanart`, `@eaDir`, and hidden dot folders (`.`) without executing redundant `os.Lstat` syscalls.
+* **NAS Performance Impact**: Completely eliminates network SMB latency bottlenecks, speeding up scans of archives with thousands of asset images from timeouts down to seconds.
 
 ---
 

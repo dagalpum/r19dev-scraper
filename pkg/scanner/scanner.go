@@ -136,20 +136,6 @@ func (s *Scanner) ScanStream(ctx context.Context, rootPath string, chunkSize int
 			return nil
 		}
 
-		// Security: Skip symlinks to avoid directory escapes or recursion
-		lstat, statErr := os.Lstat(path)
-		if statErr != nil {
-			result.Errors = append(result.Errors, statErr)
-			return nil
-		}
-		if lstat.Mode()&os.ModeSymlink != 0 {
-			result.SkippedCount++
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
 		if d.IsDir() {
 			name := d.Name()
 			if path != absPath && (name == ".actors" || name == "extrafanart" || name == "@eaDir" || strings.HasPrefix(name, ".")) {
@@ -158,15 +144,34 @@ func (s *Scanner) ScanStream(ctx context.Context, rootPath string, chunkSize int
 			return nil
 		}
 
+		// Security: Skip symlinks to avoid directory escapes or recursion
+		if d.Type()&fs.ModeSymlink != 0 {
+			result.SkippedCount++
+			return nil
+		}
+
+		// Fast filter: Skip non-video files immediately before expensive network stat calls
+		ext := strings.ToLower(filepath.Ext(d.Name()))
+		if _, ok := s.extSet[ext]; !ok {
+			result.SkippedCount++
+			return nil
+		}
+
+		info, statErr := d.Info()
+		if statErr != nil {
+			result.Errors = append(result.Errors, statErr)
+			return nil
+		}
+
 		result.TotalScanned++
 
-		if s.shouldIncludeFile(path, lstat.Size()) {
+		if s.shouldIncludeFile(path, info.Size()) {
 			fi := FileInfo{
 				Path:      path,
 				Name:      d.Name(),
 				Extension: filepath.Ext(path),
-				Size:      lstat.Size(),
-				ModTime:   lstat.ModTime(),
+				Size:      info.Size(),
+				ModTime:   info.ModTime(),
 			}
 			result.Files = append(result.Files, fi)
 			buffer = append(buffer, fi)

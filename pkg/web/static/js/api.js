@@ -243,13 +243,20 @@ export async function loadActressesData() {
 
     // Calculate unique movies across all actresses for All Movies Catalog
     const allMoviesSet = new Set();
+    let inLibCount = 0;
     state.actresses.forEach(entry => {
       (entry.releases || []).forEach(rel => {
-        if (rel.movie_id) allMoviesSet.add(rel.movie_id);
+        if (rel.movie_id && !allMoviesSet.has(rel.movie_id)) {
+          allMoviesSet.add(rel.movie_id);
+          if (rel.organized_folder || rel.library_path || rel.is_downloaded || state.organizedStatus[rel.movie_id]) {
+            inLibCount++;
+          }
+        }
       });
     });
     const elAllMovies = document.getElementById('count-subtab-all-movies');
     if (elAllMovies) elAllMovies.textContent = allMoviesSet.size;
+    if (elements.countCatalog) elements.countCatalog.textContent = inLibCount;
 
     // Also load discovered actresses in NAS
     await loadDiscoveredActresses();

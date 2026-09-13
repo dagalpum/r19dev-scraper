@@ -572,7 +572,7 @@ func (d *DB) ListFollowedActresses() ([]ActressRecord, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	rows, err := d.conn.Query("SELECT name, ja_name, image_url, followed_at, last_checked_at, notes, COALESCE(r18_id, 0) FROM actresses ORDER BY name ASC")
+	rows, err := d.conn.Query("SELECT name, COALESCE(ja_name, ''), COALESCE(image_url, ''), followed_at, last_checked_at, COALESCE(notes, ''), COALESCE(r18_id, 0) FROM actresses ORDER BY name ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -582,11 +582,33 @@ func (d *DB) ListFollowedActresses() ([]ActressRecord, error) {
 	for rows.Next() {
 		var a ActressRecord
 		var lastChecked sql.NullTime
-		if err := rows.Scan(&a.Name, &a.JaName, &a.ImageURL, &a.FollowedAt, &lastChecked, &a.Notes, &a.R18ID); err != nil {
+		var followedRaw any
+		if err := rows.Scan(&a.Name, &a.JaName, &a.ImageURL, &followedRaw, &lastChecked, &a.Notes, &a.R18ID); err != nil {
 			return nil, err
 		}
 		if lastChecked.Valid {
 			a.LastCheckedAt = &lastChecked.Time
+		}
+		if followedRaw != nil {
+			switch v := followedRaw.(type) {
+			case time.Time:
+				a.FollowedAt = v
+			case string:
+				t, err := time.Parse("2006-01-02 15:04:05", strings.Split(v, ".")[0])
+				if err == nil {
+					a.FollowedAt = t
+				} else if t2, err2 := time.Parse(time.RFC3339, v); err2 == nil {
+					a.FollowedAt = t2
+				}
+			case []byte:
+				str := string(v)
+				t, err := time.Parse("2006-01-02 15:04:05", strings.Split(str, ".")[0])
+				if err == nil {
+					a.FollowedAt = t
+				} else if t2, err2 := time.Parse(time.RFC3339, str); err2 == nil {
+					a.FollowedAt = t2
+				}
+			}
 		}
 		result = append(result, a)
 	}

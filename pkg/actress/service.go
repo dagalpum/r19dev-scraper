@@ -208,12 +208,13 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 		LOWER(json_extract(a.value, '$.name')) = LOWER(?)
 		OR LOWER(json_extract(a.value, '$.ja_name')) = LOWER(?)
 		OR LOWER(json_extract(a.value, '$.name')) LIKE '%' || LOWER(?) || '%'
+		OR om.target_folder LIKE '%' || ? || '%'
 	)
 	GROUP BY m.id
 	ORDER BY m.release_date DESC;
 	`
 
-	rows, err := s.database.Query(query, actressName, actressName, actressName)
+	rows, err := s.database.Query(query, actressName, actressName, actressName, actressName)
 	if err != nil {
 		return nil, err
 	}
@@ -347,8 +348,14 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		}
 	}
 
-	// Query movies containing the actress name in actresses_json
-	query := `
+	whereClause := "(m.actresses_json LIKE ? COLLATE NOCASE OR om.target_folder LIKE ? COLLATE NOCASE)"
+	args := []any{"%" + actressName + "%", "%/" + actressName + "/%"}
+	if actRec.JaName != "" {
+		whereClause += " OR (m.actresses_json LIKE ? COLLATE NOCASE OR om.target_folder LIKE ? COLLATE NOCASE)"
+		args = append(args, "%"+actRec.JaName+"%", "%/"+actRec.JaName+"/%")
+	}
+
+	query := fmt.Sprintf(`
 	SELECT m.id, COALESCE(m.title, m.id), COALESCE(m.original_title, ''), COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''), COALESCE(m.actresses_json, '[]'),
 	       COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0), COALESCE(u.is_favorite, 0),
 	       MAX(lf.file_path),
@@ -359,12 +366,12 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	LEFT JOIN user_state u ON m.id = u.movie_id
 	LEFT JOIN library_files lf ON m.id = lf.movie_id
 	LEFT JOIN organized_movies om ON m.id = om.movie_id
-	WHERE m.actresses_json LIKE ? COLLATE NOCASE
+	WHERE %s
 	GROUP BY m.id
 	ORDER BY m.release_date DESC
-	`
+	`, whereClause)
 
-	rows, err := s.database.Query(query, "%"+actressName+"%")
+	rows, err := s.database.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

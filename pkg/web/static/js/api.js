@@ -241,6 +241,13 @@ export async function loadActressesData() {
     const elFollowed = document.getElementById('count-subtab-followed');
     if (elFollowed) elFollowed.textContent = state.actresses.length;
 
+    // Also load discovered actresses in NAS
+    await loadDiscoveredActresses();
+
+    // Update 'All' badge count
+    const elAll = document.getElementById('count-subtab-all');
+    if (elAll) elAll.textContent = (state.actresses.length || 0) + (state.discoveredActresses.length || 0);
+
     // Calculate unique movies across all actresses for All Movies Catalog
     const allMoviesSet = new Set();
     let inLibCount = 0;
@@ -257,9 +264,6 @@ export async function loadActressesData() {
     const elAllMovies = document.getElementById('count-subtab-all-movies');
     if (elAllMovies) elAllMovies.textContent = allMoviesSet.size;
     if (elements.countCatalog) elements.countCatalog.textContent = inLibCount;
-
-    // Also load discovered actresses in NAS
-    await loadDiscoveredActresses();
 
     // Populate organized folders & status from all actress releases
     state.actresses.forEach(entry => {
@@ -287,6 +291,8 @@ export async function loadDiscoveredActresses() {
     state.discoveredActresses = data.actresses || [];
     const elUnfollowed = document.getElementById('count-subtab-unfollowed') || document.getElementById('count-subtab-discovered');
     if (elUnfollowed) elUnfollowed.textContent = state.discoveredActresses.length;
+    const elAll = document.getElementById('count-subtab-all');
+    if (elAll) elAll.textContent = (state.actresses?.length || 0) + state.discoveredActresses.length;
   } catch (err) {
     console.error('Failed to load discovered actresses:', err);
   }
@@ -307,18 +313,25 @@ export async function fetchDiscoveredActressMovies(name) {
 
 export function switchActressSubTab(tab) {
   state.actressHubTab = tab || 'followed';
+  const btnAll = document.getElementById('subtab-btn-all');
   const btnFollowed = document.getElementById('subtab-btn-followed');
   const btnUnfollowed = document.getElementById('subtab-btn-unfollowed') || document.getElementById('subtab-btn-discovered');
 
+  const isAll = state.actressHubTab === 'all';
   const isFollowed = state.actressHubTab === 'followed';
+  const isUnfollowed = state.actressHubTab === 'unfollowed' || state.actressHubTab === 'discovered';
 
+  if (btnAll) {
+    btnAll.classList.toggle('active', isAll);
+    btnAll.setAttribute('aria-selected', String(isAll));
+  }
   if (btnFollowed) {
     btnFollowed.classList.toggle('active', isFollowed);
     btnFollowed.setAttribute('aria-selected', String(isFollowed));
   }
   if (btnUnfollowed) {
-    btnUnfollowed.classList.toggle('active', !isFollowed);
-    btnUnfollowed.setAttribute('aria-selected', String(!isFollowed));
+    btnUnfollowed.classList.toggle('active', isUnfollowed);
+    btnUnfollowed.setAttribute('aria-selected', String(isUnfollowed));
   }
 
   const titleEl = document.getElementById('actress-hub-title');
@@ -326,7 +339,12 @@ export function switchActressSubTab(tab) {
   const toolbarControls = document.querySelector('.actress-toolbar-controls');
   const sortBox = document.getElementById('actress-sort-box');
 
-  if (isFollowed) {
+  if (isAll) {
+    if (titleEl) titleEl.textContent = 'All Actresses';
+    if (subtitleEl) subtitleEl.textContent = 'Complete catalog of followed & discovered actresses in NAS';
+    if (toolbarControls) toolbarControls.classList.remove('hidden');
+    if (sortBox) sortBox.classList.remove('hidden');
+  } else if (isFollowed) {
     if (titleEl) titleEl.textContent = 'Followed Actresses';
     if (subtitleEl) subtitleEl.textContent = 'Solo filmographies & Jellyfin collection progress';
     if (toolbarControls) toolbarControls.classList.remove('hidden');
@@ -334,7 +352,8 @@ export function switchActressSubTab(tab) {
   } else {
     if (titleEl) titleEl.textContent = 'Unfollowed Actresses';
     if (subtitleEl) subtitleEl.textContent = 'Actresses found in your NAS storage who are not yet followed';
-    if (toolbarControls) toolbarControls.classList.add('hidden');
+    if (toolbarControls) toolbarControls.classList.remove('hidden');
+    if (sortBox) sortBox.classList.remove('hidden');
   }
 
   // Clear single actress selection to show the catalog/grid view
@@ -455,19 +474,20 @@ export async function promptAddActress() {
 }
 
 export async function openActiveActressFolder() {
-  let activeEntry = state.actresses.find(entry => entry.actress.name === state.activeActressName);
-  if (!activeEntry && state.actresses.length > 0) {
-    activeEntry = state.actresses[0];
-    state.activeActressName = activeEntry.actress.name;
-  }
-  if (!activeEntry) {
+  const currentName = state.collectionFilterActress && state.collectionFilterActress !== 'all'
+    ? state.collectionFilterActress
+    : state.activeActressName;
+
+  if (!currentName) {
     showToast('Please select an actress first', 'warning');
     return;
   }
-  const dl = (activeEntry.releases || []).find(r => r.is_downloaded);
+
+  let activeEntry = state.actresses.find(entry => (entry.actress.name || '').toLowerCase() === currentName.toLowerCase());
+  const dl = activeEntry ? (activeEntry.releases || []).find(r => r.is_downloaded) : null;
   const folderToOpen = dl?.organized_folder || dl?.library_path || '';
   const movieID = dl?.movie_id || '';
-  await openFolder(movieID, folderToOpen, activeEntry.actress.name);
+  await openFolder(movieID, folderToOpen, currentName);
 }
 
 export async function unfollowActiveActress() {

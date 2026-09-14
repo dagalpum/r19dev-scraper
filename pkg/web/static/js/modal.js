@@ -65,7 +65,23 @@ export async function openMovieDetail(movie) {
     meta = await scrapeMovie(movie.id, { silent: true });
   }
 
-  renderModalContent(movie, meta);
+  // Check for local NAS screenshots in extrafanart/
+  let localScreenshots = null;
+  if (movie.id) {
+    try {
+      const gRes = await fetch(`/api/movie-gallery/${encodeURIComponent(movie.id)}`);
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        if (gData.local && Array.isArray(gData.screenshots) && gData.screenshots.length > 0) {
+          localScreenshots = gData.screenshots;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to fetch local gallery:', e);
+    }
+  }
+
+  renderModalContent(movie, meta, localScreenshots);
 }
 
 export function closeModal() {
@@ -80,12 +96,30 @@ export function openMovieById(id) {
   openMovieDetail(movieObj);
 }
 
-export function renderModalContent(movie, meta) {
+export function renderModalContent(movie, meta, localScreenshots = null) {
   const id = movie.id || 'UNMATCHED';
   const uState = state.userStates[id] || {};
   const isOrganized = Boolean(state.organizedStatus[id]);
   const loc = getMovieLocationInfo(id);
-  const coverUrl = meta?.cover_url || meta?.poster_url || (id !== 'UNMATCHED' ? '/api/images/' + id : '');
+  let rawCover = meta?.cover_url || meta?.poster_url || '';
+  if (rawCover.startsWith('digital/') || rawCover.startsWith('mono/')) {
+    rawCover = 'https://pics.dmm.co.jp/' + rawCover + (rawCover.endsWith('.jpg') ? '' : '.jpg');
+  }
+
+  let coverUrl = '';
+  if (loc.type === 'library' || loc.type === 'external' || loc.type === 'staging' || isOrganized) {
+    coverUrl = (id && id !== 'UNMATCHED') ? '/api/images/' + encodeURIComponent(id) : rawCover;
+  } else {
+    coverUrl = rawCover || ((id && id !== 'UNMATCHED') ? '/api/images/' + encodeURIComponent(id) : '');
+  }
+
+  const fallbackCdn = rawCover && rawCover.startsWith('http') ? rawCover : '';
+  const combinedId = meta?.combined_id || '';
+  const r18Url = (meta?.detail_url && meta.detail_url.startsWith('http'))
+    ? meta.detail_url
+    : (combinedId
+      ? `https://r18.dev/videos/vod/movies/detail/-/id=${encodeURIComponent(combinedId)}/`
+      : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(id)}`);
 
   // Multi-part files list
   let multipartHtml = '';
@@ -108,7 +142,7 @@ export function renderModalContent(movie, meta) {
   if (meta?.actresses && meta.actresses.length > 0) {
     actressGrid = meta.actresses.map(act => {
       const isFollowed = state.actresses.some(a => a.actress.name.toLowerCase() === act.name.toLowerCase());
-      const thumb = act.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+      const thumb = `/api/actresses/avatar/${encodeURIComponent(act.name)}`;
       return `
         <div class="actress-card" style="background: var(--bg-card); padding: 1rem; border-radius: var(--radius-md); text-align: center;">
           <img src="${thumb}" alt="${escapeHtml(act.name)}" style="width: 74px; height: 74px; border-radius: 50%; object-fit: cover; margin: 0 auto 0.6rem auto; border: 2px solid var(--primary);" />
@@ -127,7 +161,7 @@ export function renderModalContent(movie, meta) {
   if (coverUrl) {
     galleryItems.push({
       src: coverUrl,
-      fallbackSrc: coverUrl,
+      fallbackSrc: fallbackCdn || coverUrl,
       w: 800,
       h: 538,
       width: 800,
@@ -136,11 +170,16 @@ export function renderModalContent(movie, meta) {
     });
   }
 
-  // Sample Screenshots with SAFE High-Res URL & Fallbacks
+  // Sample Screenshots: Use Local NAS extrafanart if available, otherwise remote URLs
   let screenshotsGrid = '';
-  if (meta?.sample_screenshots && meta.sample_screenshots.length > 0) {
-    screenshotsGrid = meta.sample_screenshots.map((url, idx) => {
-      const highResUrl = getHighResScreenshotUrl(url);
+  const screenshots = (localScreenshots && localScreenshots.length > 0)
+    ? localScreenshots
+    : (meta?.sample_screenshots || []);
+
+  if (screenshots.length > 0) {
+    screenshotsGrid = screenshots.map((url, idx) => {
+      const isLocal = url.startsWith('/api/');
+      const highResUrl = isLocal ? url : getHighResScreenshotUrl(url);
       const galleryIdx = galleryItems.length;
       galleryItems.push({
         src: highResUrl,
@@ -156,13 +195,17 @@ export function renderModalContent(movie, meta) {
         <div class="gallery-thumbnail" data-idx="${galleryIdx}" tabindex="0" role="button" aria-label="View Screenshot #${idx + 1} in gallery"
              onclick="window.app.openGallery(${galleryIdx})"
              onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.app.openGallery(${galleryIdx});}">
-          <img src="${url}" alt="Screenshot #${idx + 1}" loading="lazy" onerror="this.src='/api/proxy-image?url=${encodeURIComponent(url)}'" />
+          <img src="${url}" alt="Screenshot #${idx + 1}" loading="lazy" ${isLocal ? '' : `onerror="this.src='/api/proxy-image?url=${encodeURIComponent(url)}'"`} />
         </div>
       `;
     }).join('');
   }
 
   state.currentGallery = galleryItems;
+
+  const modalFallbackAttr = fallbackCdn
+    ? `onerror="if (this.src.indexOf('/api/images/') !== -1) { this.src='${escapeHtml(fallbackCdn)}'; } else { this.src='/placeholder.png'; }"`
+    : `onerror="this.src='/placeholder.png';"`;
 
   // FULL-WIDTH HERO COVER LAYOUT
   elements.modalContent.innerHTML = `
@@ -171,7 +214,7 @@ export function renderModalContent(movie, meta) {
       <div class="modal-hero-backdrop" style="background-image: url('${coverUrl}');"></div>
       <img class="modal-hero-cover-img" src="${coverUrl}" alt="Full High-Res Cover for ${escapeHtml(id)}"
            onclick="window.app.openGallery(0)"
-           onerror="this.src='/placeholder.png'" />
+           ${modalFallbackAttr} />
       <div class="modal-hero-overlay">
         <span class="badge-status" style="background: rgba(12,14,20,0.85); font-family: var(--font-mono); font-size: 0.95rem; font-weight: 800; color: #fff;">
           ${escapeHtml(id)}
@@ -188,11 +231,14 @@ export function renderModalContent(movie, meta) {
         <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem;">
           <span class="card-id" style="font-size: 0.95rem; font-weight: 700;">${escapeHtml(id)}</span>
           <button class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-radius: 6px;" onclick="window.app.copyMovieId('${escapeHtml(id)}', event)" title="Copy ${escapeHtml(id)}"><span class="material-symbols-outlined icon">content_copy</span> Copy ID</button>
+          <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.6rem; font-size: 0.75rem; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="View on R18.dev">
+            <span class="material-symbols-outlined icon" style="font-size: 0.85rem;">public</span> R18.dev ↗
+          </a>
         </div>
         <div class="ja-title">${escapeHtml(meta?.original_title || '')}</div>
 
         <!-- Location Status Indicator Card -->
-        <div class="modal-location-card ${loc.type === 'library' ? 'in-library' : (loc.type === 'external' ? 'outside-library' : 'in-staging')}" role="region" aria-label="Media Storage Location">
+        <div class="modal-location-card ${loc.type === 'library' ? 'in-library' : (loc.type === 'external' ? 'outside-library' : (loc.type === 'staging' ? 'in-staging' : 'missing'))}" role="region" aria-label="Media Storage Location">
           <div class="location-main">
             <div class="location-header-row">
               <span class="location-chip ${loc.badgeClass}">
@@ -232,11 +278,18 @@ export function renderModalContent(movie, meta) {
               <button class="btn btn-secondary btn-sm" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(loc.folderPath)}" onclick="window.app.openFolderEl(this, event)">
                 <span class="material-symbols-outlined icon">folder_open</span> Finder
               </button>
-            ` : `
+            ` : (loc.type === 'staging' ? `
               <button class="btn btn-primary btn-sm" onclick="window.app.organizeSingle('${id}')">
                 <span class="material-symbols-outlined icon">folder_zip</span> Organize for Jellyfin
               </button>
-            `)}
+            ` : `
+              <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;" title="View movie details and screenshots on R18.dev">
+                <span class="material-symbols-outlined icon">public</span> View on R18.dev ↗
+              </a>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.copyMovieId('${escapeHtml(id)}', event)" title="Copy ${escapeHtml(id)}">
+                <span class="material-symbols-outlined icon">content_copy</span> Copy ID
+              </button>
+            `)))}
           </div>
         </div>
 
@@ -299,7 +352,9 @@ export function renderModalContent(movie, meta) {
       ` : ''}
 
       ${screenshotsGrid ? `
-        <div class="gallery-section-title"><span class="material-symbols-outlined icon">photo_library</span> Sample Screenshots (${meta.sample_screenshots.length})</div>
+        <div class="gallery-section-title">
+          <span class="material-symbols-outlined icon">photo_library</span> Sample Screenshots (${screenshots.length})${localScreenshots ? ' <span class="badge-status" style="font-size: 0.72rem; background: rgba(16,185,129,0.2); color: #34d399; margin-left: 0.5rem;">Local NAS</span>' : ''}
+        </div>
         <div class="modal-gallery-grid">
           ${screenshotsGrid}
         </div>

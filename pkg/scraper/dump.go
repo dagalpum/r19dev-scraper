@@ -187,7 +187,7 @@ func (ds *DumpStore) GetMovie(id string, language string) (*Movie, bool) {
 		ReleaseDate:    releaseDate,
 		CoverURL:       coverURL,
 		PosterURL:      coverURL,
-		DetailURL:      fmt.Sprintf("https://r18.dev/videos/vod/movies/detail/-/combined=%s/", contentID),
+		DetailURL:      fmt.Sprintf("https://r18.dev/videos/vod/movies/detail/-/id=%s/", contentID),
 		ScrapedAt:      time.Now(),
 	}
 

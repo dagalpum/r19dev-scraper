@@ -351,21 +351,38 @@ func TestCleanMovieTitle(t *testing.T) {
 
 func TestPromoBonusNotSkippedAndSkippedReleases(t *testing.T) {
 	// 1. Promo raw photo bonus set on a standard movie ID should NOT be skipped
-	shouldSkip, reason := CheckFilmographyInclusion("SNOS-175", "潮吹きクイーン誕生 生写真3枚セット", "", nil)
+	shouldSkip, reason := CheckFilmographyInclusion("SNOS-175", "潮吹きクイーン誕生 生写真3枚セット", "", "", nil)
 	if shouldSkip {
 		t.Errorf("Expected SNOS-175 with photo bonus not to be skipped, got skip=true, reason=%s", reason)
 	}
 
 	// 2. Photobook should be skipped with Photobook reason
-	shouldSkip, reason = CheckFilmographyInclusion("B600ZSGK41601", "雛形みくる 純欲があふれてる", "", nil)
+	shouldSkip, reason = CheckFilmographyInclusion("B600ZSGK41601", "雛形みくる 純欲があふれてる", "", "", nil)
 	if !shouldSkip || reason != "Photobook / Digital Book" {
 		t.Errorf("Expected B600ZSGK41601 to be skipped as Photobook, got %v (%s)", shouldSkip, reason)
 	}
 
 	// 3. Omnibus compilation should be skipped
-	shouldSkip, reason = CheckFilmographyInclusion("MKCK-417", "総集編 600min", "", nil)
+	shouldSkip, reason = CheckFilmographyInclusion("MKCK-417", "総集編 600min", "", "", nil)
 	if !shouldSkip || reason != "Omnibus Compilation" {
 		t.Errorf("Expected MKCK-417 to be skipped as Omnibus Compilation, got %v (%s)", shouldSkip, reason)
+	}
+
+	// 4. TK Promotional SKU Variants should be skipped
+	shouldSkip, reason = CheckFilmographyInclusion("TKCJOD-510", "My Female Boss...", "【FANZA限定】... JULIA チェキセット", "", nil)
+	if !shouldSkip || reason != "Promotional SKU Variant" {
+		t.Errorf("Expected TKCJOD-510 to be skipped as Promotional SKU Variant, got %v (%s)", shouldSkip, reason)
+	}
+
+	shouldSkip, reason = CheckFilmographyInclusion("TKMFYD-123", "Limited quantity...", "【数量限定】... JULIA チェキセット", "", nil)
+	if !shouldSkip || reason != "Promotional SKU Variant" {
+		t.Errorf("Expected TKMFYD-123 to be skipped as Promotional SKU Variant, got %v (%s)", shouldSkip, reason)
+	}
+
+	// 5. RBB Omnibus Compilation should be skipped
+	shouldSkip, reason = CheckFilmographyInclusion("RBB-334", "My face is covered with cum! ... 80 rounds of massive facial cumshot!", "顔面ザーメンまみれであら大変！...大量顔射ぶっかけ80連発！", "", nil)
+	if !shouldSkip || reason != "Omnibus Compilation" {
+		t.Errorf("Expected RBB-334 to be skipped as Omnibus Compilation, got %v (%s)", shouldSkip, reason)
 	}
 }
 

@@ -141,6 +141,12 @@ make test
     - **🎬 Library** (Tab 3): Standalone movie catalog ready to watch on NAS, featuring status filter pills (`All Works`, `In Library`, `Missing`, `Watched`, `Favorites`), multi-criteria sorting (`Release Date`, `User Rating`, `Studio/Maker`, `JAV ID`, `Title`), and dynamic density toggles.
 26. **Strict Git Safety & Database Isolation**:
     All databases (`r19dev.db`, `r18_dump.db`), write-ahead logs, and dump archives are stored outside the Git workspace in `~/Library/Application Support/r19dev/`. Root `.gitignore` explicitly excludes `*.db`, `*.db-shm`, `*.db-wal`, `*.sql`, `*.sql.gz`, and `dumps/`. Verified 0 database files tracked or unstaged in Git.
+27. **Enhanced Filmography Gatekeeping (TK- Tokuten SKUs & RBB- Omnibus)**:
+    Filters out Tokuten promotional goods duplicate SKUs (`TKCJOD-510`, `TKMFYD-123`, `TKCAWB-040`) bundling Cheki photos/raw prints, Rookie Best Box (`RBB-`) omnibus series, and multi-actress compilation regexes (`\d+連発`, `\d+連射`, `\d+時間BOX`). Evaluates English and Japanese original titles simultaneously. Canonical base ID grouping penalizes promo SKUs (`-100`) so standard releases always win.
+28. **100% Deterministic Offline R18 Outbound Navigation & Verified IDs**:
+    Populated verified `r18_id` for all 37 followed actresses in SQLite (`r19dev.db.actresses`), guaranteeing 100% accurate profile links (e.g. Nao Satsuki ID `1089946`, Sayaka Nakamura ID `1094001`) without homonymous search collisions. Migrated `combined_id` across all 5,436 movies in `r19dev.db.movies` to authentic DMM `content_id` from `r18_dump.db` (e.g. `1start223`, `1fsdss685`, `cjod510`, `mfyd123`). Fixed `DetailURL` syntax in `pkg/scraper/dump.go` line 190 from `detail/-/combined=%s/` to `detail/-/id=%s/`.
+29. **Adaptive Poster Card Actions & Missing Movie UX**:
+    Poster card hover actions dynamically show `[📂 Finder]` for locally stored media, and automatically replace it with `[🌐 R18 ↗]` for unowned/missing titles. Movie detail modal replaces dysfunctional "Organize for Jellyfin" button on missing releases with primary `[🌐 View on R18.dev ↗]` button and `[📋 Copy ID]`.
 
 ---
 

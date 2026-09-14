@@ -212,7 +212,10 @@
 
         <!-- Movie Cards Grid -->
         <div id="movies-grid" class="movies-grid grid-auto" role="feed" aria-label="Movie library cards">
-          <!-- Dynamically populated via app.js -->
+          <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+          <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+          <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+          <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
         </div>
 
         <!-- Empty State -->
@@ -235,8 +238,13 @@
             <span class="actress-hub-subtitle" id="actress-hub-subtitle">Solo filmographies & Jellyfin collection progress</span>
           </div>
 
-          <!-- ACTRESS SUBTABS: FOLLOWED, UNFOLLOWED -->
+          <!-- ACTRESS SUBTABS: ALL, FOLLOWED, UNFOLLOWED -->
           <div class="actress-subtabs" id="actress-subtabs" role="tablist" aria-label="Actress Categories">
+            <button id="subtab-btn-all" class="actress-subtab-btn" role="tab" aria-selected="false" onclick="window.app.switchActressSubTab('all')">
+              <span class="material-symbols-outlined icon">groups</span>
+              <span>All</span>
+              <span class="badge-subcount" id="count-subtab-all">0</span>
+            </button>
             <button id="subtab-btn-followed" class="actress-subtab-btn active" role="tab" aria-selected="true" onclick="window.app.switchActressSubTab('followed')">
               <span class="material-symbols-outlined icon">star</span>
               <span>Followed</span>
@@ -281,7 +289,12 @@
 
           <!-- Main Content: Directory Grid or Dedicated Filmography Grid -->
           <div id="collection-shelves-container" class="collection-shelves-container">
-            <!-- Dynamically populated -->
+            <div class="actresses-directory-grid">
+              <div class="skeleton-actress-card"><div class="skeleton-avatar skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer" style="margin: 0 auto;"></div><div class="skeleton-line sm skeleton-shimmer" style="margin: 0 auto; width: 50%;"></div><div class="skeleton-pill skeleton-shimmer" style="margin-top: 0.5rem;"></div></div>
+              <div class="skeleton-actress-card"><div class="skeleton-avatar skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer" style="margin: 0 auto;"></div><div class="skeleton-line sm skeleton-shimmer" style="margin: 0 auto; width: 50%;"></div><div class="skeleton-pill skeleton-shimmer" style="margin-top: 0.5rem;"></div></div>
+              <div class="skeleton-actress-card"><div class="skeleton-avatar skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer" style="margin: 0 auto;"></div><div class="skeleton-line sm skeleton-shimmer" style="margin: 0 auto; width: 50%;"></div><div class="skeleton-pill skeleton-shimmer" style="margin-top: 0.5rem;"></div></div>
+              <div class="skeleton-actress-card"><div class="skeleton-avatar skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer" style="margin: 0 auto;"></div><div class="skeleton-line sm skeleton-shimmer" style="margin: 0 auto; width: 50%;"></div><div class="skeleton-pill skeleton-shimmer" style="margin-top: 0.5rem;"></div></div>
+            </div>
           </div>
         </div>
       </section>
@@ -295,7 +308,12 @@
           </div>
         </div>
         <div id="catalog-collection-view" class="catalog-collection-view">
-          <!-- Dynamically populated All Movies Catalog -->
+          <div class="movies-grid grid-auto">
+            <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+            <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+            <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+            <div class="skeleton-card"><div class="skeleton-poster skeleton-shimmer"></div><div class="skeleton-body"><div class="skeleton-line lg skeleton-shimmer"></div><div class="skeleton-line md skeleton-shimmer"></div><div class="skeleton-line sm skeleton-shimmer"></div></div></div>
+          </div>
         </div>
       </section>
 

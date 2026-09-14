@@ -31,6 +31,17 @@ func UpgradeDMMImageURL(imgURL string) string {
 		return ""
 	}
 
+	// If relative DMM path like "digital/video/..." or "mono/movie/...", prefix with DMM CDN
+	if !strings.HasPrefix(imgURL, "http://") && !strings.HasPrefix(imgURL, "https://") {
+		if strings.HasPrefix(imgURL, "digital/") || strings.HasPrefix(imgURL, "mono/") {
+			imgURL = "https://pics.dmm.co.jp/" + imgURL
+		}
+	}
+	if (strings.HasPrefix(imgURL, "https://pics.dmm.co.jp/") || strings.HasPrefix(imgURL, "http://pics.dmm.co.jp/")) &&
+		!strings.HasSuffix(imgURL, ".jpg") && !strings.HasSuffix(imgURL, ".png") && !strings.HasSuffix(imgURL, ".webp") {
+		imgURL += ".jpg"
+	}
+
 	// Upgrade sample screenshots: id-15.jpg -> idjp-15.jpg
 	if dmmSampleRegex.MatchString(imgURL) && !strings.Contains(imgURL, "jp-") {
 		return dmmSampleRegex.ReplaceAllString(imgURL, "${1}jp-${2}.jpg")

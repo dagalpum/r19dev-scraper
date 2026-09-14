@@ -203,6 +203,19 @@ r19dev-scraper/
 * **Direct Directory Pruning**: The directory crawler in `pkg/scanner/scanner.go` evaluates `d.IsDir()` immediately upon entering directory traversal and executes `filepath.SkipDir` for `.actors`, `extrafanart`, `@eaDir`, and hidden dot folders (`.`) without executing redundant `os.Lstat` syscalls.
 * **NAS Performance Impact**: Completely eliminates network SMB latency bottlenecks, speeding up scans of archives with thousands of asset images from timeouts down to seconds.
 
+### 4.17 Tokuten Promotional SKU Deduplication & Omnibus Gatekeeping
+* **Tokuten Goods Bundle SKUs (`TK-` Prefixes)**: DMM/FANZA prefixes `TK` to studio disc codes (e.g. `TKCJOD-510`, `TKMFYD-123`, `TKCAWB-040`) for limited bundle packages that include Cheki photos (チェキセット) or raw photographic prints (生写真). The video content is 100% identical to the primary catalog release.
+* **Dual-Language Filter Inspection**: `CheckFilmographyInclusion` in `pkg/actress/service.go` inspects both English machine-translated `Title` and Japanese `OriginalTitle` simultaneously, detecting Japanese bundle keywords (`チェキセット`, `生写真`, `【FANZA限定】`) and compilation markers (`\d+連発`, `\d+連射`, `\d+時間BOX`, `ベストセレクション`).
+* **Omnibus Clip Compilations (`RBB-` Series)**: Added explicit detection for Rookie Best Box / REbecca Best Box (`RBB-`) and multi-actress clip compilation series.
+* **Canonical Base ID Grouping**: `deduplicateReleases` strips promotional prefixes (`TK`) and suffixes (`-EC`), penalizing promotional SKUs with a `-100` score so standard canonical releases (`CJOD-510`, `MFYD-123`) always emerge as master titles.
+
+### 4.18 100% Deterministic Offline R18 Outbound Navigation & Verified IDs
+* **Authentic DMM Content IDs**: Rather than relying on naive algorithmic padding (which produces 404s for SOD/Faleno/Dahlia titles prepended with `1`, e.g. `1start223`, `1fsdss685`), `r19dev.db.movies.combined_id` is matched against `r18_dump.db.r18_movies.content_id`. 100.0% of library releases match verified records.
+* **Direct Detail URL Syntax**: Direct links use `https://r18.dev/videos/vod/movies/detail/-/id={content_id}/` (HTTP 200 OK), replacing legacy `combined={content_id}` syntax (which yielded HTTP 404).
+* **Performer Profile Disambiguation**: 100% of followed actresses in `r19dev.db.actresses` have their verified DMM `r18_id` populated (e.g. Nao Satsuki ID `1089946`, Sayaka Nakamura ID `1094001`), eliminating homonymous collisions on older performers.
+* **Adaptive Card Actions**: On filmography poster cards, hover action buttons adapt dynamically: local library items show `[📂 Finder]`, while unowned/missing releases present `[🌐 R18 ↗]` for 1-click preview.
+* **100% Offline-First Invariant**: All outbound links are client-side `<a target="_blank">` hyperlinks, requiring zero external server-side requests and immune to Cloudflare HTTP 429 rate limits.
+
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions

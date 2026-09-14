@@ -2420,12 +2420,11 @@ body {
    ========================================================================== */
 /* Actress Hub Header & Toolbar */
 .actress-view-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   gap: 1.25rem;
   margin-bottom: 1.5rem;
-  flex-wrap: wrap;
   padding: 0.85rem 1.25rem;
   background: rgba(20, 26, 41, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -2433,10 +2432,17 @@ body {
   backdrop-filter: blur(12px);
 }
 
+.actress-view-bar.catalog-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .actress-header-info {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  justify-self: start;
 }
 
 .actress-hub-title {
@@ -2458,6 +2464,7 @@ body {
   align-items: center;
   gap: 0.85rem;
   flex-wrap: wrap;
+  justify-self: end;
 }
 
 .actress-search-box {
@@ -3138,6 +3145,7 @@ body {
   gap: 0.4rem;
   cursor: pointer;
   border: none;
+  text-decoration: none;
   transition: all 0.18s ease;
 }
 
@@ -3779,6 +3787,7 @@ body {
   border-radius: 12px;
   padding: 4px;
   gap: 4px;
+  justify-self: center;
 }
 
 .actress-subtab-btn {
@@ -6134,4 +6143,126 @@ body {
   background: #ef4444;
   border-color: #ef4444;
   transform: scale(1.08);
+}
+
+/* ==========================================================================
+   Modern Skeleton & Shimmer Loading Placeholders
+   ========================================================================== */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.03) 25%,
+    rgba(255, 255, 255, 0.08) 37%,
+    rgba(255, 255, 255, 0.03) 63%
+  ) !important;
+  background-size: 200% 100% !important;
+  animation: skeleton-shimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite !important;
+}
+
+.skeleton-card {
+  border-radius: var(--radius-lg, 16px);
+  background: var(--bg-card, rgba(20, 26, 41, 0.6));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.skeleton-poster {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.skeleton-body {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 6px;
+}
+
+.skeleton-line.sm {
+  height: 10px;
+  width: 60%;
+}
+
+.skeleton-line.md {
+  height: 14px;
+  width: 80%;
+}
+
+.skeleton-line.lg {
+  height: 20px;
+  width: 90%;
+}
+
+.skeleton-actress-card {
+  border-radius: 16px;
+  background: var(--bg-card, rgba(20, 26, 41, 0.6));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  text-align: center;
+  pointer-events: none;
+}
+
+.skeleton-avatar {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  margin-bottom: 0.25rem;
+}
+
+.skeleton-pill {
+  height: 24px;
+  width: 70px;
+  border-radius: 999px;
+}
+
+/* Actress Avatar Status Badge (Followed vs In NAS) */
+.actress-badge-status-pill {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--bg-card);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.actress-badge-status-pill .material-symbols-outlined {
+  font-size: 0.85rem;
+}
+
+.actress-badge-status-pill.followed {
+  background: #f59e0b;
+  color: #000;
+}
+
+.actress-badge-status-pill.unfollowed {
+  background: #3b82f6;
+  color: #fff;
 }

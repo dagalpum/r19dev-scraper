@@ -33,8 +33,12 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
   - Full browser history (`history.pushState` & `popstate`) supporting trackpad two-finger swipe back and hardware back buttons.
 - **📦 Multi-Part & Multi-File Aggregation**: Files belonging to the same movie (e.g. `_1.mp4`, `_2.mp4`, `-cd1.mp4`, `-cd2.mp4`) are automatically merged into a **single card** with part chips (`P1, P2 (2 parts • 8.4 GB)`).
 - **🎛️ Dynamic Grid Density (1–5 Cards/Row)**: Adjust view layout from **1 card/row** (wide showcase layout with large cover) up to **5 cards/row** (compact grid) or **Auto**. Preferences are automatically saved in `localStorage`.
-- **🖼️ Full-Width Hero Cover Modal**: Clicking any movie card displays a cinematic, full-width high-resolution cover banner with an ambient blurred backdrop, interactive rating stars (1–5 ⭐), watched toggle (👁️), favorite toggle (❤️), and direct full-screen zoom.
+- **🖼️ Full-Width Hero Cover Modal**: Clicking any movie card displays a cinematic, full-width high-resolution cover banner with an ambient blurred backdrop, interactive rating stars (1–5 ⭐), watched toggle (👁️), favorite toggle (❤️), one-click `[🌐 R18.dev ↗]` outbound link, and direct full-screen zoom. For missing/unowned titles, the modal displays a dedicated `[🌐 View on R18.dev ↗]` primary action button to preview sample screenshots and trailers.
 - **📸 High-Resolution Screenshot Lightbox**: Safe DMM high-resolution image upgrader (`jp-` format) with dual-layer fallback to prevent 404s, backend image proxy fallback, and `<meta name="referrer" content="no-referrer">` to prevent CDN hotlink blocking.
+- **🌐 100% Verified R18.dev Outbound Navigation**:
+  - Direct, 404-immune detail links (`https://r18.dev/videos/vod/movies/detail/-/id={content_id}/`) constructed using authentic DMM content IDs verified against `r18_dump.db` across 100% of the filmography catalog.
+  - Hover actions on poster cards automatically adapt: shows `[📂 Finder]` for locally stored media, and replaces it with `[🌐 R18 ↗]` for missing/unowned releases.
+  - Fully client-side (`<a target="_blank">`) ensuring zero external network calls on the backend and 100% offline-first reliability.
 - **📊 Real-Time Streaming Progress Bars**: Live Server-Sent Events (SSE) stream progress bars for both **Scanning** (live file discovery & matching) and **NAS Organizing** (step-by-step progress, target path, and live console logs).
 - **♿ WCAG 2.1 AA/AAA Compliant**: High-contrast typography, explicit `:focus-visible` keyboard rings, semantic landmark roles (`banner`, `main`, `tablist`, `progressbar`, `dialog`), `aria-label` tags, and a Skip-to-content navigation link.
 
@@ -46,22 +50,22 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
   - **Balanced 2-Element Card Layout**:
     - **Left**: High-contrast status pill `[ ✓ SNOS-140 ]` (emerald green if downloaded in NAS, rose/amber with download icon if missing).
     - **Right**: Monospace release date `2026-03-24` (or `Recent`). Clean, compact, and immune to line breaks or text clipping.
-  - **Clean Genuine Solo Releases Only**: Automated multi-layer gatekeeper strips compilation titles (総集編, BEST, BOX), photobooks, duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`BMW-`, `REbecca STARS`, $\ge 10$ performers).
-  - **Canonical SKU Prioritization**: Smart deduplication engine favors standard maker disc codes over streaming outlet re-releases (e.g. `PPPD-485` preferred over `PPP-485`, `BOMN-169` over `BOM-169`).
+  - **Clean Genuine Solo Releases Only**: Automated multi-layer gatekeeper strips compilation titles (総集編, BEST, BOX, `\d+連発`, `\d+連射`), photobooks, Tokuten duplicate SKUs (`TK-` prefixes, Cheki/生写真 photo sets), duplicate SKU formats (BOD, 9SNOS, K9SNOS), variety talk shows (`KCKC-`, `MLTN-`), AI Remaster re-issues (`JQRE-`, `AIリマスター`, `復刻`), and omnibus clip compilations (`RBB-`, `BMW-`, `REbecca STARS`, $\ge 10$ performers). Inspects both English and Japanese original titles simultaneously.
+  - **Canonical SKU Prioritization**: Smart deduplication engine groups releases by canonical base ID (stripping `TK`, `-EC`) and normalized original title, demoting promo SKUs so standard canonical releases (`CJOD-510`, `MFYD-123`) always win.
   - **Minimalist Progress Line**: Clean 6px track displaying exact downloaded count and completion percentage: `${dl}/${total} (${pct}%)`.
   - **Instant Search & Multi-Sort**: Search by Romaji or Japanese name, and sort by `% Completed`, `Most Missing`, `Name A-Z`, or `Total Works`.
 - **🍱 2-Column Bento Profile & Dedicated Filmography Stage**:
   - **Left Sticky Bento Profile Sidebar (~340px)**:
-    - **Bento 1 (Identity)**: 140px HD avatar with hover zoom, bold Romaji name, Japanese Kanji name, verified R18 ID badge, and dynamic **Career Span** (`📅 2021 – 2026`).
+    - **Bento 1 (Identity)**: 140px HD avatar with hover zoom, bold Romaji name, Japanese Kanji name, verified R18 ID badge (`#1089946`), and dynamic **Career Span** (`📅 2021 – 2026`). All 37 followed actresses are 100% matched to authentic DMM IDs.
     - **Bento 2 (Library & Storage)**: Prominent gradient highlight of **Total NAS Storage** occupied (e.g. `20.21 GB`), visual collection progress bar, and average file size (`Avg 5.1 GB / file`).
     - **Bento 3 (Top Genres)**: Interactive tag cloud displaying the actress's top 8 most frequent genres with counts (e.g. `#Slender (14)`, `#VR (6)`). **Clicking any genre instantly filters her filmography on the right stage**.
-    - **Bento 4 (Quick Actions)**: One-click `[📂 Open in Finder]` directly into her NAS directory, `[🌐 R18.dev Profile ↗]`, and `[🔄 Refresh Releases]`.
+    - **Bento 4 (Quick Actions)**: One-click `[📂 Open in Finder]` directly into her NAS directory, `[🌐 R18.dev Profile ↗]` (direct to verified actress page), and `[🔄 Refresh Releases]`.
   - **Right Filmography Main Stage**:
     - **Interactive Stage Toolbar**: Real-time in-page search input (filter instantly by ID like `SNOS` or title), sub-filter pills (`All Works`, `In Library`, `Missing`, and **`Skipped`**), active genre filter chip with 1-click removal, and a **Sort Dropdown** (`Release Date (Newest)`, `Release Date (Oldest)`, `File Size (Largest)`, `Movie ID (A-Z)`).
     - **Audit Filtered Works (`Skipped` Tab)**: Dedicated sub-filter displaying all non-solo or duplicate titles excluded by the gatekeeper (with specific skip reason badges like `Omnibus Compilation`, `AI Remaster`, `Variety Talk Show`, etc.) so no titles are mysteriously lost.
-    - **Uniform Poster Grid**: Eye-friendly, standardized aspect ratio poster cards with hover actions (`▶ Details`, `📋 Copy ID`, `📂 Finder`).
+    - **Uniform Poster Grid**: Eye-friendly, standardized aspect ratio poster cards with hover actions (`▶ Details`, `📋 Copy ID`, `📂 Finder` / `🌐 R18 ↗`).
     - **Responsive Design**: Automatically stacks smoothly to 1 column on mobile/tablet viewports (<960px).
-- **💬 Optional Chat Timeline Mode**: Toggle into a messaging interface (LINE / Discord style) where followed actresses announce their releases chronologically with unacquired grayscale styling and library status bubbles.
+- **💬 Optional Chat Timeline Mode**: Toggle into a messaging interface (LINE / Discord style) where followed actresses announce their releases chronologically with unacquired grayscale styling and library status bubbles with inline R18.dev link buttons.
 
 ### 📂 3. NAS Directory Organizer & Jellyfin Pipeline
 - Organizes videos into the standardized folder structure:

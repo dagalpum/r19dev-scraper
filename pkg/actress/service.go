@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dagalp/r19dev-scraper/pkg/db"
+	"github.com/dagalp/r19dev-scraper/pkg/jellyfin"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
 )
 
@@ -25,6 +27,7 @@ type GenreCount struct {
 // ReleaseItem holds filmography release details with download, watch, and rating status.
 type ReleaseItem struct {
 	MovieID         string   `json:"movie_id"`
+	CombinedID      string   `json:"combined_id,omitempty"`
 	Title           string   `json:"title"`
 	OriginalTitle   string   `json:"original_title"`
 	Maker           string   `json:"maker"`
@@ -137,7 +140,11 @@ func (s *Service) ListDiscoveredActresses() ([]DiscoveredActress, error) {
 		COALESCE(MAX(m.release_date), '') AS latest_release
 	FROM movies m
 	JOIN json_each(m.actresses_json) a
-	LEFT JOIN actresses act ON LOWER(act.name) = LOWER(json_extract(a.value, '$.name'))
+	LEFT JOIN actresses act ON (
+		LOWER(act.name) = LOWER(json_extract(a.value, '$.name'))
+		OR (act.ja_name != '' AND LOWER(act.ja_name) = LOWER(json_extract(a.value, '$.name')))
+		OR (act.ja_name != '' AND LOWER(act.ja_name) = LOWER(json_extract(a.value, '$.ja_name')))
+	)
 	WHERE act.name IS NULL
 	  AND json_extract(a.value, '$.name') IS NOT NULL
 	  AND TRIM(json_extract(a.value, '$.name')) != ''
@@ -161,9 +168,7 @@ func (s *Service) ListDiscoveredActresses() ([]DiscoveredActress, error) {
 		if err := rows.Scan(&d.Name, &d.JaName, &d.ImageURL, &d.MovieCount, &d.LatestRelease); err != nil {
 			return nil, err
 		}
-		if d.ImageURL == "" {
-			d.ImageURL = "https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg"
-		}
+		d.ImageURL = "/api/actresses/avatar/" + url.PathEscape(d.Name)
 		results = append(results, d)
 	}
 	if err := rows.Err(); err != nil {
@@ -186,6 +191,7 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 	query := `
 	SELECT 
 		m.id, 
+		COALESCE(m.combined_id, ''),
 		COALESCE(m.title, m.id), 
 		COALESCE(m.original_title, ''), 
 		COALESCE(m.maker, ''), 
@@ -226,7 +232,7 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 		var orgFolder, orgVideo, libPath, genresJSON string
 		var isWatched, isFavorite int
 		if err := rows.Scan(
-			&r.MovieID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL,
+			&r.MovieID, &r.CombinedID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL,
 			&orgFolder, &orgVideo, &libPath,
 			&r.SizeBytes,
 			&genresJSON,
@@ -304,7 +310,10 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 			}
 		}
 
-		if r.CoverURL == "" && r.MovieID != "" {
+		if r.CoverURL != "" {
+			r.CoverURL = jellyfin.UpgradeDMMImageURL(r.CoverURL)
+		}
+		if (r.CoverURL == "" || !strings.HasPrefix(r.CoverURL, "http")) && r.MovieID != "" {
 			r.CoverURL = "/api/images/" + r.MovieID
 		}
 
@@ -356,7 +365,7 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	}
 
 	query := fmt.Sprintf(`
-	SELECT m.id, COALESCE(m.title, m.id), COALESCE(m.original_title, ''), COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''), COALESCE(m.actresses_json, '[]'),
+	SELECT m.id, COALESCE(m.combined_id, ''), COALESCE(m.title, m.id), COALESCE(m.original_title, ''), COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''), COALESCE(m.actresses_json, '[]'),
 	       COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0), COALESCE(u.is_favorite, 0),
 	       MAX(lf.file_path),
 	       MAX(om.target_folder), MAX(om.target_video),
@@ -396,7 +405,7 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		var sizeBytes int64
 		var genresJSON string
 		if err := rows.Scan(
-			&r.MovieID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL, &actJSON,
+			&r.MovieID, &r.CombinedID, &r.Title, &r.OriginalTitle, &r.Maker, &r.ReleaseDate, &r.CoverURL, &actJSON,
 			&r.IsWatched, &r.UserRating, &r.IsFavorite,
 			&libPath,
 			&orgFolder, &orgVideo,
@@ -473,7 +482,10 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		}
 		actCount := len(parsedActs)
 
-		if r.CoverURL == "" && r.MovieID != "" {
+		if r.CoverURL != "" {
+			r.CoverURL = jellyfin.UpgradeDMMImageURL(r.CoverURL)
+		}
+		if (r.CoverURL == "" || !strings.HasPrefix(r.CoverURL, "http")) && r.MovieID != "" {
 			r.CoverURL = "/api/images/" + r.MovieID
 		}
 
@@ -482,7 +494,7 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 
 		// Filter out non-video books, variety shows, director cut re-issues, and multi-actress omnibus
 		if !r.IsDownloaded && !r.IsWatched && !r.IsFavorite {
-			if shouldSkip, skipReason := CheckFilmographyInclusion(r.MovieID, r.Title, r.CoverURL, r.Genres, actCount); shouldSkip {
+			if shouldSkip, skipReason := CheckFilmographyInclusion(r.MovieID, r.Title, r.OriginalTitle, r.CoverURL, r.Genres, actCount); shouldSkip {
 				r.SkipReason = skipReason
 				skippedReleases = append(skippedReleases, r)
 				continue
@@ -587,7 +599,8 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 }
 
 var (
-	promoSkuRegex         = regexp.MustCompile(`^(?:[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}\d+)`)
+	promoSkuRegex         = regexp.MustCompile(`^(?:TK[A-Z]{3,6}[-_]?\d+|[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}\d+|(?:77|88)[A-Z]{3,6}[-_]?\d+)`)
+	compilationRegex      = regexp.MustCompile(`(?i)\d+連発|\d+連射|\d+時間(?:BOX|ベスト)?|ベストセレクション|BESTセレクション|総集編|オムニバス|傑作選`)
 	multiBodyRegex        = regexp.MustCompile(`\d+体(?:\d+分)?`)
 	titleDedupeCleanRegex = regexp.MustCompile(`(?i)【.*?】|（.*?）|\(.*?\)|\[.*?\]|ブルーレイエディション|ディレクターズカット版?|未公開映像収録(?:のプレミアムエディション)?|2枚組|[_\s\-]`)
 	marketingPrefixRegex  = regexp.MustCompile(`^【(?:数量限定|FANZA限定|DMM限定|期間限定|初回限定|先行配信|特装版|限定)】\s*`)
@@ -614,9 +627,26 @@ func normalizeTitleForDedupe(title string) string {
 	return strings.ToLower(strings.TrimSpace(t))
 }
 
+func canonicalBaseID(id string) string {
+	upper := strings.ToUpper(strings.TrimSpace(id))
+	upper = strings.TrimPrefix(upper, "TK")
+	upper = strings.TrimSuffix(upper, "-EC")
+	upper = strings.TrimSuffix(upper, "-T-EC")
+	upper = strings.TrimSuffix(upper, "EC")
+	upper = strings.ReplaceAll(upper, "BD-", "-")
+	return upper
+}
+
 // scoreReleaseCanon returns a higher score for standard canonical release IDs (e.g. PPPD-485 > PPP-485, BOMN-169 > BOM-169)
 func scoreReleaseCanon(r ReleaseItem) int {
 	score := 0
+	upperID := strings.ToUpper(r.MovieID)
+
+	// Demote promotional/bonus SKUs (TK..., EC suffixes)
+	if strings.HasPrefix(upperID, "TK") || strings.HasSuffix(upperID, "-EC") || strings.HasSuffix(upperID, "-T-EC") || strings.HasSuffix(upperID, "EC") {
+		score -= 100
+	}
+
 	parts := strings.Split(r.MovieID, "-")
 	prefix := parts[0]
 	// Prefer standard 4-letter prefixes (PPPD, BOMN, MMND, MIZD) over 3-letter outlet codes (PPP, BOM, MMN, MIZ)
@@ -628,7 +658,7 @@ func scoreReleaseCanon(r ReleaseItem) int {
 }
 
 // deduplicateReleases keeps downloaded copies first, and collapses unowned multi-format duplicate SKUs
-// preferring canonical primary IDs (e.g. PPPD-485 over PPP-485, BOMN-169 over BOM-169).
+// preferring canonical primary IDs (e.g. CJOD-510 over TKCJOD-510, PPPD-485 over PPP-485).
 func deduplicateReleases(items []ReleaseItem) []ReleaseItem {
 	var result []ReleaseItem
 	titleGroups := make(map[string][]ReleaseItem)
@@ -641,24 +671,63 @@ func deduplicateReleases(items []ReleaseItem) []ReleaseItem {
 			continue
 		}
 
-		cleanT := normalizeTitleForDedupe(item.Title)
-		if len(cleanT) < 6 {
+		// Prefer grouping by normalized clean Japanese title if available
+		var key string
+		if item.OriginalTitle != "" {
+			cleanJa := normalizeTitleForDedupe(CleanMovieTitle(item.OriginalTitle))
+			if len(cleanJa) >= 6 {
+				key = "JA:" + cleanJa
+			}
+		}
+
+		if key == "" {
+			cleanT := normalizeTitleForDedupe(CleanMovieTitle(item.Title))
+			if len(cleanT) >= 6 {
+				key = "EN:" + cleanT
+			}
+		}
+
+		// Fallback: If title is short or missing, group by canonical base ID if it is a promotional/variant SKU (starts with TK or ends with EC)
+		if key == "" {
+			upperID := strings.ToUpper(item.MovieID)
+			if strings.HasPrefix(upperID, "TK") || strings.HasSuffix(upperID, "-EC") || strings.HasSuffix(upperID, "-T-EC") || strings.HasSuffix(upperID, "EC") {
+				baseID := canonicalBaseID(item.MovieID)
+				if baseID != "" && strings.Contains(baseID, "-") {
+					key = "ID:" + baseID
+				}
+			}
+		}
+
+		if key == "" {
 			result = append(result, item)
 			continue
 		}
 
-		if _, exists := titleGroups[cleanT]; !exists {
-			orderedKeys = append(orderedKeys, cleanT)
+		if _, exists := titleGroups[key]; !exists {
+			orderedKeys = append(orderedKeys, key)
 		}
-		titleGroups[cleanT] = append(titleGroups[cleanT], item)
+		titleGroups[key] = append(titleGroups[key], item)
 	}
 
 	// Index already downloaded titles so unowned duplicate variants don't show up
 	seenDownloaded := make(map[string]bool)
 	for _, item := range result {
-		cleanT := normalizeTitleForDedupe(item.Title)
+		if item.OriginalTitle != "" {
+			cleanJa := normalizeTitleForDedupe(CleanMovieTitle(item.OriginalTitle))
+			if len(cleanJa) >= 6 {
+				seenDownloaded["JA:"+cleanJa] = true
+			}
+		}
+		cleanT := normalizeTitleForDedupe(CleanMovieTitle(item.Title))
 		if len(cleanT) >= 6 {
-			seenDownloaded[cleanT] = true
+			seenDownloaded["EN:"+cleanT] = true
+		}
+		upperID := strings.ToUpper(item.MovieID)
+		if strings.HasPrefix(upperID, "TK") || strings.HasSuffix(upperID, "-EC") || strings.HasSuffix(upperID, "-T-EC") || strings.HasSuffix(upperID, "EC") {
+			baseID := canonicalBaseID(item.MovieID)
+			if baseID != "" && strings.Contains(baseID, "-") {
+				seenDownloaded["ID:"+baseID] = true
+			}
 		}
 	}
 
@@ -673,7 +742,7 @@ func deduplicateReleases(items []ReleaseItem) []ReleaseItem {
 			continue
 		}
 
-		// Sort group: highest canonical score first (PPPD > PPP), then earliest release date (original premiere)
+		// Sort group: highest canonical score first (standard ID > TK variant), then earliest release date
 		sort.SliceStable(group, func(i, j int) bool {
 			scoreI := scoreReleaseCanon(group[i])
 			scoreJ := scoreReleaseCanon(group[j])
@@ -702,9 +771,10 @@ func deduplicateReleases(items []ReleaseItem) []ReleaseItem {
 // CheckFilmographyInclusion evaluates whether a movie should be included in the primary filmography,
 // or whether it represents a non-video item, variety show, clip compilation, or duplicate variant.
 // Returns (shouldSkip bool, skipReason string).
-func CheckFilmographyInclusion(movieID, title, coverURL string, genres []string, actressCount ...int) (bool, string) {
+func CheckFilmographyInclusion(movieID, title, originalTitle, coverURL string, genres []string, actressCount ...int) (bool, string) {
 	upperID := strings.ToUpper(strings.TrimSpace(movieID))
-	tl := strings.ToLower(title)
+	allText := strings.TrimSpace(title + " " + originalTitle)
+	allLower := strings.ToLower(allText)
 
 	// 1. Non-video digital e-book / photobook checks
 	if strings.Contains(coverURL, "ebook-assets") || strings.Contains(coverURL, "/e-book/") {
@@ -714,52 +784,55 @@ func CheckFilmographyInclusion(movieID, title, coverURL string, genres []string,
 		return true, "Photobook / Digital Book"
 	}
 	for _, kw := range []string{"写真集", "デジタル写真集", "ポーズブック", "フォトブック", "電子書籍", "photobook", "photo book"} {
-		if strings.Contains(tl, kw) {
+		if strings.Contains(allLower, kw) {
 			return true, "Photobook / Digital Book"
 		}
 	}
 
 	// 2. Variety talk show series & known compilation series (e.g. KCKC-, MLTN-, BMW-)
 	if strings.HasPrefix(upperID, "KCKC") || strings.HasPrefix(upperID, "MLTN") || strings.HasPrefix(upperID, "BMW") ||
-		strings.Contains(title, "カチコチTV") || strings.Contains(title, "カチコチ") {
+		strings.Contains(allText, "カチコチTV") || strings.Contains(allText, "カチコチ") {
 		return true, "Variety / Talk Show"
 	}
 
 	// 3. Online autograph sessions, event tickets & non-video participation goods
-	if strings.Contains(title, "オンラインサイン会") ||
-		strings.Contains(title, "参加URL付き") ||
-		strings.Contains(title, "参加URL付") ||
-		strings.Contains(title, "参加権付き") ||
-		strings.Contains(title, "参加権付") {
+	if strings.Contains(allText, "オンラインサイン会") ||
+		strings.Contains(allText, "参加URL付き") ||
+		strings.Contains(allText, "参加URL付") ||
+		strings.Contains(allText, "参加権付き") ||
+		strings.Contains(allText, "参加権付") {
 		return true, "Event / Autograph Session"
 	}
 
 	// 4. Re-issue Director's Cut / Remaster duplicates (e.g. SSIS-160 to SSIS-165, JQRE-027 AI Remaster)
-	if strings.Contains(title, "未公開映像収録") ||
-		strings.Contains(title, "ディレクターズカット") ||
-		strings.Contains(title, "AIリマスター") ||
-		strings.Contains(tl, "ai remaster") ||
-		strings.Contains(title, "デジタルリマスター") ||
-		strings.Contains(tl, "digital remaster") ||
-		strings.Contains(title, "リマスター") ||
-		strings.Contains(tl, "remaster") ||
-		strings.Contains(title, "復刻") ||
+	if strings.Contains(allText, "未公開映像収録") ||
+		strings.Contains(allText, "ディレクターズカット") ||
+		strings.Contains(allText, "AIリマスター") ||
+		strings.Contains(allLower, "ai remaster") ||
+		strings.Contains(allText, "デジタルリマスター") ||
+		strings.Contains(allLower, "digital remaster") ||
+		strings.Contains(allText, "リマスター") ||
+		strings.Contains(allLower, "remaster") ||
+		strings.Contains(allText, "復刻") ||
 		strings.HasPrefix(upperID, "JQRE") {
 		return true, "Remaster / Director's Cut"
 	}
 
-	// 5. Promotional SKU prefixes: C9, E9, S9, N9, L9, K9, KA9, KC9, TK9, 9 followed by letters
-	if promoSkuRegex.MatchString(upperID) {
+	// 5. Promotional SKU prefixes: TK... (e.g. TKCJOD-510, TKMFYD-123, TKCAWB-040), C9, E9, S9, N9, L9, K9, KA9, KC9, TK9, 9 followed by letters, -EC, -T-EC
+	if promoSkuRegex.MatchString(upperID) || strings.HasSuffix(upperID, "-EC") || strings.HasSuffix(upperID, "-T-EC") || strings.HasSuffix(upperID, "EC") {
 		return true, "Promotional SKU Variant"
 	}
 
 	// 6. Title markers (Cheki sets, goods bundles, purchase bonuses)
-	if strings.Contains(title, "キーホルダーセット") ||
-		strings.Contains(title, "チェキセット") ||
-		strings.Contains(title, "チェキ付き") ||
-		strings.Contains(title, "チェキ付") ||
-		strings.Contains(title, "購入特典付き") ||
-		strings.Contains(title, "購入特典付") {
+	if strings.Contains(allText, "キーホルダーセット") ||
+		strings.Contains(allText, "チェキセット") ||
+		strings.Contains(allText, "チェキ付き") ||
+		strings.Contains(allText, "チェキ付") ||
+		strings.Contains(allText, "購入特典付き") ||
+		strings.Contains(allText, "購入特典付") ||
+		strings.Contains(allLower, "cheki set") ||
+		strings.Contains(allLower, "cheki") ||
+		strings.Contains(allLower, "polaroid set") {
 		return true, "Promotional Bundle Variant"
 	}
 
@@ -783,19 +856,25 @@ func CheckFilmographyInclusion(movieID, title, coverURL string, genres []string,
 		}
 	}
 
-	// 8. Title markers (compilations)
-	if strings.Contains(title, "総集編") ||
-		strings.Contains(title, "オムニバス") ||
-		strings.Contains(title, "傑作選") {
+	// 8. Known Omnibus series (RBB-, MKCK-)
+	if strings.HasPrefix(upperID, "RBB") || strings.HasPrefix(upperID, "MKCK") {
 		return true, "Omnibus Compilation"
 	}
 
-	// 9. Multi-actress omnibus compilation checks (Group 1)
+	// 9. Title markers (compilations)
+	if strings.Contains(allText, "総集編") ||
+		strings.Contains(allText, "オムニバス") ||
+		strings.Contains(allText, "傑作選") ||
+		compilationRegex.MatchString(allText) {
+		return true, "Omnibus Compilation"
+	}
+
+	// 10. Multi-actress omnibus compilation checks (Group 1)
 	// Exemption for Group 5: Official anniversary crossover harem works are genuine productions, not clip omnibus
-	isAnniversary := strings.Contains(title, "周年") ||
-		strings.Contains(tl, "anniversary") ||
-		strings.Contains(title, "記念作品") ||
-		strings.Contains(title, "創立")
+	isAnniversary := strings.Contains(allText, "周年") ||
+		strings.Contains(allLower, "anniversary") ||
+		strings.Contains(allText, "記念作品") ||
+		strings.Contains(allText, "創立")
 
 	if !isAnniversary {
 		actCount := 0
@@ -804,7 +883,7 @@ func CheckFilmographyInclusion(movieID, title, coverURL string, genres []string,
 		}
 
 		// Multi-actress omnibus (e.g. MKCK-417 with 74 actresses, RBB-279 with 49 actresses, REbecca STARS with 12 actresses)
-		if actCount >= 10 || strings.Contains(title, "REbecca STARS") {
+		if actCount >= 10 || strings.Contains(allText, "REbecca STARS") {
 			return true, "Omnibus Compilation"
 		}
 
@@ -815,13 +894,13 @@ func CheckFilmographyInclusion(movieID, title, coverURL string, genres []string,
 					return true, "Omnibus Compilation"
 				}
 			}
-			if strings.Contains(tl, "600min") || strings.Contains(tl, "480分") || strings.Contains(tl, "300分") {
+			if strings.Contains(allLower, "600min") || strings.Contains(allLower, "480分") || strings.Contains(allLower, "300分") {
 				return true, "Omnibus Compilation"
 			}
 		}
 
 		// Multi-body title patterns (e.g. RKI-114: 50体480分) or 600min omnibus
-		if multiBodyRegex.MatchString(title) || strings.Contains(tl, "600min") {
+		if multiBodyRegex.MatchString(allText) || strings.Contains(allLower, "600min") {
 			return true, "Omnibus Compilation"
 		}
 	}
@@ -831,8 +910,28 @@ func CheckFilmographyInclusion(movieID, title, coverURL string, genres []string,
 
 // IsPromotionalOrDuplicateVariant checks if a title/product represents a promotional variant,
 // event ticket, digital photo book, duplicate bundle, or omnibus compilation.
-func IsPromotionalOrDuplicateVariant(movieID, title, coverURL string, genres []string, actressCount ...int) bool {
-	skip, _ := CheckFilmographyInclusion(movieID, title, coverURL, genres, actressCount...)
+func IsPromotionalOrDuplicateVariant(movieID, title string, args ...any) bool {
+	originalTitle := ""
+	coverURL := ""
+	var genres []string
+	var actCount []int
+
+	for _, arg := range args {
+		switch v := arg.(type) {
+		case string:
+			if originalTitle == "" && coverURL == "" && !strings.HasPrefix(v, "http") {
+				originalTitle = v
+			} else if coverURL == "" {
+				coverURL = v
+			}
+		case []string:
+			genres = v
+		case int:
+			actCount = append(actCount, v)
+		}
+	}
+
+	skip, _ := CheckFilmographyInclusion(movieID, title, originalTitle, coverURL, genres, actCount...)
 	return skip
 }
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -9,10 +10,12 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -111,6 +114,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/scrape/stream", s.handleScrapeStream)
 	mux.HandleFunc("/api/images/", s.handleImage)
 	mux.HandleFunc("/api/proxy-image", s.handleProxyImage)
+	mux.HandleFunc("/api/actresses/avatar/", s.handleActressAvatar)
+	mux.HandleFunc("/api/movie-gallery/", s.handleMovieGallery)
+	mux.HandleFunc("/api/movie-gallery-image/", s.handleMovieGalleryImage)
 	mux.HandleFunc("/api/actresses", s.handleActresses)
 	mux.HandleFunc("/api/actresses/follow", s.handleActressFollow)
 	mux.HandleFunc("/api/actresses/unfollow", s.handleActressUnfollow)
@@ -337,11 +343,23 @@ func (s *Server) handleMovie(w http.ResponseWriter, r *http.Request) {
 	// GET /api/movie/{id}
 	if s.db != nil {
 		if mov, _ := s.db.GetMovie(id); mov != nil {
+			if mov.CoverURL != "" {
+				mov.CoverURL = jellyfin.UpgradeDMMImageURL(mov.CoverURL)
+			}
+			if mov.PosterURL != "" {
+				mov.PosterURL = jellyfin.UpgradeDMMImageURL(mov.PosterURL)
+			}
 			writeJSON(w, mov)
 			return
 		}
 	}
 	if mov, found := cache.Default().GetMovie(id); found && mov != nil {
+		if mov.CoverURL != "" {
+			mov.CoverURL = jellyfin.UpgradeDMMImageURL(mov.CoverURL)
+		}
+		if mov.PosterURL != "" {
+			mov.PosterURL = jellyfin.UpgradeDMMImageURL(mov.PosterURL)
+		}
 		writeJSON(w, mov)
 		return
 	}
@@ -449,7 +467,7 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 				if reqErr == nil {
 					req.Header.Set("User-Agent", scraper.DefaultUA)
 					req.Header.Set("Referer", "https://r18.dev/")
-					client := &http.Client{Timeout: 10 * time.Second}
+					client := &http.Client{Timeout: 2 * time.Second}
 					resp, doErr := client.Do(req)
 					if doErr == nil && resp.StatusCode == http.StatusOK {
 						defer resp.Body.Close()
@@ -464,6 +482,151 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+		}
+	}
+
+	http.NotFound(w, r)
+}
+
+func (s *Server) handleActressAvatar(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/api/actresses/avatar/")
+	name, _ = url.PathUnescape(name)
+	name = strings.TrimSpace(name)
+	if name == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	imgDir := filepath.Join(homeDir, "Library", "Application Support", "r19dev", "actress_images")
+	safeName := strings.ReplaceAll(strings.ReplaceAll(name, "/", "_"), ":", "_")
+	targetPath := filepath.Join(imgDir, safeName+".jpg")
+
+	if b, err := os.ReadFile(targetPath); err == nil && len(b) > 100 {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=31536000")
+		_, _ = w.Write(b)
+		return
+	}
+
+	// Try checking if ja_name image exists on disk
+	if s.db != nil {
+		var jaName sql.NullString
+		_ = s.db.QueryRow("SELECT ja_name FROM actresses WHERE name = ? OR ja_name = ? LIMIT 1", name, name).Scan(&jaName)
+		if jaName.Valid && jaName.String != "" {
+			jaSafe := strings.ReplaceAll(strings.ReplaceAll(jaName.String, "/", "_"), ":", "_")
+			jaPath := filepath.Join(imgDir, jaSafe+".jpg")
+			if b, err := os.ReadFile(jaPath); err == nil && len(b) > 100 {
+				w.Header().Set("Content-Type", "image/jpeg")
+				w.Header().Set("Cache-Control", "public, max-age=31536000")
+				_, _ = w.Write(b)
+				return
+			}
+		}
+	}
+
+	// Fallback: Generate sleek SVG avatar with actress initials
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	initials := ""
+	parts := strings.Fields(name)
+	for _, p := range parts {
+		rns := []rune(p)
+		if len(rns) > 0 {
+			initials += strings.ToUpper(string(rns[0]))
+		}
+	}
+	if len(initials) > 2 {
+		initials = initials[:2]
+	}
+	if initials == "" {
+		initials = "★"
+	}
+	svg := fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0%%" y1="0%%" x2="100%%" y2="100%%"><stop offset="0%%" stop-color="#3b82f6"/><stop offset="100%%" stop-color="#8b5cf6"/></linearGradient></defs><rect width="120" height="120" rx="60" fill="url(#g)"/><text x="50%%" y="54%%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-size="36" font-family="system-ui, -apple-system, sans-serif" font-weight="700">%s</text></svg>`, initials)
+	_, _ = w.Write([]byte(svg))
+}
+
+func (s *Server) handleMovieGallery(w http.ResponseWriter, r *http.Request) {
+	movieID := strings.ToUpper(strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/movie-gallery/")))
+	if movieID == "" {
+		writeJSONError(w, "movie_id required", http.StatusBadRequest)
+		return
+	}
+
+	var screenshots []string
+	targetFolder := ""
+
+	if s.db != nil {
+		targetFolder, _, _ = s.db.GetOrganizedDetails(movieID)
+	}
+
+	if targetFolder == "" {
+		defaultOrg := defaultOrganizedDir(s.targetDir)
+		if matches, _ := filepath.Glob(filepath.Join(defaultOrg, "*", "*"+movieID+"*")); len(matches) > 0 {
+			targetFolder = matches[0]
+		}
+	}
+
+	if targetFolder != "" {
+		extrafanartDir := filepath.Join(targetFolder, "extrafanart")
+		if entries, err := os.ReadDir(extrafanartDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					continue
+				}
+				name := entry.Name()
+				lower := strings.ToLower(name)
+				if strings.HasSuffix(lower, ".jpg") || strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".webp") {
+					screenshots = append(screenshots, fmt.Sprintf("/api/movie-gallery-image/%s/%s", movieID, url.PathEscape(name)))
+				}
+			}
+		}
+	}
+
+	sort.Strings(screenshots)
+	writeJSON(w, map[string]any{
+		"movie_id":    movieID,
+		"local":       len(screenshots) > 0,
+		"screenshots": screenshots,
+	})
+}
+
+func (s *Server) handleMovieGalleryImage(w http.ResponseWriter, r *http.Request) {
+	trimmed := strings.TrimPrefix(r.URL.Path, "/api/movie-gallery-image/")
+	parts := strings.SplitN(trimmed, "/", 2)
+	if len(parts) < 2 {
+		http.NotFound(w, r)
+		return
+	}
+	movieID := strings.ToUpper(strings.TrimSpace(parts[0]))
+	filename, _ := url.PathUnescape(parts[1])
+
+	targetFolder := ""
+	if s.db != nil {
+		targetFolder, _, _ = s.db.GetOrganizedDetails(movieID)
+	}
+	if targetFolder == "" {
+		defaultOrg := defaultOrganizedDir(s.targetDir)
+		if matches, _ := filepath.Glob(filepath.Join(defaultOrg, "*", "*"+movieID+"*")); len(matches) > 0 {
+			targetFolder = matches[0]
+		}
+	}
+
+	if targetFolder != "" {
+		imgPath := filepath.Join(targetFolder, "extrafanart", filename)
+		if b, err := os.ReadFile(imgPath); err == nil && len(b) > 0 {
+			ext := strings.ToLower(filepath.Ext(filename))
+			contentType := "image/jpeg"
+			switch ext {
+			case ".png":
+				contentType = "image/png"
+			case ".webp":
+				contentType = "image/webp"
+			}
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			_, _ = w.Write(b)
+			return
 		}
 	}
 

@@ -20,6 +20,30 @@ import {
   fetchDiscoveredActressMovies
 } from './api.js';
 
+export function renderSkeletonMovieCards(count = 8) {
+  return Array.from({ length: count }).map(() => `
+    <div class="skeleton-card">
+      <div class="skeleton-poster skeleton-shimmer"></div>
+      <div class="skeleton-body">
+        <div class="skeleton-line lg skeleton-shimmer"></div>
+        <div class="skeleton-line md skeleton-shimmer"></div>
+        <div class="skeleton-line sm skeleton-shimmer"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+export function renderSkeletonActressCards(count = 12) {
+  return Array.from({ length: count }).map(() => `
+    <div class="skeleton-actress-card">
+      <div class="skeleton-avatar skeleton-shimmer"></div>
+      <div class="skeleton-line md skeleton-shimmer" style="margin: 0 auto; width: 70%;"></div>
+      <div class="skeleton-line sm skeleton-shimmer" style="margin: 0 auto; width: 45%;"></div>
+      <div class="skeleton-pill skeleton-shimmer" style="margin-top: 0.5rem;"></div>
+    </div>
+  `).join('');
+}
+
 export function setupActressHub() {
   elements.btnModeCollection?.addEventListener('click', () => setActressViewMode('collection'));
   elements.btnModeChat?.addEventListener('click', () => setActressViewMode('chat'));
@@ -124,18 +148,45 @@ export function getGlobalTopGenres(maxCount = 6) {
   return sorted.slice(0, maxCount);
 }
 
-export function generateSpiderChartSvg(actressReleases, globalTopGenres, activeFilter = null) {
-  if (!globalTopGenres || globalTopGenres.length < 3) {
-    return '';
+export function generateSpiderChartSvg(actressReleases, globalTopGenres, activeFilter = null, actressTopGenres = []) {
+  // Build up to 6 radar axes:
+  // 1. Prioritize this actress's own top genres
+  // 2. If fewer than 6, supplement from globalTopGenres
+  const axes = [];
+  const seen = new Set();
+
+  (actressTopGenres || []).forEach(g => {
+    const name = (typeof g === 'string' ? g : g.genre || '').trim();
+    if (name && !seen.has(name) && axes.length < 6) {
+      seen.add(name);
+      axes.push({ genre: name });
+    }
+  });
+
+  (globalTopGenres || []).forEach(g => {
+    const name = (typeof g === 'string' ? g : g.genre || '').trim();
+    if (name && !seen.has(name) && axes.length < 6) {
+      seen.add(name);
+      axes.push({ genre: name });
+    }
+  });
+
+  if (axes.length < 3) {
+    return `
+      <div class="radar-empty-state" style="padding: 1.5rem 0.5rem; text-align: center; color: var(--text-muted); font-size: 0.8rem;">
+        <span class="material-symbols-outlined icon" style="font-size: 1.8rem; opacity: 0.35; display: block; margin-bottom: 0.25rem;">radar</span>
+        <span>Genres will unlock as library is organized</span>
+      </div>
+    `;
   }
 
   const cx = 135;
   const cy = 116;
   const R = 64;
-  const N = globalTopGenres.length;
+  const N = axes.length;
 
   // Tally counts for current actress
-  const counts = globalTopGenres.map(g => {
+  const counts = axes.map(g => {
     return (actressReleases || []).filter(r => (r.genres || []).includes(g.genre)).length;
   });
 
@@ -176,7 +227,7 @@ export function generateSpiderChartSvg(actressReleases, globalTopGenres, activeF
     const py = cy + R * fraction * Math.sin(angle);
     dataPts.push(`${px.toFixed(1)},${py.toFixed(1)}`);
 
-    const g = globalTopGenres[i];
+    const g = axes[i];
     const isFiltered = activeFilter === g.genre;
 
     dots.push(`
@@ -343,7 +394,7 @@ export function openActressProfileDrawer(entry) {
     ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
     : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
 
-  const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+  const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
   // Extract unique studios/makers from releases
   const makers = [...new Set(releases.map(r => r.maker).filter(Boolean))];
@@ -533,15 +584,38 @@ export function createPosterCardHtml(rel) {
   const folderPath = rel.organized_folder || rel.library_path || state.organizedFolders[id] || '';
   const loc = getMovieLocationInfo(id, folderPath, rel.is_downloaded);
 
-  const coverUrl = rel.cover_url || rel.poster_url || meta?.cover_url || meta?.poster_url || (id ? '/api/images/' + id : '');
+  // Determine cover URL with smart CDN normalization and local storage priority
+  let rawCover = rel.cover_url || rel.poster_url || meta?.cover_url || meta?.poster_url || '';
+  if (rawCover.startsWith('digital/') || rawCover.startsWith('mono/')) {
+    rawCover = 'https://pics.dmm.co.jp/' + rawCover + (rawCover.endsWith('.jpg') ? '' : '.jpg');
+  }
+
+  let coverUrl = '';
+  if (loc.type === 'library' || loc.type === 'external' || loc.type === 'staging' || rel.is_downloaded) {
+    coverUrl = id ? '/api/images/' + encodeURIComponent(id) : rawCover;
+  } else {
+    coverUrl = rawCover || (id ? '/api/images/' + encodeURIComponent(id) : '');
+  }
+
+  const fallbackCdn = rawCover && rawCover.startsWith('http') ? rawCover : '';
+  const fallbackAttr = fallbackCdn
+    ? `onerror="if (this.src.indexOf('/api/images/') !== -1) { this.src='${escapeHtml(fallbackCdn)}'; } else { this.style.display='none'; this.nextElementSibling.style.display='flex'; }"`
+    : `onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"`;
+
   const title = meta?.title || rel.title || id;
   const maker = meta?.maker || rel.maker || '';
   const date = rel.release_date || meta?.release_date || '';
   const actressName = rel.actress_name || (rel.actresses && rel.actresses.length > 0 ? rel.actresses.join(', ') : '');
   const subText = actressName ? `${actressName} • ${maker || 'Studio'}` : (maker || 'R18.dev');
+  const combinedId = rel.combined_id || meta?.combined_id || '';
+  const r18Url = (meta?.detail_url && meta.detail_url.startsWith('http'))
+    ? meta.detail_url
+    : (combinedId
+      ? `https://r18.dev/videos/vod/movies/detail/-/id=${encodeURIComponent(combinedId)}/`
+      : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(id)}`);
 
   const imgHtml = coverUrl ?
-    `<img class="poster-img" src="${coverUrl}" alt="${escapeHtml(id)}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+    `<img class="poster-img" src="${coverUrl}" alt="${escapeHtml(id)}" loading="lazy" ${fallbackAttr} />
      <div class="poster-fallback" style="display: none;">
        <div class="poster-fallback-icon"><span class="material-symbols-outlined icon" style="font-size: 2.2rem; color: var(--text-muted);">movie</span></div>
        <div class="poster-fallback-id">${escapeHtml(id)}</div>
@@ -580,7 +654,11 @@ export function createPosterCardHtml(rel) {
           <button class="poster-btn-action poster-btn-secondary" data-movie-id="${escapeHtml(id)}" data-path="${escapeHtml(folderPath)}" onclick="window.app.openFolderEl(this, event)">
             <span class="material-symbols-outlined icon">folder_open</span> Finder
           </button>
-        ` : ''}
+        ` : `
+          <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="poster-btn-action poster-btn-secondary" onclick="event.stopPropagation();" title="View on R18.dev">
+            <span class="material-symbols-outlined icon">public</span> R18 ↗
+          </a>
+        `}
       </div>
     </div>
   `;
@@ -612,7 +690,8 @@ export function createShelfHtml(shelfId, title, icon, count, cardsHtml) {
 export function renderActressCollection() {
   if (!elements.collectionShelvesContainer) return;
 
-  if (!state.actresses || state.actresses.length === 0) {
+  const hasAnyData = (state.actresses && state.actresses.length > 0) || (state.discoveredActresses && state.discoveredActresses.length > 0);
+  if (!hasAnyData) {
     if (elements.collectionActressChips) elements.collectionActressChips.innerHTML = '';
     if (elements.collectionActressHero) {
       elements.collectionActressHero.innerHTML = `
@@ -624,7 +703,13 @@ export function renderActressCollection() {
         </div>
       `;
     }
-    elements.collectionShelvesContainer.innerHTML = '';
+    elements.collectionShelvesContainer.innerHTML = `
+      <section class="collection-directory-section">
+        <div class="actresses-directory-grid">
+          ${renderSkeletonActressCards(12)}
+        </div>
+      </section>
+    `;
     return;
   }
 
@@ -640,7 +725,166 @@ export function renderActressCollection() {
 
     let contentHtml = '';
 
-    if (state.actressHubTab === 'unfollowed' || state.actressHubTab === 'discovered') {
+    if (state.actressHubTab === 'all') {
+      // Build unified list of Followed and Unfollowed actresses
+      let unifiedList = [];
+
+      (state.actresses || []).forEach(e => {
+        const stats = getActressLocationStats(e);
+        const latestDate = e.latest_date || (e.releases && e.releases[0] ? e.releases[0].release_date : '') || '';
+        unifiedList.push({
+          isFollowed: true,
+          name: e.actress.name,
+          ja_name: e.actress.ja_name,
+          image_url: `/api/actresses/avatar/${encodeURIComponent(e.actress.name)}`,
+          stats: stats,
+          movie_count: stats.libCount,
+          total_count: stats.total,
+          latest_date: latestDate
+        });
+      });
+
+      (state.discoveredActresses || []).forEach(e => {
+        unifiedList.push({
+          isFollowed: false,
+          name: e.name,
+          ja_name: e.ja_name,
+          image_url: `/api/actresses/avatar/${encodeURIComponent(e.name)}`,
+          stats: null,
+          movie_count: e.movie_count || 1,
+          total_count: e.movie_count || 1,
+          latest_date: e.latest_release || ''
+        });
+      });
+
+      if (state.actressSearchQuery) {
+        const q = state.actressSearchQuery.toLowerCase();
+        unifiedList = unifiedList.filter(e => {
+          const n = (e.name || '').toLowerCase();
+          const j = (e.ja_name || '').toLowerCase();
+          return n.includes(q) || j.includes(q);
+        });
+      }
+
+      const sortMode = state.actressSort || 'latest-desc';
+      unifiedList.sort((a, b) => {
+        if (sortMode === 'name-asc') {
+          return (a.name || '').localeCompare(b.name || '');
+        } else if (sortMode === 'lib-desc') {
+          return b.movie_count - a.movie_count || (b.latest_date || '').localeCompare(a.latest_date || '');
+        } else if (sortMode === 'pct-desc') {
+          const pctA = a.stats ? a.stats.libPct : 0;
+          const pctB = b.stats ? b.stats.libPct : 0;
+          return pctB - pctA || b.movie_count - a.movie_count;
+        } else {
+          return (b.latest_date || '').localeCompare(a.latest_date || '') || b.movie_count - a.movie_count;
+        }
+      });
+
+      contentHtml += `
+        <section class="collection-directory-section">
+          <div class="directory-section-header">
+            <div>
+              <h3 class="directory-section-title">All Actresses</h3>
+              <p class="directory-section-subtitle">Complete catalog of followed and discovered actresses in NAS library</p>
+            </div>
+            <div class="dir-header-actions" style="display: flex; align-items: center; gap: 0.65rem;">
+              <button class="btn btn-secondary btn-sm" onclick="window.app.openNetworkGraph()" title="Explore Relationship Network Graph">
+                <span class="material-symbols-outlined icon">hub</span> Network Graph
+              </button>
+              <span class="directory-section-badge">${unifiedList.length} Actresses</span>
+            </div>
+          </div>
+          <div class="actresses-directory-grid">
+            ${unifiedList.length === 0 ? `
+              <div class="shelf-empty-state" style="grid-column: 1 / -1; padding: 3rem 1.5rem; text-align: center;">
+                <span class="material-symbols-outlined" style="font-size: 2.5rem; color: var(--text-muted); margin-bottom: 0.5rem;">person_search</span>
+                <div style="font-weight: 600; font-size: 1.1rem; color: #fff;">No Actresses Match Filter</div>
+                <div style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.35rem;">Try adjusting your search query or sort option.</div>
+              </div>
+            ` : unifiedList.map(entry => {
+              const avatar = entry.image_url;
+              if (entry.isFollowed) {
+                const stats = entry.stats;
+                const isCompleted = stats.isLibraryComplete;
+                return `
+                  <div class="actress-dir-card ${isCompleted ? 'completed' : ''}" onclick="window.app.filterCollectionActress('${escapeHtml(entry.name)}')">
+                    <div class="actress-dir-avatar-box">
+                      <img class="actress-dir-avatar" src="${avatar}" alt="${escapeHtml(entry.name)}" onerror="this.src='/placeholder.png'" />
+                      <div class="actress-badge-status-pill followed" title="Followed Actress">
+                        <span class="material-symbols-outlined icon">star</span>
+                      </div>
+                    </div>
+                    <div class="actress-dir-body">
+                      <div class="actress-dir-header">
+                        <span class="actress-dir-name" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</span>
+                      </div>
+                      <div class="actress-dir-progress-row" title="In Library: ${stats.libCount} | Staging/Archive: ${stats.stagingCount} | Missing: ${stats.missingCount} (Total: ${stats.total})">
+                        <div class="actress-dir-progress-track">
+                          <div class="actress-dir-progress-segment lib-segment" style="width: ${stats.libPct}%;"></div>
+                          <div class="actress-dir-progress-segment staging-segment" style="width: ${stats.stagingPct}%;"></div>
+                        </div>
+                        <div class="actress-dir-stats-line">
+                          <span class="actress-dir-fraction">
+                            ${isCompleted ? `
+                              <span class="stat-lib-complete"><span class="material-symbols-outlined icon" style="font-size: 0.8rem; vertical-align: -1px;">check_circle</span> ${stats.libCount}/${stats.total}</span>
+                            ` : `
+                              <span class="stat-lib">${stats.libCount}/${stats.total}</span>${stats.stagingCount > 0 ? ` <span class="stat-staging">(+${stats.stagingCount})</span>` : ''}
+                            `}
+                          </span>
+                          <span class="actress-dir-pct">
+                            ${isCompleted ? '<span class="badge-pct-complete">100%</span>' : `${stats.libPct}%`}
+                          </span>
+                        </div>
+                      </div>
+                      <div class="actress-dir-latest-row">
+                        <div class="actress-dir-latest-pill ${isCompleted ? 'downloaded' : 'missing'}">
+                          <span class="material-symbols-outlined icon">${isCompleted ? 'verified' : 'history'}</span>
+                          <span class="actress-dir-latest-id">${isCompleted ? 'COMPLETE' : 'TRACKED'}</span>
+                        </div>
+                        <span class="actress-dir-latest-date">${escapeHtml(entry.latest_date || 'Cataloged')}</span>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              } else {
+                return `
+                  <div class="actress-dir-card discovered" onclick="window.app.filterCollectionActress('${escapeHtml(entry.name)}')">
+                    <div class="actress-dir-avatar-box">
+                      <img class="actress-dir-avatar" src="${avatar}" alt="${escapeHtml(entry.name)}" onerror="this.src='/placeholder.png'" />
+                      <div class="actress-badge-status-pill unfollowed" title="Unfollowed (In NAS)">
+                        <span class="material-symbols-outlined icon">folder</span>
+                      </div>
+                    </div>
+                    <div class="actress-dir-body">
+                      <div class="actress-dir-header">
+                        <span class="actress-dir-name" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</span>
+                      </div>
+                      <div class="actress-dir-nas-info">
+                        <span class="material-symbols-outlined icon">video_library</span>
+                        <span>${entry.movie_count} ${entry.movie_count === 1 ? 'title' : 'titles'} in NAS library</span>
+                      </div>
+                      <div class="actress-dir-latest-row">
+                        <div class="actress-dir-latest-pill nas-info">
+                          <span class="material-symbols-outlined icon">calendar_today</span>
+                          <span class="actress-dir-latest-id">LATEST</span>
+                        </div>
+                        <span class="actress-dir-latest-date">${escapeHtml(entry.latest_date || 'Recent')}</span>
+                      </div>
+                      <div class="actress-dir-actions">
+                        <button class="btn-follow-quick" onclick="event.stopPropagation(); window.app.quickFollowDiscovered('${escapeHtml(entry.name)}', '${escapeHtml(entry.ja_name || '')}', '', this)">
+                          <span class="material-symbols-outlined icon">person_add</span> Follow
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }
+            }).join('')}
+          </div>
+        </section>
+      `;
+    } else if (state.actressHubTab === 'unfollowed' || state.actressHubTab === 'discovered') {
       // Render Unfollowed Actresses (with files in NAS)
       let discList = [...state.discoveredActresses];
       if (state.actressSearchQuery) {
@@ -675,7 +919,7 @@ export function renderActressCollection() {
                 <div style="color: var(--text-muted); font-size: 0.88rem; margin-top: 0.35rem;">Every actress with files in your NAS is currently followed.</div>
               </div>
             ` : discList.map(entry => {
-              const avatar = entry.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+              const avatar = `/api/actresses/avatar/${encodeURIComponent(entry.name)}`;
               const count = entry.movie_count || 1;
               const latest = entry.latest_release || 'Unknown';
 
@@ -700,7 +944,7 @@ export function renderActressCollection() {
                       <span class="actress-dir-latest-date">${escapeHtml(latest || 'Recent')}</span>
                     </div>
                     <div class="actress-dir-actions">
-                      <button class="btn-follow-quick" onclick="event.stopPropagation(); window.app.quickFollowDiscovered('${escapeHtml(entry.name)}', '${escapeHtml(entry.ja_name || '')}', '${escapeHtml(entry.image_url || '')}', this)">
+                      <button class="btn-follow-quick" onclick="event.stopPropagation(); window.app.quickFollowDiscovered('${escapeHtml(entry.name)}', '${escapeHtml(entry.ja_name || '')}', '', this)">
                         <span class="material-symbols-outlined icon">person_add</span> Follow
                       </button>
                     </div>
@@ -788,7 +1032,7 @@ export function renderActressCollection() {
               const a = entry.actress;
               const stats = getActressLocationStats(entry);
               const isCompleted = stats.isLibraryComplete;
-              const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+              const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
               const latestDate = entry.latest_date || (entry.releases && entry.releases[0] ? entry.releases[0].release_date : '');
               const latestID = entry.latest_movie_id || (entry.releases && entry.releases[0] ? entry.releases[0].movie_id : '');
@@ -862,7 +1106,7 @@ export function renderActressCollection() {
       elements.collectionActressHero.classList.add('hidden');
     }
 
-    const activeEntry = state.actresses.find(e => (e.actress.name || '').toLowerCase() === state.collectionFilterActress.toLowerCase());
+    let activeEntry = state.actresses.find(e => (e.actress.name || '').toLowerCase() === state.collectionFilterActress.toLowerCase());
 
     if (!activeEntry) {
       // Unfollowed / Discovered in NAS Actress View
@@ -870,7 +1114,7 @@ export function renderActressCollection() {
       const discEntry = state.discoveredActresses.find(d => (d.name || '').toLowerCase() === targetName);
       const actName = discEntry ? discEntry.name : state.collectionFilterActress;
       const jaName = discEntry?.ja_name || '';
-      const avatar = discEntry?.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+      const avatar = `/api/actresses/avatar/${encodeURIComponent(actName)}`;
 
       state.discoveredMoviesCache = state.discoveredMoviesCache || {};
       const cachedMovies = state.discoveredMoviesCache[targetName];
@@ -889,23 +1133,30 @@ export function renderActressCollection() {
         }
 
         elements.collectionShelvesContainer.innerHTML = `
-          <div class="discovered-actress-container">
-            <div class="discovered-hero-card">
-              <div class="discovered-hero-avatar-wrap">
-                <img class="discovered-hero-avatar" src="${avatar}" alt="${escapeHtml(actName)}" onerror="this.src='/placeholder.png'" />
-              </div>
-              <div class="discovered-hero-info">
-                <div class="discovered-hero-tag-row">
-                  <span class="discovered-badge-nas"><span class="material-symbols-outlined icon">inventory_2</span> Local NAS Titles</span>
+          <div class="actress-detail-layout">
+            <aside class="actress-bento-sidebar">
+              <button class="bento-back-btn" onclick="window.app.filterCollectionActress('all')">
+                <span class="back-arrow">←</span> All Actresses
+              </button>
+              <div class="bento-card bento-card-identity">
+                <div class="bento-avatar-wrapper">
+                  <img class="bento-avatar" src="${avatar}" alt="${escapeHtml(actName)}" onerror="this.src='/placeholder.png'" />
                 </div>
-                <h2 class="discovered-hero-name">${escapeHtml(actName)}</h2>
-                ${jaName ? `<div class="discovered-hero-ja">${escapeHtml(jaName)}</div>` : ''}
+                <div class="bento-identity-info">
+                  <h2 class="bento-name">${escapeHtml(actName)}</h2>
+                  ${jaName ? `<div class="bento-ja-name">${escapeHtml(jaName)}</div>` : ''}
+                  <div class="bento-badges-row">
+                    <span class="bento-badge-mono" style="background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3);">
+                      <span class="material-symbols-outlined icon" style="font-size: 0.72rem; vertical-align: -1px; margin-right: 2px;">inventory_2</span> Local NAS
+                    </span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div style="text-align: center; padding: 4rem 1rem;">
-              <span class="material-symbols-outlined spin" style="font-size: 2.5rem; color: var(--primary);">progress_activity</span>
-              <p style="margin-top: 1rem; color: var(--text-muted);">Finding local NAS titles for ${escapeHtml(actName)}...</p>
-            </div>
+            </aside>
+            <main class="actress-main-stage" style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 400px; padding: 4rem 1rem;">
+              <span class="material-symbols-outlined spin" style="font-size: 2.8rem; color: var(--primary);">progress_activity</span>
+              <p style="margin-top: 1rem; color: var(--text-muted); font-size: 0.95rem;">Scanning NAS library for ${escapeHtml(actName)} titles...</p>
+            </main>
           </div>
         `;
         return;
@@ -924,8 +1175,9 @@ export function renderActressCollection() {
           title: rel.title || rel.movie_id,
           maker: rel.maker || '',
           release_date: rel.release_date || '',
-          cover_url: rel.cover_url || `/api/images/${rel.movie_id}`,
+          cover_url: rel.cover_url || `/api/images/${encodeURIComponent(rel.movie_id)}`,
           is_downloaded: true,
+          size_bytes: rel.size_bytes || 0,
           genres: rel.genres || [],
           organized_folder: rel.organized_folder || rel.library_path || '',
           library_path: rel.library_path || ''
@@ -945,8 +1197,9 @@ export function renderActressCollection() {
             title: meta?.title || m.id,
             maker: meta?.maker || '',
             release_date: meta?.release_date || '',
-            cover_url: meta?.cover_url || meta?.poster_url || `/api/images/${m.id}`,
+            cover_url: meta?.cover_url || meta?.poster_url || `/api/images/${encodeURIComponent(m.id)}`,
             is_downloaded: true,
+            size_bytes: m.size || 0,
             genres: meta?.genres || [],
             organized_folder: state.organizedFolders[m.id] || ''
           });
@@ -967,8 +1220,9 @@ export function renderActressCollection() {
               title: rel.title || rel.movie_id,
               maker: rel.maker || '',
               release_date: rel.release_date || '',
-              cover_url: rel.cover_url || `/api/images/${rel.movie_id}`,
+              cover_url: rel.cover_url || `/api/images/${encodeURIComponent(rel.movie_id)}`,
               is_downloaded: true,
+              size_bytes: rel.size_bytes || 0,
               genres: rel.genres || [],
               organized_folder: rel.organized_folder || ''
             });
@@ -976,72 +1230,51 @@ export function renderActressCollection() {
         });
       });
 
-      // Apply search filter if user typed in search input
-      let displayMatches = localMatches;
-      if (state.actressMovieSearch) {
-        const q = state.actressMovieSearch.toLowerCase();
-        displayMatches = displayMatches.filter(m => 
-          (m.movie_id || '').toLowerCase().includes(q) ||
-          (m.title || '').toLowerCase().includes(q) ||
-          (m.maker || '').toLowerCase().includes(q)
-        );
-      }
+      // Tally genres, total size, debut/latest dates
+      const genreTally = {};
+      let totalBytes = 0;
+      let debutDate = '';
+      let latestDate = '';
 
-      // Sort
-      if (state.actressMovieSort === 'date-asc') {
-        displayMatches.sort((a, b) => (a.release_date || '').localeCompare(b.release_date || ''));
-      } else if (state.actressMovieSort === 'id-asc') {
-        displayMatches.sort((a, b) => (a.movie_id || '').localeCompare(b.movie_id || ''));
-      } else {
-        displayMatches.sort((a, b) => (b.release_date || '').localeCompare(a.release_date || ''));
-      }
+      localMatches.forEach(rel => {
+        totalBytes += (rel.size_bytes || 0);
+        if (rel.release_date) {
+          if (!debutDate || rel.release_date < debutDate) debutDate = rel.release_date;
+          if (!latestDate || rel.release_date > latestDate) latestDate = rel.release_date;
+        }
+        (rel.genres || []).forEach(g => {
+          const trimmed = (g || '').trim();
+          if (trimmed) {
+            genreTally[trimmed] = (genreTally[trimmed] || 0) + 1;
+          }
+        });
+      });
 
-      const cards = displayMatches.map(createPosterCardHtml);
+      const topGenres = Object.entries(genreTally)
+        .map(([genre, count]) => ({ genre, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 8);
 
-      elements.collectionShelvesContainer.innerHTML = `
-        <div class="discovered-actress-container">
-          <div class="discovered-hero-card">
-            <div class="discovered-hero-avatar-wrap">
-              <img class="discovered-hero-avatar" src="${avatar}" alt="${escapeHtml(actName)}" onerror="this.src='/placeholder.png'" />
-            </div>
-            <div class="discovered-hero-info">
-              <div class="discovered-hero-tag-row">
-                <span class="discovered-badge-nas"><span class="material-symbols-outlined icon">inventory_2</span> Local NAS Titles</span>
-                <span class="discovered-badge-count">${localMatches.length} ${localMatches.length === 1 ? 'Title' : 'Titles'} Available</span>
-              </div>
-              <h2 class="discovered-hero-name">${escapeHtml(actName)}</h2>
-              ${jaName ? `<div class="discovered-hero-ja">${escapeHtml(jaName)}</div>` : ''}
-              <p class="discovered-hero-desc">
-                Currently displaying all titles featuring this actress found in your local NAS storage. Follow her to load her complete official filmography from R18.dev and track missing releases.
-              </p>
-            </div>
-            <div class="discovered-hero-actions">
-              <button class="btn btn-primary btn-follow-large" onclick="window.app.quickFollowDiscovered('${escapeHtml(actName)}', '${escapeHtml(jaName)}', '${escapeHtml(avatar)}', this)">
-                <span class="material-symbols-outlined icon">person_add</span> Follow Actress
-              </button>
-              <button class="btn btn-secondary" onclick="window.app.filterCollectionActress('all')">
-                <span class="material-symbols-outlined icon">arrow_back</span> All Actresses
-              </button>
-            </div>
-          </div>
-
-          <section class="discovered-movies-section">
-            <div class="directory-section-header">
-              <div>
-                <h3 class="directory-section-title">Titles in Your Library</h3>
-                <p class="directory-section-subtitle">Playable media files located in local NAS storage</p>
-              </div>
-              <span class="directory-section-badge">${localMatches.length} Titles</span>
-            </div>
-            <div class="collection-stage-grid">
-              ${cards.length > 0 ? cards.join('') : '<div class="shelf-empty-state" style="grid-column: 1 / -1; padding: 3rem 1.5rem; text-align: center;">No matching video files found in local storage.</div>'}
-            </div>
-          </section>
-        </div>
-      `;
-      return;
+      activeEntry = {
+        isUnfollowed: true,
+        actress: {
+          name: actName,
+          ja_name: jaName,
+          image_url: avatar
+        },
+        releases: localMatches,
+        skipped_releases: [],
+        total: localMatches.length,
+        downloaded: localMatches.length,
+        missing: 0,
+        total_size_bytes: totalBytes,
+        top_genres: topGenres,
+        debut_date: debutDate,
+        latest_date: latestDate
+      };
     }
 
+    const isUnfollowed = Boolean(activeEntry.isUnfollowed);
     const a = activeEntry.actress;
     const releases = activeEntry.releases || [];
     const heroStats = getActressLocationStats(activeEntry);
@@ -1049,12 +1282,12 @@ export function renderActressCollection() {
     const dl = heroStats.libCount + heroStats.stagingCount;
     const missing = heroStats.missingCount;
     const pct = heroStats.libPct;
-    const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+    const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
     const totalBytes = activeEntry.total_size_bytes || 0;
     const avgBytes = dl > 0 && totalBytes > 0 ? Math.round(totalBytes / dl) : 0;
     const topGenres = activeEntry.top_genres || [];
     const globalTopGenres = getGlobalTopGenres(6);
-    const spiderChartHtml = generateSpiderChartSvg(releases, globalTopGenres, state.actressGenreFilter);
+    const spiderChartHtml = generateSpiderChartSvg(releases, globalTopGenres, state.actressGenreFilter, topGenres);
     const debutDate = activeEntry.debut_date || '';
     const latestDate = activeEntry.latest_date || '';
 
@@ -1136,7 +1369,7 @@ export function renderActressCollection() {
         <!-- LEFT COLUMN: Sticky Bento Profile Sidebar -->
         <aside class="actress-bento-sidebar">
           <button class="bento-back-btn" onclick="window.app.filterCollectionActress('all')">
-            <span class="back-arrow">←</span> All Followed Actresses
+            <span class="back-arrow">←</span> All Actresses
           </button>
 
           <!-- Bento 1: Identity Card -->
@@ -1154,8 +1387,12 @@ export function renderActressCollection() {
               ${a.ja_name ? `<div class="bento-ja-name">${escapeHtml(a.ja_name)}</div>` : ''}
               <div class="bento-badges-row">
                 ${careerSpan ? `<span class="bento-career-badge"><span class="material-symbols-outlined icon">calendar_month</span> ${escapeHtml(careerSpan)}</span>` : ''}
-                ${a.r18_id ? `<span class="bento-badge-mono">R18 #${a.r18_id}</span>` : ''}
-                <span class="bento-badge-count">${total} Works</span>
+                ${isUnfollowed ? `
+                  <span class="bento-badge-mono" style="background: rgba(234, 179, 8, 0.15); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.3);">
+                    <span class="material-symbols-outlined icon" style="font-size: 0.72rem; vertical-align: -1px; margin-right: 2px;">inventory_2</span> In NAS Library
+                  </span>
+                ` : (a.r18_id ? `<span class="bento-badge-mono">R18 #${a.r18_id}</span>` : '')}
+                <span class="bento-badge-count">${isUnfollowed ? `${total} Local ${total === 1 ? 'Title' : 'Titles'}` : `${total} Works`}</span>
               </div>
             </div>
           </div>
@@ -1225,15 +1462,26 @@ export function renderActressCollection() {
               <span class="bento-card-title"><span class="material-symbols-outlined icon">bolt</span> Quick Actions</span>
             </div>
             <div class="bento-action-buttons">
+              ${isUnfollowed ? `
+                <button class="btn btn-primary bento-action-btn" onclick="window.app.quickFollowDiscovered('${escapeHtml(a.name)}', '${escapeHtml(a.ja_name || '')}', '${escapeHtml(avatar)}', this)" style="background: linear-gradient(135deg, #10b981, #059669); border: none; font-weight: 600;">
+                  <span class="material-symbols-outlined icon">person_add</span> Follow Actress
+                </button>
+              ` : `
+                <button class="btn btn-secondary bento-action-btn" title="Check & refresh releases from R18.dev" onclick="window.app.refreshActiveActress(this)">
+                  <span class="material-symbols-outlined icon">sync</span> Refresh Releases
+                </button>
+              `}
               <button class="btn btn-secondary bento-action-btn" title="Open Actress folder in Finder / NAS" onclick="window.app.openActiveActressFolder()">
                 <span class="material-symbols-outlined icon">folder_open</span> Open in Finder
               </button>
               <a href="${r18Url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary bento-action-btn" title="Official R18.dev Filmography">
                 <span class="material-symbols-outlined icon">public</span> R18.dev Profile ↗
               </a>
-              <button class="btn btn-secondary bento-action-btn" title="Check & refresh releases from R18.dev" onclick="window.app.refreshActiveActress(this)">
-                <span class="material-symbols-outlined icon">sync</span> Refresh Releases
-              </button>
+              ${!isUnfollowed ? `
+                <button class="btn btn-secondary bento-action-btn btn-danger-hover" title="Unfollow this actress" onclick="window.app.promptUnfollowActress('${escapeHtml(a.name)}')">
+                  <span class="material-symbols-outlined icon">person_remove</span> Unfollow
+                </button>
+              ` : ''}
             </div>
           </div>
         </aside>
@@ -1245,22 +1493,34 @@ export function renderActressCollection() {
             <div class="stage-toolbar-left">
               <!-- Sub-Filter Pills -->
               <div class="stage-filter-pills">
-                <button class="stage-pill ${subFilter === 'all' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('all')">
-                  All Works <span class="pill-badge">${total}</span>
-                </button>
-                <button class="stage-pill ${subFilter === 'in_library' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('in_library')">
-                  In Library <span class="pill-badge">${dl}</span>
-                </button>
-                <button class="stage-pill ${subFilter === 'missing' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('missing')">
-                  Missing <span class="pill-badge">${missing}</span>
-                </button>
-                ${skippedReleases.length > 0 ? `
-                <button class="stage-pill ${subFilter === 'skipped' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('skipped')">
-                  <span class="material-symbols-outlined icon" style="font-size: 0.95rem; vertical-align: -2px; margin-right: 0.2rem;">filter_list_off</span>
-                  Skipped <span class="pill-badge">${skippedReleases.length}</span>
-                </button>
-                ` : ''}
+                ${isUnfollowed ? `
+                  <button class="stage-pill active">
+                    In NAS Library <span class="pill-badge">${total}</span>
+                  </button>
+                ` : `
+                  <button class="stage-pill ${subFilter === 'all' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('all')">
+                    All Works <span class="pill-badge">${total}</span>
+                  </button>
+                  <button class="stage-pill ${subFilter === 'in_library' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('in_library')">
+                    In Library <span class="pill-badge">${dl}</span>
+                  </button>
+                  <button class="stage-pill ${subFilter === 'missing' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('missing')">
+                    Missing <span class="pill-badge">${missing}</span>
+                  </button>
+                  ${skippedReleases.length > 0 ? `
+                  <button class="stage-pill ${subFilter === 'skipped' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('skipped')">
+                    <span class="material-symbols-outlined icon" style="font-size: 0.95rem; vertical-align: -2px; margin-right: 0.2rem;">filter_list_off</span>
+                    Skipped <span class="pill-badge">${skippedReleases.length}</span>
+                  </button>
+                  ` : ''}
+                `}
               </div>
+
+              ${isUnfollowed ? `
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-left: 0.5rem; align-self: center; display: inline-flex; align-items: center; gap: 4px;">
+                  <span class="material-symbols-outlined icon" style="font-size: 0.95rem; color: #facc15;">info</span> Follow this actress to track missing releases
+                </div>
+              ` : ''}
 
               <!-- Active Genre Badge (if clicked from Bento) -->
               ${state.actressGenreFilter ? `
@@ -1271,8 +1531,12 @@ export function renderActressCollection() {
               ` : ''}
             </div>
 
-            <!-- Stage Toolbar Right: Sort Dropdown -->
-            <div class="stage-toolbar-right">
+            <!-- Stage Toolbar Right: Search & Sort Dropdown -->
+            <div class="stage-toolbar-right" style="display: flex; align-items: center; gap: 0.75rem;">
+              <div class="stage-search-box" style="position: relative; display: flex; align-items: center;">
+                <span class="material-symbols-outlined icon" style="position: absolute; left: 0.6rem; font-size: 1rem; color: var(--text-muted); pointer-events: none;">search</span>
+                <input type="text" class="stage-search-input" placeholder="Filter titles..." value="${escapeHtml(state.actressMovieSearch || '')}" oninput="window.app.handleActressMovieSearch(this.value)" style="padding: 0.35rem 0.6rem 0.35rem 1.9rem; font-size: 0.82rem; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #fff; width: 140px;" />
+              </div>
               <label class="stage-sort-label" for="actress-sort-select">Sort:</label>
               <select id="actress-sort-select" class="stage-sort-select" onchange="window.app.setActressMovieSort(this.value)">
                 <option value="date-desc" ${sortMode === 'date-desc' ? 'selected' : ''}>Release Date (Newest)</option>
@@ -1337,7 +1601,7 @@ export function renderChatView() {
     const a = entry.actress;
     const releases = entry.releases || [];
     const isActive = a.name === state.activeActressName;
-    const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+    const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
     let snippet = 'No releases recorded';
     if (releases.length > 0) {
@@ -1399,7 +1663,7 @@ export function renderActiveActressChat(entry) {
 
   const a = entry.actress;
   const releases = [...(entry.releases || [])];
-  const avatar = a.image_url || 'https://pics.dmm.co.jp/mono/actjpgs/now_printing.jpg';
+  const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
   elements.chatHeaderAvatar.src = avatar;
   elements.chatHeaderName.textContent = a.name;
@@ -1502,13 +1766,20 @@ export function renderActiveActressChat(entry) {
         </div>
       `;
     } else {
+      const combinedId = rel.combined_id || '';
+      const r18FeedUrl = combinedId
+        ? `https://r18.dev/videos/vod/movies/detail/-/id=${encodeURIComponent(combinedId)}/`
+        : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(rel.movie_id)}`;
       userStatusHtml = `
         <div class="user-status-box">
-          <div class="user-status-title" style="color: var(--accent-pink);">
+          <div class="user-status-title" style="color: var(--accent-pink); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
             <span><span class="material-symbols-outlined icon" style="vertical-align: middle;">schedule</span> Missing from Storage</span>
+            <a href="${r18FeedUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="padding: 0.2rem 0.55rem; font-size: 0.72rem; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" title="View on R18.dev">
+              <span class="material-symbols-outlined icon" style="font-size: 0.85rem;">public</span> R18.dev ↗
+            </a>
           </div>
           <div style="font-size: 0.78rem; color: var(--text-muted);">
-            Not yet downloaded. Click Copy ID above to search and download.
+            Not yet downloaded. Click Copy ID above or view on R18.dev to inspect sample screenshots.
           </div>
         </div>
       `;

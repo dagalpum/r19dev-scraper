@@ -15,7 +15,7 @@ import {
   openFolder
 } from './api.js';
 import { openMovieDetail } from './modal.js';
-import { renderActressCollection, filterCollectionActress } from './actress.js';
+import { renderActressCollection, filterCollectionActress, renderSkeletonMovieCards } from './actress.js';
 
 export function setupDensityControl() {
   const savedDensity = localStorage.getItem('r19dev_density') || (state.gridCols === 'compact' ? 'compact' : 'auto');
@@ -405,6 +405,11 @@ export function startScanStream(customPath) {
   elements.scanProgressLabel.textContent = state.activeDir
     ? `Scanning ${state.activeDir}...`
     : 'Discovering video files...';
+
+  if (elements.moviesGrid && (!state.groupedMovies || state.groupedMovies.length === 0)) {
+    elements.moviesGrid.innerHTML = renderSkeletonMovieCards(12);
+    if (elements.libraryEmpty) elements.libraryEmpty.classList.add('hidden');
+  }
 
   let url = '/api/scan/stream';
   if (state.activeDir && state.activeDir !== '.') {

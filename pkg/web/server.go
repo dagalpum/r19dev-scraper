@@ -683,7 +683,7 @@ func (s *Server) handleActressUnfollow(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleActressReleases(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
 	summaries, err := s.actressService.CheckAllFollowed(ctx)

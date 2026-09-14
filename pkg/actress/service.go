@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dagalp/r19dev-scraper/pkg/db"
@@ -75,8 +76,11 @@ type ActressSummary struct {
 
 // Service manages actress tracking and new release detection.
 type Service struct {
-	database *db.DB
-	scraper  *scraper.Client
+	database      *db.DB
+	scraper       *scraper.Client
+	cacheMu       sync.RWMutex
+	cachedSummary []ActressSummary
+	cachedAt      time.Time
 }
 
 // New creates a new Actress Service.
@@ -93,11 +97,20 @@ func New(d *db.DB, client *scraper.Client) *Service {
 	}
 }
 
+// InvalidateCache clears the in-memory releases summary cache.
+func (s *Service) InvalidateCache() {
+	s.cacheMu.Lock()
+	s.cachedSummary = nil
+	s.cachedAt = time.Time{}
+	s.cacheMu.Unlock()
+}
+
 // Follow tracks an actress by name.
 func (s *Service) Follow(name, jaName, imageURL string) error {
 	if s.database == nil {
 		return fmt.Errorf("database not initialized")
 	}
+	s.InvalidateCache()
 	return s.database.FollowActress(name, jaName, imageURL)
 }
 
@@ -106,6 +119,7 @@ func (s *Service) Unfollow(name string) error {
 	if s.database == nil {
 		return fmt.Errorf("database not initialized")
 	}
+	s.InvalidateCache()
 	return s.database.UnfollowActress(name)
 }
 
@@ -341,9 +355,6 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 		return nil, fmt.Errorf("actress name cannot be empty")
 	}
 
-	// Update last checked timestamp
-	_ = s.database.UpdateActressLastChecked(actressName)
-
 	// Load actress info from DB if available
 	actRec := db.ActressRecord{
 		Name: actressName,
@@ -353,6 +364,41 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			if strings.EqualFold(a.Name, actressName) {
 				actRec = a
 				break
+			}
+		}
+	}
+
+	return s.GetActressSummaryForRecord(ctx, actRec)
+}
+
+// GetActressSummaryForRecord retrieves all known releases for a specific actress record.
+func (s *Service) GetActressSummaryForRecord(ctx context.Context, actRec db.ActressRecord) (*ActressSummary, error) {
+	if s.database == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+
+	actressName := strings.TrimSpace(actRec.Name)
+	if actressName == "" {
+		return nil, fmt.Errorf("actress name cannot be empty")
+	}
+
+	// Update last checked timestamp
+	_ = s.database.UpdateActressLastChecked(actressName)
+
+	// Pre-scan candidate organized directories once before looping
+	actressLocalFolders := make(map[string]string)
+	candidates := []string{
+		filepath.Join("/Volumes/home/BT/organized", actressName),
+	}
+	if actRec.JaName != "" && actRec.JaName != actressName {
+		candidates = append(candidates, filepath.Join("/Volumes/home/BT/organized", actRec.JaName))
+	}
+	for _, actDir := range candidates {
+		if entries, err := os.ReadDir(actDir); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					actressLocalFolders[strings.ToUpper(entry.Name())] = filepath.Join(actDir, entry.Name())
+				}
 			}
 		}
 	}
@@ -425,25 +471,14 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 			r.LibraryPath = libPath.String
 		}
 
-		// Check if organized folder exists in default organized library (/Volumes/home/BT/organized) if not in DB
-		if r.OrganizedFolder == "" && r.MovieID != "" {
-			candidates := []string{
-				filepath.Join("/Volumes/home/BT/organized", actressName),
-				filepath.Join("/Volumes/home/BT/organized", actRec.Name),
-			}
-			for _, actDir := range candidates {
-				if entries, err := os.ReadDir(actDir); err == nil {
-					for _, entry := range entries {
-						if entry.IsDir() && strings.Contains(strings.ToUpper(entry.Name()), strings.ToUpper(r.MovieID)) {
-							foundPath := filepath.Join(actDir, entry.Name())
-							r.OrganizedFolder = foundPath
-							// Cache to database organized_movies
-							_ = s.database.SetOrganized(r.MovieID, foundPath, "")
-							break
-						}
-					}
-				}
-				if r.OrganizedFolder != "" {
+		// Check if organized folder exists in pre-scanned organized directory if not in DB
+		if r.OrganizedFolder == "" && r.MovieID != "" && len(actressLocalFolders) > 0 {
+			upperID := strings.ToUpper(r.MovieID)
+			for folderNameUpper, fullPath := range actressLocalFolders {
+				if strings.Contains(folderNameUpper, upperID) {
+					r.OrganizedFolder = fullPath
+					// Cache to database organized_movies
+					_ = s.database.SetOrganized(r.MovieID, fullPath, "")
 					break
 				}
 			}
@@ -580,21 +615,73 @@ func (s *Service) GetActressSummary(ctx context.Context, actressName string) (*A
 	return summary, nil
 }
 
-// CheckAllFollowed checks new releases for all followed actresses.
+// CheckAllFollowed checks new releases for all followed actresses concurrently with caching.
 func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error) {
+	s.cacheMu.RLock()
+	if time.Since(s.cachedAt) < 2*time.Minute && len(s.cachedSummary) > 0 {
+		cached := make([]ActressSummary, len(s.cachedSummary))
+		copy(cached, s.cachedSummary)
+		s.cacheMu.RUnlock()
+		return cached, nil
+	}
+	s.cacheMu.RUnlock()
+
 	actresses, err := s.ListFollowed()
 	if err != nil {
 		return nil, err
 	}
 
-	var results []ActressSummary
+	workChan := make(chan db.ActressRecord, len(actresses))
 	for _, a := range actresses {
-		summary, err := s.GetActressSummary(ctx, a.Name)
-		if err == nil && summary != nil {
-			summary.Actress = a
-			results = append(results, *summary)
-		}
+		workChan <- a
 	}
+	close(workChan)
+
+	var results []ActressSummary
+	var mu sync.Mutex
+
+	numWorkers := 8
+	if len(actresses) < numWorkers {
+		numWorkers = len(actresses)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for a := range workChan {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				summary, err := s.GetActressSummaryForRecord(ctx, a)
+				if err == nil && summary != nil {
+					summary.Actress = a
+					mu.Lock()
+					results = append(results, *summary)
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Actress.Name < results[j].Actress.Name
+	})
+
+	s.cacheMu.Lock()
+	s.cachedSummary = make([]ActressSummary, len(results))
+	copy(s.cachedSummary, results)
+	s.cachedAt = time.Now()
+	s.cacheMu.Unlock()
+
 	return results, nil
 }
 

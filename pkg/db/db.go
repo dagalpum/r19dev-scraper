@@ -482,6 +482,12 @@ func (d *DB) initSchema() error {
 }
 
 func (d *DB) backfillActressR18IDs() error {
+	var count int
+	_ = d.conn.QueryRow("SELECT COUNT(*) FROM actresses WHERE r18_id IS NULL OR r18_id = 0").Scan(&count)
+	if count == 0 {
+		return nil
+	}
+
 	rows, err := d.conn.Query("SELECT actresses_json FROM movies WHERE actresses_json != '' AND actresses_json != '[]'")
 	if err != nil {
 		return err

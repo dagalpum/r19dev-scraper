@@ -91,6 +91,13 @@ func NewServer(cfg Config) (*Server, error) {
 
 	actSvc := actress.New(database, scClient)
 
+	// Pre-warm actress releases cache asynchronously on server startup so the very first request is instant
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, _ = actSvc.CheckAllFollowed(ctx)
+	}()
+
 	return &Server{
 		targetDir:      absTarget,
 		port:           cfg.Port,

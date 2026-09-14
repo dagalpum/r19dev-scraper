@@ -615,10 +615,10 @@ func (s *Service) GetActressSummaryForRecord(ctx context.Context, actRec db.Actr
 	return summary, nil
 }
 
-// CheckAllFollowed checks new releases for all followed actresses concurrently with caching.
+// CheckAllFollowed checks new releases for all followed actresses concurrently with caching using a single-query batch pipeline.
 func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error) {
 	s.cacheMu.RLock()
-	if time.Since(s.cachedAt) < 2*time.Minute && len(s.cachedSummary) > 0 {
+	if time.Since(s.cachedAt) < 5*time.Minute && len(s.cachedSummary) > 0 {
 		cached := make([]ActressSummary, len(s.cachedSummary))
 		copy(cached, s.cachedSummary)
 		s.cacheMu.RUnlock()
@@ -631,14 +631,97 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 		return nil, err
 	}
 
+	// 1. Single SQL query to get all movies with joins (100% local SSD SQLite, 0 SMB calls)
+	query := `
+	SELECT m.id, COALESCE(m.combined_id, ''), COALESCE(m.title, m.id), COALESCE(m.original_title, ''),
+	       COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''),
+	       COALESCE(m.actresses_json, '[]'), COALESCE(u.is_watched, 0), COALESCE(u.user_rating, 0),
+	       COALESCE(u.is_favorite, 0), MAX(lf.file_path), MAX(om.target_folder), MAX(om.target_video),
+	       COALESCE(SUM(lf.size_bytes), 0), COALESCE(m.genres_json, '[]')
+	FROM movies m
+	LEFT JOIN user_state u ON m.id = u.movie_id
+	LEFT JOIN library_files lf ON m.id = lf.movie_id
+	LEFT JOIN organized_movies om ON m.id = om.movie_id
+	GROUP BY m.id
+	ORDER BY m.release_date DESC
+	`
+
+	rows, err := s.database.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type rawMovie struct {
+		r          ReleaseItem
+		actsJSON   string
+		genresJSON string
+		actCount   int
+	}
+
+	var allMovies []rawMovie
+	for rows.Next() {
+		var rm rawMovie
+		var libPath sql.NullString
+		var orgFolder sql.NullString
+		var orgVideo sql.NullString
+		if err := rows.Scan(
+			&rm.r.MovieID, &rm.r.CombinedID, &rm.r.Title, &rm.r.OriginalTitle,
+			&rm.r.Maker, &rm.r.ReleaseDate, &rm.r.CoverURL,
+			&rm.actsJSON, &rm.r.IsWatched, &rm.r.UserRating, &rm.r.IsFavorite,
+			&libPath, &orgFolder, &orgVideo,
+			&rm.r.SizeBytes, &rm.genresJSON,
+		); err != nil {
+			return nil, err
+		}
+		if orgFolder.Valid {
+			rm.r.OrganizedFolder = orgFolder.String
+		}
+		if orgVideo.Valid {
+			rm.r.OrganizedVideo = orgVideo.String
+		}
+		if libPath.Valid {
+			rm.r.LibraryPath = libPath.String
+		}
+
+		if rm.r.OrganizedFolder != "" || rm.r.OrganizedVideo != "" || rm.r.LibraryPath != "" {
+			rm.r.IsDownloaded = true
+		}
+
+		if rm.r.CoverURL != "" {
+			rm.r.CoverURL = jellyfin.UpgradeDMMImageURL(rm.r.CoverURL)
+		}
+		if (rm.r.CoverURL == "" || !strings.HasPrefix(rm.r.CoverURL, "http")) && rm.r.MovieID != "" {
+			rm.r.CoverURL = "/api/images/" + rm.r.MovieID
+		}
+		rm.r.Title = CleanMovieTitle(rm.r.Title)
+
+		if rm.genresJSON != "" && rm.genresJSON != "[]" {
+			_ = json.Unmarshal([]byte(rm.genresJSON), &rm.r.Genres)
+		}
+
+		if rm.actsJSON != "" && rm.actsJSON != "[]" {
+			var parsedActs []any
+			if err := json.Unmarshal([]byte(rm.actsJSON), &parsedActs); err == nil {
+				rm.actCount = len(parsedActs)
+			}
+		}
+
+		allMovies = append(allMovies, rm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// 2. Parallel in-memory matching across 8 workers
+	var results []ActressSummary
+	var mu sync.Mutex
+
 	workChan := make(chan db.ActressRecord, len(actresses))
 	for _, a := range actresses {
 		workChan <- a
 	}
 	close(workChan)
-
-	var results []ActressSummary
-	var mu sync.Mutex
 
 	numWorkers := 8
 	if len(actresses) < numWorkers {
@@ -656,13 +739,115 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 					return
 				default:
 				}
-				summary, err := s.GetActressSummaryForRecord(ctx, a)
-				if err == nil && summary != nil {
-					summary.Actress = a
-					mu.Lock()
-					results = append(results, *summary)
-					mu.Unlock()
+
+				actNameUpper := strings.ToUpper(a.Name)
+				actJaUpper := strings.ToUpper(a.JaName)
+
+				var rawReleases []ReleaseItem
+				var skippedReleases []ReleaseItem
+				downloadedCount := 0
+				watchedCount := 0
+				favCount := 0
+				var totalSizeBytes int64
+				genreFreq := make(map[string]int)
+				debutDate := ""
+				latestDate := ""
+				latestMovieID := ""
+				latestIsDownloaded := false
+
+				for _, rm := range allMovies {
+					matched := strings.Contains(strings.ToUpper(rm.actsJSON), actNameUpper)
+					if !matched && actJaUpper != "" {
+						matched = strings.Contains(strings.ToUpper(rm.actsJSON), actJaUpper)
+					}
+					if !matched && rm.r.OrganizedFolder != "" {
+						matched = strings.Contains(strings.ToUpper(rm.r.OrganizedFolder), "/"+actNameUpper+"/")
+						if !matched && actJaUpper != "" {
+							matched = strings.Contains(strings.ToUpper(rm.r.OrganizedFolder), "/"+actJaUpper+"/")
+						}
+					}
+					if !matched {
+						continue
+					}
+
+					r := rm.r
+					if !r.IsDownloaded && !r.IsWatched && !r.IsFavorite {
+						if shouldSkip, skipReason := CheckFilmographyInclusion(r.MovieID, r.Title, r.OriginalTitle, r.CoverURL, r.Genres, rm.actCount); shouldSkip {
+							r.SkipReason = skipReason
+							skippedReleases = append(skippedReleases, r)
+							continue
+						}
+					}
+
+					rawReleases = append(rawReleases, r)
 				}
+
+				releases := deduplicateReleases(rawReleases)
+
+				for _, r := range releases {
+					for _, g := range r.Genres {
+						g = strings.TrimSpace(g)
+						if g != "" && !isPromotionalGenre(g) {
+							genreFreq[g]++
+						}
+					}
+					if r.IsDownloaded {
+						downloadedCount++
+						totalSizeBytes += r.SizeBytes
+					}
+					if r.IsWatched {
+						watchedCount++
+					}
+					if r.IsFavorite {
+						favCount++
+					}
+					if r.ReleaseDate != "" {
+						if latestDate == "" || r.ReleaseDate > latestDate {
+							latestDate = r.ReleaseDate
+							latestMovieID = r.MovieID
+							latestIsDownloaded = r.IsDownloaded
+						}
+						if debutDate == "" || r.ReleaseDate < debutDate {
+							debutDate = r.ReleaseDate
+						}
+					}
+				}
+
+				topGenres := make([]GenreCount, 0)
+				for g, count := range genreFreq {
+					topGenres = append(topGenres, GenreCount{Genre: g, Count: count})
+				}
+				sort.Slice(topGenres, func(i, j int) bool {
+					if topGenres[i].Count == topGenres[j].Count {
+						return topGenres[i].Genre < topGenres[j].Genre
+					}
+					return topGenres[i].Count > topGenres[j].Count
+				})
+				if len(topGenres) > 8 {
+					topGenres = topGenres[:8]
+				}
+
+				summary := ActressSummary{
+					Actress:            a,
+					Releases:           releases,
+					SkippedReleases:    skippedReleases,
+					SkippedCount:       len(skippedReleases),
+					Total:              len(releases),
+					Downloaded:         downloadedCount,
+					Missing:            len(releases) - downloadedCount,
+					Watched:            watchedCount,
+					Favorites:          favCount,
+					TotalSizeBytes:     totalSizeBytes,
+					TopGenres:          topGenres,
+					DebutDate:          debutDate,
+					LatestDate:         latestDate,
+					LatestMovieID:      latestMovieID,
+					LatestIsDownloaded: latestIsDownloaded,
+				}
+
+				mu.Lock()
+				results = append(results, summary)
+				mu.Unlock()
 			}
 		}()
 	}

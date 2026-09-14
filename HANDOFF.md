@@ -3,9 +3,9 @@
 ## 1. Executive Summary
 
 **Project Name**: `r19dev-scraper`  
-**Current Version**: `v1.8.0`  
+**Current Version**: `v2.0.0`  
 **Language / Runtime**: Go 1.24+ (`go 1.27.0` toolchain)  
-**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper with Tier-1 sub-millisecond offline dump store, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 3-Tier Navigation Architecture (Incoming, Actresses, Library), 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, automated NAS Jellyfin organizer with SQLite audit trail, and Cinematic Offline-First `movie.html` Interactive Viewer.
+**Primary Function**: High-performance local media library scanner, intelligent JAV filename parser, R18.dev metadata scraper with Tier-1 sub-millisecond offline dump store, single-binary 100% offline-ready Web UI Studio with Native ES Modules, 3-Tier Navigation Architecture (Incoming, Actresses, Library), 2-Column Bento Profile & Filmography Stage, Universal Search & Quick Navigation, interactive Terminal TUI, high-speed Batch Migrator with Bubble Tea TUI, atomic crash-consistent SQLite backup pipeline, 16-worker concurrent HTML upgrader, automated NAS Jellyfin organizer with SQLite audit trail, and Cinematic Offline-First `movie.html` Interactive Viewer.
 
 The codebase is clean, thoroughly tested (100% test pass rate across all packages), modular, and fully documented.
 
@@ -16,7 +16,9 @@ The codebase is clean, thoroughly tested (100% test pass rate across all package
 | Area | Status | Notes |
 |---|---|---|
 | **Compilation** | ✅ Passing | Single-binary compilation via `go build -o bin/r19dev ./cmd/r19dev` |
-| **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/actress`, `pkg/cache`, `pkg/db`, and `pkg/web` |
+| **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/migrator`, `pkg/actress`, `pkg/cache`, `pkg/db`, and `pkg/web` |
+| **Migrator & Reorganizer**| ✅ Passing | 5-phase pipeline, Charm Bubble Tea TUI, smart collision co-location (4K/uncensored/multi-part), 16-worker HTML upgrader |
+| **Library Milestone** | ✅ 6.5 TB | **868 movies / 966 video files (~6.5 TB)** organized on NAS across 3 migration phases (Sorted, Root loose, Misc) |
 | **Frontend** | ✅ Modular | Native ES Modules in `pkg/web/static/js/`, zero Node.js/npm dependencies, 100% offline-ready |
 | **Offline Scraper** | ✅ Sub-ms | Tier-1 `r18_dump.db` (1.9M+ movies, 101k+ actresses, 540k+ translations) resolving in `< 1ms` |
 | **Dependencies** | ✅ Stable | Using standard library + `modernc.org/sqlite` (pure Go, zero CGO) + Charm packages (`bubbletea`, `lipgloss`) |
@@ -32,12 +34,13 @@ pkg/
 ├── scanner/              -> Safe WalkDir engine with symlink detection & timeout guards
 ├── matcher/              -> Regex engine with boundary checks, JAV ID normalizer, multipart detector
 ├── scraper/              -> Domain models, Tier-1 offline DumpStore (r18_dump.db), R18.dev REST API client
-├── db/                   -> Pure Go SQLite storage, migrations, auto-pruning, operation history audit trail
+├── db/                   -> Pure Go SQLite storage, migrations, auto-pruning, operation history audit trail, atomic backup
 ├── organizer/            -> NAS Jellyfin organization planner, multi-part merger, live progress reporter
+├── migrator/             -> High-speed batch migration engine, pre-flight safety gate, Bubble Tea TUI, 16-worker HTML upgrader
 ├── jellyfin/             -> Kodi/Jellyfin NFO XML generator, 180-byte safe filename sanitizer, HTML viewer, asset downloader
 ├── actress/              -> Actress tracking service, filmography tracker, and local release comparator
 ├── cache/                -> Persistent disk cache for API payloads and images (~/.cache or ~/Library/Caches)
-├── web/                  -> Single-binary Web UI Studio server, SSE streaming, REST API, embedded SPA frontend
+├── web/                  -> Single-binary Web UI Studio server, SSE streaming, REST API, embedded SPA frontend, self-healing avatar cache
 │   └── static/           -> Static web assets (embedded via embed.FS)
 │       ├── fonts/        -> Local offline fonts (Inter, JetBrains Mono, Material Symbols)
 │       ├── js/           -> Native ES modules (state, api, modal, scanner, organizer, history, actress, graph, app)
@@ -80,6 +83,17 @@ make test
 
 # 5. Direct Scraper Query
 ./bin/r19dev scrape SNOS-038
+
+# 6. High-Speed Batch Migrator (Interactive TUI / Headless CLI)
+./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized
+./bin/r19dev migrate /Volumes/home/BT/Misc /Volumes/home/BT/organized --dry-run
+./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized --yes --no-tui
+
+# 7. Atomic Database Backup Snapshot
+./bin/r19dev backup /Volumes/home/BT/organized
+
+# 8. Standalone Concurrent HTML Upgrader (16 workers)
+./bin/r19dev upgrade-html /Volumes/home/BT/organized
 ```
 
 ---
@@ -147,6 +161,18 @@ make test
     Populated verified `r18_id` for all 37 followed actresses in SQLite (`r19dev.db.actresses`), guaranteeing 100% accurate profile links (e.g. Nao Satsuki ID `1089946`, Sayaka Nakamura ID `1094001`) without homonymous search collisions. Migrated `combined_id` across all 5,436 movies in `r19dev.db.movies` to authentic DMM `content_id` from `r18_dump.db` (e.g. `1start223`, `1fsdss685`, `cjod510`, `mfyd123`). Fixed `DetailURL` syntax in `pkg/scraper/dump.go` line 190 from `detail/-/combined=%s/` to `detail/-/id=%s/`.
 29. **Adaptive Poster Card Actions & Missing Movie UX**:
     Poster card hover actions dynamically show `[📂 Finder]` for locally stored media, and automatically replace it with `[🌐 R18 ↗]` for unowned/missing titles. Movie detail modal replaces dysfunctional "Organize for Jellyfin" button on missing releases with primary `[🌐 View on R18.dev ↗]` button and `[📋 Copy ID]`.
+30. **High-Speed Batch Migrator & Interactive Bubble Tea TUI (`pkg/migrator`)**:
+    Provides an interactive live terminal interface with percentage progress bars, real-time speed calculation (`1.1/s`), live activity cards, and milestone notifications for batch library reorganizations.
+31. **Zero-Destructive Smart Collision & Quality Coexistence**:
+    Automatically detects existing titles in target directories and merges complementary assets without throwing destructive errors or overwriting existing media. Co-locates 4K editions (`-4k.mp4`), uncensored releases (`-uncensored.mp4`), and standard editions (`.mp4`) in the same movie directory, while preserving multi-part CDs (`-cd1.mp4` through `-cd5.mp4`).
+32. **Pre-Flight Safety Gate & Zero-Lag SQLite Discovery**:
+    Scans the entire source tree and maps all IDs before moving files, pausing for explicit operator confirmation (`[Enter]` / `[q]`). Leverages local SQLite `organized_movies` table lookups (`< 0.01s`) to detect existing library movies instantly without recursive SMB network scans.
+33. **16-Worker Concurrent HTML Template Upgrader**:
+    Refreshes `movie.html` templates across library destinations using a 16-worker goroutine pool, reducing re-rendering times across 800+ movies on NAS from several minutes down to seconds.
+34. **Atomic Crash-Consistent Database Backup (`VACUUM INTO`)**:
+    Solves SQLite Darwin `smbfs` file locking and lack of POSIX shared-memory support by executing `VACUUM INTO` targeting an isolated SSD temp file first, defragmenting database pages before streaming cleanly to the NAS destination as `.r19dev_backup.db`.
+35. **Self-Healing Unfollowed Performer Avatar Caching**:
+    On-demand avatar cache handler in `pkg/web/server.go` checks local disk cache, dynamically queries performer profile image URLs from `r18_dump.db`, and downloads authentic HD headshots from DMM CloudFront CDN upon discovery.
 
 ---
 
@@ -178,6 +204,11 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Cinematic Standalone `movie.html` Interactive Viewer**: Ambient backdrop hero with blur, direct `Play Movie` CTA, in-browser HTML5 `<video>` modal player, smart multi-part play buttons, in-page Lightbox gallery with keyboard navigation, one-click JAV ID copy with toast, and local asset auto-discovery.
 - ✅ **High-Speed SMB Network Scanner Traversal**: Immediate directory pruning of `.actors`, `extrafanart`, `@eaDir`, and hidden directories at `d.IsDir()`, reducing scan times across large NAS archives from timeouts to seconds.
 - ✅ **Web Studio Library Tab & Favicon Stability**: Fixed `TypeError` in `actress.js` and added native SVG favicon handler.
+- ✅ **Batch Migrator & Interactive Bubble Tea TUI (`pkg/migrator`)**: Pre-flight safety confirmation, speed tracking, live activity cards.
+- ✅ **Zero-Destructive Smart Collision & Quality Coexistence**: 4K, 1080p, uncensored, and multi-part files co-located safely.
+- ✅ **16-Worker Concurrent HTML Template Upgrader**: Instant re-rendering with fast database lookup bypassing SMB walks.
+- ✅ **Atomic Crash-Consistent Database Backup (`VACUUM INTO`)**: Defragmented SQLite snapshots streamed safely to NAS share.
+- ✅ **Self-Healing Unfollowed Actress Avatar Caching**: Automatic DMM CDN fetch and local caching on discovery.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

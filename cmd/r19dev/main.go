@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -105,6 +106,12 @@ func main() {
 
 	case "migrate":
 		runMigrate(args[1:])
+
+	case "upgrade-html":
+		runUpgradeHTML(args[1:])
+
+	case "backup":
+		runBackup(args[1:])
 
 	case "cache-clear", "clear-cache":
 		if err := cache.Default().Clear(); err != nil {
@@ -448,7 +455,7 @@ func runOrganize(args []string) {
 
 func runMigrate(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [--dry-run] [--no-tui] [--no-update-html]")
+		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html]")
 		os.Exit(1)
 	}
 
@@ -457,7 +464,7 @@ func runMigrate(args []string) {
 	dryRun := false
 	autoConfirm := false
 	noTUI := false
-	updateExisting := true
+	updateExisting := false
 
 	for i := 1; i < len(args); i++ {
 		a := args[i]
@@ -467,6 +474,8 @@ func runMigrate(args []string) {
 			autoConfirm = true
 		} else if a == "--no-tui" {
 			noTUI = true
+		} else if a == "--upgrade-all-html" || a == "--update-all-html" || a == "-u" {
+			updateExisting = true
 		} else if a == "--no-update-html" {
 			updateExisting = false
 		} else if !strings.HasPrefix(a, "-") && destRoot == "/Volumes/home/BT/organized" && i == 1 {
@@ -525,6 +534,85 @@ func runMigrate(args []string) {
 	}
 }
 
+func runUpgradeHTML(args []string) {
+	destRoot := "/Volumes/home/BT/organized"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		destRoot = args[0]
+	}
+	absDest, err := filepath.Abs(destRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid destination path: %v\n", err)
+		os.Exit(1)
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	dumpDBPath := filepath.Join(homeDir, "Library", "Application Support", "r19dev", "r18_dump.db")
+	dumpDB, err := sql.Open("sqlite", dumpDBPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open dump database: %v\n", err)
+		os.Exit(1)
+	}
+	defer dumpDB.Close()
+
+	appDBPath := filepath.Join(homeDir, "Library", "Application Support", "r19dev", "r19dev.db")
+	appDB, err := sql.Open("sqlite", appDBPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to open app database: %v\n", err)
+		os.Exit(1)
+	}
+	defer appDB.Close()
+
+	fmt.Printf("🎬 Upgrading movie.html files in %s to Cinematic template (16 concurrent workers)...\n", absDest)
+	t0 := time.Now()
+	count := migrator.UpgradeHTMLFiles(context.Background(), absDest, appDB, dumpDB, func(e migrator.ProgressEvent) {
+		if e.Total > 0 && (e.Current == 1 || e.Current%25 == 0 || e.Current == e.Total) {
+			fmt.Printf("[%d/%d] 🔄 Upgraded %s movie.html\n", e.Current, e.Total, e.MovieID)
+		}
+	})
+	dur := time.Since(t0)
+	var speed float64
+	if dur.Seconds() > 0 {
+		speed = float64(count) / dur.Seconds()
+	}
+	fmt.Printf("✨ Finished! Upgraded %d movie.html files in %s (speed: %.1f files/sec)\n", 
+		count, dur.Round(time.Millisecond), speed)
+}
+
+func runBackup(args []string) {
+	destPath := "/Volumes/home/BT/organized/.r19dev_backup.db"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		destPath = args[0]
+		if stat, err := os.Stat(destPath); err == nil && stat.IsDir() {
+			destPath = filepath.Join(destPath, ".r19dev_backup.db")
+		}
+	}
+	absDest, err := filepath.Abs(destPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid destination path: %v\n", err)
+		os.Exit(1)
+	}
+
+	d, err := db.Default()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to open database: %v\n", err)
+		os.Exit(1)
+	}
+	defer d.Close()
+
+	fmt.Printf("💾 Creating atomic, crash-consistent backup of r19dev.db at %s...\n", absDest)
+	t0 := time.Now()
+	if err := d.BackupTo(absDest); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Backup failed: %v\n", err)
+		os.Exit(1)
+	}
+	fi, _ := os.Stat(absDest)
+	var sizeMB float64
+	if fi != nil {
+		sizeMB = float64(fi.Size()) / 1024 / 1024
+	}
+	fmt.Printf("✨ Backup successful! Saved to %s (%.2f MB) in %s\n", absDest, sizeMB, time.Since(t0).Round(time.Millisecond))
+}
+
 func printHelp() {
 	fmt.Println(`🎬 R19DEV Scraper - JAV Scanner, Matcher, Actress Tracker & NAS Jellyfin Organizer
 
@@ -558,13 +646,15 @@ Usage:
                               - Downloads High-Res poster.jpg & fanart.jpg
                               - Downloads Sample screenshots into extrafanart/
 
-  r19dev migrate <src> [dest] [--dry-run] [--no-tui]
+  r19dev migrate <src> [dest] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html]
                               Fast batch migration & reorganization using local dump DB
                               - Interactive TUI progress bar with live stats & activity log
                               - Reuses local assets (poster, fanart, extrafanart/) instantly
-                              - Generates Jellyfin NFO and Cinematic movie.html
-                              - Batch-updates existing movie.html files in destination
+                              - Generates Jellyfin NFO and Cinematic movie.html for new items
+                              - Use --upgrade-all-html to also upgrade existing library items
 
+  r19dev upgrade-html [path]  Concurrently upgrade all movie.html to Cinematic template
+  r19dev backup [path]        Create crash-consistent SQLite backup snapshot (default: NAS)
   r19dev clear-cache          Clear local metadata and image cache
   r19dev --version            Show version
   r19dev --help               Show this help message`)

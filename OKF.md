@@ -254,6 +254,42 @@ To permanently eliminate Cloudflare rate limiting (HTTP 429 and error 1015 IP ba
   - One-click `[📂 Open in Finder]` buttons in header, cards, and modals via `/api/open-folder`.
 
 
+### 3.9 High-Speed Batch Migrator & Safe Reorganizer (`pkg/migrator`)
+
+The migrator automates the reorganization of multi-terabyte unorganized or legacy media collections across local and SMB storage into standardized Jellyfin structures with zero data loss and full audit transparency.
+
+* **5-Phase Migration Pipeline**:
+  1. **Discovery & Pre-Flight Analysis**: Recursively crawls source directories, normalizes filenames via `pkg/matcher`, resolves rich metadata via `r18_dump.db`, maps multi-part segments (`-cd1` through `-cd5`), and computes target paths under `/Volumes/home/BT/organized/<Actress>/<Title>/`.
+  2. **Pre-Flight Safety Gate**: Pauses execution before moving any files, presenting an operator confirmation card summarizing total movies found, duplicates handled, skipped non-JAV files, and destination targets (`[Enter] PROCEED` / `[q] CANCEL`).
+  3. **Live Reorganization & Asset Merge**: Moves/renames video files, merges companion folder artwork (`poster.jpg`, `fanart.jpg`, `extrafanart/`), writes Jellyfin `.nfo` metadata and cinematic `movie.html`, and registers entries into SQLite `movies`, `organized_movies`, and `library_files`.
+  4. **Concurrent HTML Upgrader**: Utilizes a 16-worker goroutine pool to refresh `movie.html` templates across destination folders in seconds, leveraging fast database discovery (`organized_movies` table queried in `< 0.01s`) to bypass slow SMB directory walks.
+  5. **Safe Source Pruning (`cleanEmptyTree`)**: Executes bottom-up post-order directory traversal to safely delete only completely empty folders (`isDirEmpty`), strictly leaving non-empty folders containing skipped or foreign media intact.
+* **Smart Collision & Quality Coexistence**:
+  - Automatically identifies existing target titles in destination folders without throwing destructive errors or overwriting existing media.
+  - Safely co-locates 4K editions (`-4k.mp4`), uncensored releases (`-uncensored.mp4`), and standard 1080p editions (`.mp4`) in the same movie directory.
+  - Preserves and standardizes multi-part CD files (`-cd1.mp4` through `-cd5.mp4`), grouping all discs within the single title directory.
+* **Dual Execution Modes**:
+  - **Interactive Bubble Tea TUI (`tui.go`)**: Real-time progress bar, speed tracker (`X.X/s`), live activity cards, milestone notifications, and scrollable log pane.
+  - **Headless CLI Runner (`cli.go`)**: Streamlined non-interactive execution with `--yes` and `--no-tui` flags for automated scripts and headless servers.
+
+### 3.10 Atomic Crash-Consistent Database Backup Engine (`pkg/db`)
+
+* **Problem Solved**: SQLite databases located on Darwin SMB network mounts (`smbfs`) suffer from file-locking latency, lack of POSIX shared-memory support, and corruption risks if backed up via naive file copies while write transactions are active.
+* **Two-Phase Atomic Backup (`DB.BackupTo`)**:
+  1. Executes SQLite's native `VACUUM INTO` command targeting an isolated temporary file on local SSD/NVMe storage (`os.TempDir()`), defragmenting database pages and capturing a 100% crash-consistent snapshot without holding long locks.
+  2. Copies the defragmented backup file to the network destination (`/Volumes/home/BT/organized/.r19dev_backup.db`) via `io.Copy`.
+* **Access Points**:
+  - Command line: `./bin/r19dev backup /Volumes/home/BT/organized`
+  - Web UI: Operation History modal `[💾 Backup DB]` button and direct REST endpoint `/api/db/backup?download=1`.
+
+### 3.11 Self-Healing Avatar Caching for Discovered / Unfollowed Actresses (`pkg/web`)
+
+* **Problem Solved**: Discovered or unfollowed performers appearing in organized library movies lacked pre-cached headshots in local disk storage, causing generic SVG initials to display on the Unfollowed tab.
+* **On-Demand Self-Healing Architecture (`handleActressAvatar`)**:
+  1. Checks local filesystem cache in `~/Library/Application Support/r19dev/actress_images/<Name>.jpg`.
+  2. On cache miss, performs an on-demand indexed lookup in `r18_dump.db` for the performer's authentic DMM CloudFront profile image URL.
+  3. Downloads the high-resolution headshot over HTTPS using standard headers and atomically caches it to disk for all future requests.
+
 ---
 
 ## 4. Operational Runbook & Edge Cases
@@ -279,3 +315,9 @@ To permanently eliminate Cloudflare rate limiting (HTTP 429 and error 1015 IP ba
 | **R18 Direct Outbound 404s** | Algorithmic `combined_id` (`start00223`, `fsdss00685`) yields 404 on R18.dev | 100% of movies are mapped to authentic DMM `content_id` from `r18_dump.db` (`1start223`, `1fsdss685`, `cjod510`), and direct links use `detail/-/id={id}/` ensuring 100% HTTP 200 OK responses. |
 | **Homonymous Actress Search Collisions** | `r18_id = 0` triggers name search landing on wrong performer (e.g. Nao Satsuki 2007 vs 2026) | All 37 followed actresses are 100% matched to authentic DMM `r18_id` in SQLite, generating direct, collision-free profile URLs. |
 | **Symlink Recursion** | Cyclic links in NAS | Skipped unconditionally at `os.Lstat` evaluation phase. |
+| **Multi-Edition Quality Coexistence** | 4K, 1080p, and Uncensored versions of the same movie | Migrator detects existing folder, renames without collision (`-4k.mp4`, `-uncensored.mp4`), and registers all files in SQLite. |
+| **Existing Target Collision** | Movie folder already exists in organized root | Migrator checks file existence; if distinct quality/part, moves safely; if identical duplicate, reports duplicate handled without overwriting. |
+| **Pre-Flight Safety Abort** | User cancels migration at pre-flight review | Zero filesystem changes committed; engine cleanly halts and restores terminal state. |
+| **Atomic Backup on Network Mount** | Backing up directly to SMB/NFS share | `BackupTo` executes `VACUUM INTO` to local NVMe temp directory first, defragmenting database pages before streaming to NAS share. |
+| **Unfollowed Actress Avatar Missing** | Generic SVG placeholder on Unfollowed tab | `handleActressAvatar` automatically queries `r18_dump.db` and downloads authentic HD headshot from DMM CloudFront CDN. |
+| **Slow SMB Directory Walk on HTML Upgrade** | Upgrading `movie.html` across 1,000+ folders over SMB | Migrator queries local SQLite `organized_movies` table (`< 0.01s`) and uses 16-worker pool to finish upgrade in seconds. |

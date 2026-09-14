@@ -145,3 +145,59 @@ func TestOrganizeMatch(t *testing.T) {
 		t.Errorf("HTML file not found: %s", res.HTMLPath)
 	}
 }
+
+func TestSmartCollisionProtection(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "r19dev_collision_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	srcFile := filepath.Join(tempDir, "incoming.mp4")
+	dstFile := filepath.Join(tempDir, "organized", "test.mp4")
+
+	// 1. Destination does not exist: normal move
+	_ = os.WriteFile(srcFile, []byte("12345"), 0o644)
+	actualDst, err := moveFile(srcFile, dstFile)
+	if err != nil || actualDst != dstFile {
+		t.Fatalf("Expected normal move to %s, got %s, err: %v", dstFile, actualDst, err)
+	}
+
+	// 2. Destination exists with identical size: skip move safely
+	_ = os.WriteFile(srcFile, []byte("12345"), 0o644)
+	actualDst, err = moveFile(srcFile, dstFile)
+	if err != nil || actualDst != dstFile {
+		t.Fatalf("Expected identical skip to return %s, got %s, err: %v", dstFile, actualDst, err)
+	}
+
+	// 3. Incoming file is larger (e.g. 4K upgrade): preserves both, appends -4k
+	_ = os.WriteFile(srcFile, []byte("12345678901234567890"), 0o644) // 20 bytes vs 5 bytes
+	actualDst, err = moveFile(srcFile, dstFile)
+	if err != nil {
+		t.Fatalf("Failed move with larger incoming: %v", err)
+	}
+	expected4k := filepath.Join(tempDir, "organized", "test-4k.mp4")
+	if actualDst != expected4k {
+		t.Errorf("Expected 4K version %s, got %s", expected4k, actualDst)
+	}
+	if _, err := os.Stat(dstFile); err != nil {
+		t.Errorf("Original destination file was overwritten or removed!")
+	}
+	if _, err := os.Stat(expected4k); err != nil {
+		t.Errorf("New 4k file not found on disk!")
+	}
+
+	// 4. Incoming file is smaller: saves as -v2 without overwriting larger existing
+	_ = os.WriteFile(srcFile, []byte("12"), 0o644) // 2 bytes vs 5 bytes
+	actualDst, err = moveFile(srcFile, dstFile)
+	if err != nil {
+		t.Fatalf("Failed move with smaller incoming: %v", err)
+	}
+	expectedV2 := filepath.Join(tempDir, "organized", "test-v2.mp4")
+	if actualDst != expectedV2 {
+		t.Errorf("Expected secondary version %s, got %s", expectedV2, actualDst)
+	}
+	if _, err := os.Stat(dstFile); err != nil {
+		t.Errorf("Original destination was overwritten!")
+	}
+}

@@ -106,9 +106,17 @@ func PlanOrganize(match *matcher.MatchResult, movie *scraper.Movie, targetRoot s
 	targetMovieDir := filepath.Join(targetRoot, actressFolder, movieFolder)
 
 	ext := filepath.Ext(match.File.Path)
+	lowerName := strings.ToLower(match.File.Name)
+	is4K := strings.Contains(lowerName, "-4k") || strings.Contains(lowerName, "_4k")
+	isUncen := strings.Contains(lowerName, "uncensored") || strings.Contains(lowerName, " u.") || strings.Contains(lowerName, "_uncen")
+
 	var videoFilename string
 	if match.IsMultiPart && match.PartNumber > 0 {
 		videoFilename = fmt.Sprintf("%s-cd%d%s", movie.ID, match.PartNumber, ext)
+	} else if is4K {
+		videoFilename = fmt.Sprintf("%s-4k%s", movie.ID, ext)
+	} else if isUncen {
+		videoFilename = fmt.Sprintf("%s-uncensored%s", movie.ID, ext)
 	} else {
 		videoFilename = fmt.Sprintf("%s%s", movie.ID, ext)
 	}
@@ -163,11 +171,13 @@ func OrganizeMatchWithProgress(ctx context.Context, match *matcher.MatchResult, 
 	if reporter != nil {
 		reporter("move_video", 2, 6, fmt.Sprintf("กำลังย้ายไฟล์วิดีโอ %s...", filepath.Base(match.File.Path)))
 	}
-	if err := moveFile(match.File.Path, plan.TargetVideo); err != nil {
+	actualDst, err := moveFile(match.File.Path, plan.TargetVideo)
+	if err != nil {
 		plan.Success = false
 		plan.Error = fmt.Sprintf("failed to move video file: %v", err)
 		return plan, err
 	}
+	plan.TargetVideo = actualDst
 
 	// 3. Generate Jellyfin NFO
 	if reporter != nil {
@@ -222,41 +232,66 @@ func OrganizeMatch(ctx context.Context, match *matcher.MatchResult, movie *scrap
 	return OrganizeMatchWithProgress(ctx, match, movie, userState, targetRoot, dryRun, nil)
 }
 
-// moveFile moves a file using os.Rename, falling back to copy+delete across different filesystems/mounts.
-func moveFile(src, dst string) error {
+// moveFile moves a file using os.Rename, falling back to copy+delete across different filesystems/mounts,
+// with smart collision protection to prevent destructive overwriting of existing videos.
+func moveFile(src, dst string) (string, error) {
 	if strings.EqualFold(src, dst) {
-		return nil
+		return dst, nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
+		return "", err
+	}
+
+	// Smart collision protection: if destination already exists, inspect sizes
+	if fiDst, err := os.Stat(dst); err == nil && fiDst.Size() > 0 {
+		fiSrc, sErr := os.Stat(src)
+		if sErr == nil {
+			// If identical size, skip move to avoid duplicate I/O
+			if fiSrc.Size() == fiDst.Size() {
+				return dst, nil
+			}
+			// If incoming file is significantly larger (e.g. 4K upgrade), save as -4k or multi-version
+			ext := filepath.Ext(dst)
+			base := strings.TrimSuffix(dst, ext)
+			if fiSrc.Size() > fiDst.Size() {
+				if !strings.HasSuffix(strings.ToLower(base), "-4k") {
+					dst = base + "-4k" + ext
+				} else {
+					dst = base + "-v2" + ext
+				}
+			} else {
+				// Destination is already larger/better quality, save incoming as secondary version instead of overwriting
+				dst = base + "-v2" + ext
+			}
+		}
 	}
 
 	// Fast atomic rename (instant on same NAS share/filesystem)
 	err := os.Rename(src, dst)
 	if err == nil {
-		return nil
+		return dst, nil
 	}
 
 	// Fallback to streaming copy + delete if cross-device link error (EXDEV)
 	in, err := os.Open(src)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer in.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer out.Close()
 
 	if _, err = io.Copy(out, in); err != nil {
 		_ = os.Remove(dst)
-		return err
+		return "", err
 	}
 
 	_ = in.Close()
 	_ = out.Close()
-	return os.Remove(src)
+	return dst, os.Remove(src)
 }

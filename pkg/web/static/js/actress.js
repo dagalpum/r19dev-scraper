@@ -772,6 +772,12 @@ export function renderActressCollection() {
           return (a.name || '').localeCompare(b.name || '');
         } else if (sortMode === 'lib-desc') {
           return b.movie_count - a.movie_count || (b.latest_date || '').localeCompare(a.latest_date || '');
+        } else if (sortMode === 'total-desc') {
+          return (b.total_count || 0) - (a.total_count || 0) || b.movie_count - a.movie_count;
+        } else if (sortMode === 'missing-desc') {
+          const missA = a.stats ? a.stats.missingCount : 0;
+          const missB = b.stats ? b.stats.missingCount : 0;
+          return missB - missA || b.movie_count - a.movie_count;
         } else if (sortMode === 'pct-desc') {
           const pctA = a.stats ? a.stats.libPct : 0;
           const pctB = b.stats ? b.stats.libPct : 0;

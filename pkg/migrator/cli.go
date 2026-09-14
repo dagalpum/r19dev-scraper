@@ -62,7 +62,13 @@ func RunCLI(ctx context.Context, cfg Config) (*Summary, error) {
 		case EventMoveError:
 			fmt.Printf("[%s] ❌ %s\n", timeStr, e.Message)
 		case EventUpdateHTML:
-			fmt.Printf("[%s] 🔄 %s\n", timeStr, e.Message)
+			if e.Total > 0 {
+				if e.Current == 1 || e.Current%25 == 0 || e.Current == e.Total {
+					fmt.Printf("[%s] 🔄 %s\n", timeStr, e.Message)
+				}
+			} else {
+				fmt.Printf("[%s] 🔄 %s\n", timeStr, e.Message)
+			}
 		case EventCleanArchive:
 			fmt.Printf("[%s] 🧹 %s\n", timeStr, e.Message)
 		case EventDone:

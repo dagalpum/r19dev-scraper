@@ -278,7 +278,18 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case EventUpdateHTML:
 			m.phase = "UPDATING HTML"
 			m.currentMsg = e.Message
-			m.addLog(nowStr, "🔄", colorCyan, e.Message)
+			if e.Total > 0 {
+				m.current = e.Current
+				m.total = e.Total
+			}
+			if e.MovieID != "" {
+				m.currentID = e.MovieID
+				m.currentAct = e.Actress
+				m.currentTitle = e.Title
+			}
+			if e.Total == 0 || e.Current == 1 || e.Current%20 == 0 || e.Current == e.Total {
+				m.addLog(nowStr, "🔄", colorCyan, e.Message)
+			}
 
 		case EventCleanArchive:
 			m.phase = "CLEANING UP"

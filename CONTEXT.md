@@ -73,7 +73,13 @@ r19dev-scraper/
 │   │       ├── vendor/       # Offline vendor bundles (Lucide icons, PhotoSwipe 5)
 │   │       ├── index.html    # Semantic dark-mode HTML shell (zero external CDN links)
 │   │       └── style.css     # CSS Design system with local @font-face rules
-│   └── tui/                  # Module 10: Interactive Terminal Dashboard
+│   ├── migrator/             # Module 11: High-Speed Batch Migrator & Safe Reorganizer
+│   │   ├── engine.go         # 5-phase migration pipeline, smart collision protection, concurrent HTML upgrader
+│   │   ├── engine_test.go    # Tests for cleanEmptyTree and concurrent UpgradeHTMLFiles
+│   │   ├── tui.go            # Interactive Charm Bubble Tea TUI with real-time progress bar & log pane
+│   │   ├── cli.go            # Headless non-interactive CLI runner for scripts and servers
+│   │   └── types.go          # Event definitions, config, and migration summary types
+│   └── tui/                  # Module 12: Interactive Terminal Dashboard
 │       ├── app.go            # Bubble Tea Model (Init, Update, async Cmd handlers)
 │       ├── views.go          # View layout: Split screen (file table + metadata inspector)
 │       ├── edit_modal.go     # Textinput modal for manual ID override
@@ -215,6 +221,28 @@ r19dev-scraper/
 * **Performer Profile Disambiguation**: 100% of followed actresses in `r19dev.db.actresses` have their verified DMM `r18_id` populated (e.g. Nao Satsuki ID `1089946`, Sayaka Nakamura ID `1094001`), eliminating homonymous collisions on older performers.
 * **Adaptive Card Actions**: On filmography poster cards, hover action buttons adapt dynamically: local library items show `[📂 Finder]`, while unowned/missing releases present `[🌐 R18 ↗]` for 1-click preview.
 * **100% Offline-First Invariant**: All outbound links are client-side `<a target="_blank">` hyperlinks, requiring zero external server-side requests and immune to Cloudflare HTTP 429 rate limits.
+
+### 4.19 Batch Migration Engine & Smart Collision Protection (`pkg/migrator`)
+* **Problem Solved**: Reorganizing and migrating hundreds of gigabytes (or terabytes) of existing downloads into standardized Jellyfin structures across network SMB storage without destructive overwrites, data loss, or long UI freezes.
+* **5-Phase Pipeline**:
+  1. *Discovery & Pre-flight*: Crawls source directory, resolves metadata via `r18_dump.db`, aggregates multi-part CDs (`-cd1..-cd5`), and computes target paths.
+  2. *Pre-flight Safety Gate*: Pauses execution in TUI/CLI mode, presenting a verified plan card (`✔ Pre-Flight Complete: X movies ready`) for operator confirmation before touching files.
+  3. *Live Migration*: Renames/moves video files, merges folder assets (`poster.jpg`, `fanart.jpg`, `extrafanart/`), writes Jellyfin `.nfo` and Cinematic `movie.html`, and registers entries into SQLite `movies`, `organized_movies`, and `library_files`.
+  4. *Concurrent HTML Upgrader*: Employs a 16-worker goroutine pool to refresh `movie.html` templates across destination folders in seconds, with fast database discovery bypassing slow SMB directory walks.
+  5. *Safe Source Pruning*: Bottom-up tree cleanup removes only empty directories via `isDirEmpty`, strictly preserving non-empty folders containing skipped or foreign media.
+* **Smart Collision Protection**:
+  - Automatically identifies existing target movies and prevents destructive overwrites.
+  - Distinguishes and co-locates 4K editions (`-4k.mp4`), uncensored editions (`-uncensored.mp4`), and standard editions (`.mp4`) side-by-side in the same movie folder.
+  - Generates HTML player action buttons supporting multiple resolutions and parts.
+
+### 4.20 Atomic Crash-Consistent Database Backup Pipeline (`VACUUM INTO`)
+* **Problem Solved**: SQLite databases located on SMB/NFS network mounts suffer from file-locking latency and corruption risks if backed up via naive file copies while write transactions are active.
+* **Architecture**: `DB.BackupTo` executes SQLite's atomic `VACUUM INTO` command into a local temporary file first on fast local NVMe storage, defragmenting database pages and ensuring transaction consistency without holding long database locks.
+* **Cross-Filesystem Safe Copy**: The clean, defragmented backup file is copied atomically to the destination path (e.g. `/Volumes/home/BT/organized/.r19dev_backup.db`). Accessible via CLI command `./bin/r19dev backup [path]` or Web UI history modal.
+
+### 4.21 Self-Healing Avatar Caching for Discovered / Unfollowed Actresses
+* **Problem Solved**: Unfollowed performers appearing in library titles lacked pre-cached avatar images in `~/Library/Application Support/r19dev/actress_images/`, causing generic SVG initials to render on the Unfollowed tab.
+* **Architecture**: Web server's `handleActressAvatar` checks local disk cache, queries `r18_dump.db.actresses.image_url` dynamically on cache miss, automatically downloads high-resolution headshots from DMM CloudFront CDN, and caches them permanently to disk.
 
 ---
 

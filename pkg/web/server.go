@@ -532,6 +532,42 @@ func (s *Server) handleActressAvatar(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Dynamic lookup in r18_dump.db for unfollowed / discovered actresses
+	dumpDBPath := filepath.Join(homeDir, "Library", "Application Support", "r19dev", "r18_dump.db")
+	if dumpDB, err := sql.Open("sqlite", dumpDBPath); err == nil {
+		defer dumpDB.Close()
+		var imgFile string
+		_ = dumpDB.QueryRow(`
+			SELECT image_url FROM actresses 
+			WHERE (name_romaji = ? OR name_kanji = ? OR name_romaji LIKE ? OR name_kanji LIKE ?) 
+			  AND image_url IS NOT NULL AND image_url != '' 
+			ORDER BY CASE WHEN image_url LIKE '%.jpg' THEN 0 ELSE 1 END 
+			LIMIT 1`, name, name, "%"+name+"%", "%"+name+"%").Scan(&imgFile)
+		if imgFile != "" {
+			if !strings.HasSuffix(imgFile, ".jpg") {
+				imgFile += ".jpg"
+			}
+			dmmURL := imgFile
+			if !strings.HasPrefix(dmmURL, "http") {
+				dmmURL = "https://pics.dmm.co.jp/mono/actjpgs/" + imgFile
+			}
+			client := &http.Client{Timeout: 5 * time.Second}
+			if req, err := http.NewRequestWithContext(r.Context(), "GET", dmmURL, nil); err == nil {
+				req.Header.Set("User-Agent", "Mozilla/5.0")
+				if resp, err := client.Do(req); err == nil && resp.StatusCode == http.StatusOK {
+					defer resp.Body.Close()
+					if b, err := io.ReadAll(resp.Body); err == nil && len(b) > 100 {
+						_ = os.WriteFile(targetPath, b, 0o644)
+						w.Header().Set("Content-Type", "image/jpeg")
+						w.Header().Set("Cache-Control", "public, max-age=31536000")
+						_, _ = w.Write(b)
+						return
+					}
+				}
+			}
+		}
+	}
+
 	// Fallback: Generate sleek SVG avatar with actress initials
 	w.Header().Set("Content-Type", "image/svg+xml")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
@@ -1328,6 +1364,32 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 		filepath.Join(targetDir, "JAV_Library"),
 	}
 
+	var diskFolders map[string]string
+	hasIndexedDisk := false
+	buildDiskIndex := func() {
+		if hasIndexedDisk {
+			return
+		}
+		hasIndexedDisk = true
+		diskFolders = make(map[string]string)
+		for _, checkDest := range checkDirs {
+			if entries, err := os.ReadDir(checkDest); err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() {
+						subPath := filepath.Join(checkDest, entry.Name())
+						if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
+							for _, sub := range subEntries {
+								if sub.IsDir() {
+									diskFolders[strings.ToUpper(sub.Name())] = filepath.Join(subPath, sub.Name())
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	for _, m := range matches {
 		if m.ID == "" || (organizedMap[m.ID] && folderMap[m.ID] != "") {
 			continue
@@ -1344,33 +1406,15 @@ func detectOrganizedStatus(targetDir string, matches []matcher.MatchResult, data
 			continue
 		}
 		// If checkDirs has this ID
-		found := false
-		for _, checkDest := range checkDirs {
-			if entries, err := os.ReadDir(checkDest); err == nil {
-				for _, entry := range entries {
-					if entry.IsDir() {
-						subPath := filepath.Join(checkDest, entry.Name())
-						if subEntries, sErr := os.ReadDir(subPath); sErr == nil {
-							for _, sub := range subEntries {
-								if sub.IsDir() && strings.Contains(strings.ToUpper(sub.Name()), m.ID) {
-									foundFolder := filepath.Join(subPath, sub.Name())
-									organizedMap[m.ID] = true
-									folderMap[m.ID] = foundFolder
-									if database != nil {
-										_ = database.SetOrganized(m.ID, foundFolder, "")
-									}
-									found = true
-									break
-								}
-							}
-						}
-					}
-					if found {
-						break
-					}
+		buildDiskIndex()
+		upperID := strings.ToUpper(m.ID)
+		for upperName, foundFolder := range diskFolders {
+			if strings.Contains(upperName, upperID) {
+				organizedMap[m.ID] = true
+				folderMap[m.ID] = foundFolder
+				if database != nil {
+					_ = database.SetOrganized(m.ID, foundFolder, "")
 				}
-			}
-			if found {
 				break
 			}
 		}

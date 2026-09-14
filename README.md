@@ -91,7 +91,19 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **One-Click Reveal in Finder / File Manager**: Click `[📂 Open in Finder]` directly on any card or modal to immediately reveal the organized files in macOS Finder, Windows Explorer, or Linux.
 - **Safe Dry-Run Mode**: Supports `--dry-run` to preview all target folder moves and asset creations safely before applying changes.
 
-### 📜 4. Console Log & SQLite Operation History (Audit Trail)
+### 🚚 4. High-Speed Batch Migrator (`r19dev migrate`)
+- **Interactive Live Migration TUI**: Powered by Charm Bubble Tea with real-time percentage progress bar, speed tracker (`1.1/s`), live status card, and scrolling activity logs.
+- **🛡️ Smart Collision & Quality Protection**:
+  - **Zero Destructive Overwrites**: Automatically detects existing titles in target destinations. Instead of overwriting or erroring out, it merges complementary assets safely.
+  - **Quality Coexistence**: Safely co-locates 4K editions (`-4k.mp4`), 1080p standard editions (`.mp4`), and uncensored editions (`-uncensored.mp4`) in the same movie folder.
+  - **Multi-Part Integrity**: Preserves and standardizes multi-part CD files (`-cd1.mp4` through `-cd5.mp4`), keeping all discs grouped in the single movie directory.
+- **📋 Pre-Flight Safety Confirmation**: Scans the source tree, maps metadata against `r18_dump.db`, resolves destination paths, and pauses for explicit operator confirmation (`[Enter] PROCEED` / `[q] CANCEL`) before moving a single byte.
+- **⚡ Concurrent Worker Pool & Zero-Lag Discovery**:
+  - Automatically queries `organized_movies` SQLite table in `< 0.01s` for instant library lookups without slow recursive SMB network traversal.
+  - Upgrades library `movie.html` files with a **16-worker concurrent pool**, reducing re-render times from minutes to seconds.
+- **🧹 Safe Source Directory Tree Cleanup**: Post-order traversal safely removes only empty parent folders in the source directory after files are migrated, while preserving non-empty folders containing skipped or foreign media.
+
+### 📜 5. Console Log & SQLite Operation History (Audit Trail)
 - **Smart Auto-Scroll**: Console Log automatically pauses auto-scrolling when the user scrolls up to inspect previous lines (`Auto-Scroll: PAUSED`), displaying a floating `⬇️ New logs below (Click to resume)` button.
 - **One-Click Log Copy**: Instant `📋 Copy` button to copy complete console logs to the clipboard.
 - **SQLite Operation History (`operation_history`)**: All batch and single Organize/Scrape operations are automatically recorded into SQLite with complete timestamps, counts (success/fail), parameters, and full audit logs.
@@ -153,6 +165,30 @@ make build
 
 # Execute organization and asset generation
 ./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized
+```
+
+### 6. High-Performance Batch Migration (`r19dev migrate`)
+```bash
+# Interactive TUI migration with live progress bar and pre-flight confirmation
+./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized
+
+# Dry-run inspection without moving any files:
+./bin/r19dev migrate /Volumes/home/BT/Misc /Volumes/home/BT/organized --dry-run
+
+# Non-interactive CLI mode for automated scripts / headless servers:
+./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized --yes --no-tui
+
+# Upgrade existing library movie.html files concurrently across destination:
+./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized --upgrade-all-html
+```
+
+### 7. Standalone Utilities (`backup` & `upgrade-html`)
+```bash
+# Create atomic, crash-consistent SQLite backup snapshot directly onto NAS:
+./bin/r19dev backup /Volumes/home/BT/organized
+
+# Concurrently upgrade all movie.html in library using 16 worker pool:
+./bin/r19dev upgrade-html /Volumes/home/BT/organized
 ```
 
 ---

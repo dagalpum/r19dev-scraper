@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagalp/r19dev-scraper/pkg/jellyfin"
@@ -43,6 +45,28 @@ func movePath(src, dst string) error {
 		return nil
 	}
 	_ = os.MkdirAll(filepath.Dir(dst), 0o755)
+
+	// Smart collision protection: if destination already exists, inspect sizes
+	if fiDst, err := os.Stat(dst); err == nil && fiDst.Size() > 0 {
+		fiSrc, sErr := os.Stat(src)
+		if sErr == nil {
+			if fiSrc.Size() == fiDst.Size() {
+				return nil
+			}
+			ext := filepath.Ext(dst)
+			base := strings.TrimSuffix(dst, ext)
+			if fiSrc.Size() > fiDst.Size() {
+				if !strings.HasSuffix(strings.ToLower(base), "-4k") {
+					dst = base + "-4k" + ext
+				} else {
+					dst = base + "-v2" + ext
+				}
+			} else {
+				dst = base + "-v2" + ext
+			}
+		}
+	}
+
 	err := os.Rename(src, dst)
 	if err == nil {
 		return nil
@@ -156,16 +180,20 @@ func cleanDirIfEmpty(dir, stopRoot string) {
 	}
 }
 
-func cleanEmptyTree(root string) {
+func cleanEmptyTree(root string) int {
+	var count int
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || !info.IsDir() || path == root {
 			return nil
 		}
 		if isDirEmpty(path) {
-			_ = os.Remove(path)
+			if err := os.Remove(path); err == nil {
+				count++
+			}
 		}
 		return nil
 	})
+	return count
 }
 
 // Run executes the migration workflow.
@@ -462,9 +490,17 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 
 		targetDir := filepath.Join(cfg.DestRoot, actressDir, movieFolder)
 		ext := filepath.Ext(fi.Path)
+		lowerName := strings.ToLower(fi.Name)
+		is4K := strings.Contains(lowerName, "-4k") || strings.Contains(lowerName, "_4k")
+		isUncen := strings.Contains(lowerName, "uncensored") || strings.Contains(lowerName, " u.") || strings.Contains(lowerName, "_uncen")
+
 		var targetVideoName string
 		if mr.IsMultiPart && mr.PartNumber > 0 {
 			targetVideoName = fmt.Sprintf("%s-cd%d%s", mr.ID, mr.PartNumber, ext)
+		} else if is4K {
+			targetVideoName = fmt.Sprintf("%s-4k%s", mr.ID, ext)
+		} else if isUncen {
+			targetVideoName = fmt.Sprintf("%s-uncensored%s", mr.ID, ext)
 		} else {
 			targetVideoName = fmt.Sprintf("%s%s", mr.ID, ext)
 		}
@@ -587,6 +623,20 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 		currentNum := i + 1
 
 		if item.IsDuplicate {
+			// Check if incoming duplicate file is a higher quality/larger version (e.g. 4K vs 1080p)
+			if fiDst, err := os.Stat(item.TargetVideo); err == nil && fiDst.Size() > 0 {
+				fiSrc, sErr := os.Stat(item.File.Path)
+				if sErr == nil && fiSrc.Size() > fiDst.Size() {
+					ext := filepath.Ext(item.TargetVideo)
+					base := strings.TrimSuffix(item.TargetVideo, ext)
+					newTarget := base + "-4k" + ext
+					_ = os.Rename(item.File.Path, newTarget)
+					item.TargetVideo = newTarget
+					mergeFolderAssets(item.SourceDir, item.TargetDir)
+					cleanDirIfEmpty(item.SourceDir, cfg.SourceDir)
+					continue
+				}
+			}
 			mergeFolderAssets(item.SourceDir, item.TargetDir)
 			_ = os.Remove(item.File.Path)
 			cleanDirIfEmpty(item.SourceDir, cfg.SourceDir)
@@ -716,9 +766,9 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 	if !cfg.DryRun && cfg.UpdateExisting {
 		emit(ProgressEvent{
 			Type:    EventUpdateHTML,
-			Message: "Upgrading existing movie.html files to Cinematic template...",
+			Message: "Scanning destination for existing movie.html files...",
 		})
-		summary.UpdatedHTMLNum = updateExistingHTMLFiles(cfg.DestRoot, appDB, dumpDB)
+		summary.UpdatedHTMLNum = UpgradeHTMLFiles(ctx, cfg.DestRoot, appDB, dumpDB, emit)
 	}
 
 	// 5. Clean empty source tree
@@ -727,7 +777,13 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 			Type:    EventCleanArchive,
 			Message: "Cleaning empty directories in source...",
 		})
-		cleanEmptyTree(cfg.SourceDir)
+		cleaned := cleanEmptyTree(cfg.SourceDir)
+		if cleaned > 0 {
+			emit(ProgressEvent{
+				Type:    EventCleanArchive,
+				Message: fmt.Sprintf("Cleaned %d empty directories in source", cleaned),
+			})
+		}
 	}
 
 	summary.Duration = time.Since(startTime)
@@ -740,87 +796,194 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 	return summary, nil
 }
 
-func updateExistingHTMLFiles(destRoot string, appDB, dumpDB *sql.DB) int {
-	var count int
-	_ = filepath.Walk(destRoot, func(path string, info os.FileInfo, err error) error {
-		if err != nil || !info.IsDir() {
-			return nil
-		}
-		htmlPath := filepath.Join(path, "movie.html")
-		if _, statErr := os.Stat(htmlPath); statErr != nil {
-			return nil
-		}
+type htmlUpgradeTarget struct {
+	folder      string
+	movieID     string
+	targetVideo string
+}
 
-		dirName := filepath.Base(path)
-		m := reExtractID.FindStringSubmatch(dirName)
-		var movieID string
-		if len(m) >= 3 {
-			movieID = fmt.Sprintf("%s-%s", strings.ToUpper(m[1]), m[2])
-		}
+// UpgradeHTMLFiles upgrades all movie.html files in destRoot using a concurrent worker pool.
+func UpgradeHTMLFiles(ctx context.Context, destRoot string, appDB, dumpDB *sql.DB, emit func(ProgressEvent)) int {
+	var targets []htmlUpgradeTarget
 
-		if movieID == "" {
-			entries, _ := os.ReadDir(path)
-			for _, e := range entries {
-				if strings.HasSuffix(strings.ToLower(e.Name()), ".nfo") {
-					sub := reExtractID.FindStringSubmatch(e.Name())
-					if len(sub) >= 3 {
-						movieID = fmt.Sprintf("%s-%s", strings.ToUpper(sub[1]), sub[2])
-						break
+	// 1. Fast discovery from organized_movies database (instant, no recursive network SMB walk)
+	if appDB != nil {
+		rows, err := appDB.QueryContext(ctx, `
+			SELECT target_folder, movie_id, target_video 
+			FROM organized_movies 
+			WHERE target_folder LIKE ?`, destRoot+"%")
+		if err == nil {
+			for rows.Next() {
+				var folder, movieID, video string
+				if err := rows.Scan(&folder, &movieID, &video); err == nil && folder != "" {
+					targets = append(targets, htmlUpgradeTarget{
+						folder:      folder,
+						movieID:     movieID,
+						targetVideo: video,
+					})
+				}
+			}
+			rows.Close()
+		}
+	}
+
+	// 2. Fallback to filesystem walk if database has no records for this destination
+	if len(targets) == 0 {
+		_ = filepath.Walk(destRoot, func(path string, info os.FileInfo, err error) error {
+			if err != nil || !info.IsDir() {
+				return nil
+			}
+			htmlPath := filepath.Join(path, "movie.html")
+			if _, statErr := os.Stat(htmlPath); statErr != nil {
+				return nil
+			}
+
+			dirName := filepath.Base(path)
+			m := reExtractID.FindStringSubmatch(dirName)
+			var movieID string
+			if len(m) >= 3 {
+				movieID = fmt.Sprintf("%s-%s", strings.ToUpper(m[1]), m[2])
+			}
+
+			if movieID == "" {
+				entries, _ := os.ReadDir(path)
+				for _, e := range entries {
+					if strings.HasSuffix(strings.ToLower(e.Name()), ".nfo") {
+						sub := reExtractID.FindStringSubmatch(e.Name())
+						if len(sub) >= 3 {
+							movieID = fmt.Sprintf("%s-%s", strings.ToUpper(sub[1]), sub[2])
+							break
+						}
 					}
 				}
 			}
-		}
 
-		if movieID == "" {
-			return nil
-		}
-
-		var title, origTitle, maker, label, director, relDate, coverURL string
-		var actJSON, genJSON sql.NullString
-		_ = appDB.QueryRow(`
-			SELECT title, original_title, maker, label, director, release_date, cover_url, actresses_json, genres_json
-			FROM movies 
-			WHERE UPPER(id) = UPPER(?)
-			LIMIT 1`, movieID).Scan(&title, &origTitle, &maker, &label, &director, &relDate, &coverURL, &actJSON, &genJSON)
-
-		movie := &scraper.Movie{
-			ID:            movieID,
-			Title:         title,
-			OriginalTitle: origTitle,
-			Maker:         maker,
-			Label:         label,
-			Director:      director,
-			ReleaseDate:   relDate,
-			CoverURL:      coverURL,
-		}
-
-		if actJSON.Valid {
-			_ = json.Unmarshal([]byte(actJSON.String), &movie.Actresses)
-		}
-		if genJSON.Valid {
-			_ = json.Unmarshal([]byte(genJSON.String), &movie.Genres)
-		}
-
-		if movie.Title == "" {
-			normID := strings.ToLower(strings.ReplaceAll(movieID, "-", ""))
-			var dID, tEn, tJa, mName, rDate, jURL string
-			_ = dumpDB.QueryRow(`
-				SELECT dvd_id, title_en, title_ja, maker_name_en, release_date, jacket_full_url 
-				FROM r18_movies WHERE clean_id = ? OR dvd_id = ? LIMIT 1`, normID, movieID).Scan(&dID, &tEn, &tJa, &mName, &rDate, &jURL)
-			if tEn != "" || tJa != "" {
-				movie.Title = tEn
-				movie.OriginalTitle = tJa
-				movie.Maker = mName
-				movie.ReleaseDate = rDate
-				movie.CoverURL = jURL
+			if movieID != "" {
+				targets = append(targets, htmlUpgradeTarget{
+					folder:  path,
+					movieID: movieID,
+				})
 			}
-		}
+			return nil
+		})
+	}
 
-		_ = jellyfin.WriteHTML(movie, nil, htmlPath)
-		count++
-		return nil
-	})
-	return count
+	total := len(targets)
+	if total == 0 {
+		return 0
+	}
+
+	if emit != nil {
+		emit(ProgressEvent{
+			Type:    EventUpdateHTML,
+			Current: 0,
+			Total:   total,
+			Message: fmt.Sprintf("Found %d movies. Upgrading movie.html to Cinematic template (16 concurrent workers)...", total),
+		})
+	}
+
+	workers := 16
+	if workers > total {
+		workers = total
+	}
+
+	jobs := make(chan htmlUpgradeTarget, total)
+	for _, t := range targets {
+		jobs <- t
+	}
+	close(jobs)
+
+	var processed int32
+	var successCount int32
+	var wg sync.WaitGroup
+
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for target := range jobs {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				movieID := target.movieID
+				var title, origTitle, maker, label, director, relDate, coverURL string
+				var actJSON, genJSON sql.NullString
+
+				if appDB != nil {
+					_ = appDB.QueryRowContext(ctx, `
+						SELECT title, original_title, maker, label, director, release_date, cover_url, actresses_json, genres_json
+						FROM movies 
+						WHERE UPPER(id) = UPPER(?)
+						LIMIT 1`, movieID).Scan(&title, &origTitle, &maker, &label, &director, &relDate, &coverURL, &actJSON, &genJSON)
+				}
+
+				movie := &scraper.Movie{
+					ID:            movieID,
+					Title:         title,
+					OriginalTitle: origTitle,
+					Maker:         maker,
+					Label:         label,
+					Director:      director,
+					ReleaseDate:   relDate,
+					CoverURL:      coverURL,
+				}
+
+				if actJSON.Valid {
+					_ = json.Unmarshal([]byte(actJSON.String), &movie.Actresses)
+				}
+				if genJSON.Valid {
+					_ = json.Unmarshal([]byte(genJSON.String), &movie.Genres)
+				}
+
+				if movie.Title == "" && dumpDB != nil {
+					normID := strings.ToLower(strings.ReplaceAll(movieID, "-", ""))
+					var dID, tEn, tJa, mName, rDate, jURL string
+					_ = dumpDB.QueryRowContext(ctx, `
+						SELECT dvd_id, title_en, title_ja, maker_name_en, release_date, jacket_full_url 
+						FROM r18_movies WHERE clean_id = ? OR dvd_id = ? LIMIT 1`, normID, movieID).Scan(&dID, &tEn, &tJa, &mName, &rDate, &jURL)
+					if tEn != "" || tJa != "" {
+						movie.Title = tEn
+						movie.OriginalTitle = tJa
+						movie.Maker = mName
+						movie.ReleaseDate = rDate
+						movie.CoverURL = jURL
+					}
+				}
+
+				var videoBase string
+				if target.targetVideo != "" {
+					videoBase = filepath.Base(target.targetVideo)
+				}
+				htmlPath := filepath.Join(target.folder, "movie.html")
+				if err := jellyfin.WriteHTML(movie, nil, htmlPath, videoBase); err == nil {
+					atomic.AddInt32(&successCount, 1)
+				}
+
+				curr := int(atomic.AddInt32(&processed, 1))
+				if emit != nil {
+					firstAct := ""
+					if len(movie.Actresses) > 0 {
+						firstAct = movie.Actresses[0].Name
+					}
+					emit(ProgressEvent{
+						Type:       EventUpdateHTML,
+						Current:    curr,
+						Total:      total,
+						MovieID:    movieID,
+						Actress:    firstAct,
+						Title:      movie.Title,
+						Message:    fmt.Sprintf("[%d/%d] Upgraded %s movie.html", curr, total, movieID),
+					})
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	return int(successCount)
 }
 
 var knownActressRomajiMap = map[string]string{

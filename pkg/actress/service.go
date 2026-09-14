@@ -240,6 +240,16 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 	}
 	defer rows.Close()
 
+	actDir := filepath.Join("/Volumes/home/BT/organized", actressName)
+	var localDirs []string
+	if entries, err := os.ReadDir(actDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				localDirs = append(localDirs, entry.Name())
+			}
+		}
+	}
+
 	var rawReleases []ReleaseItem
 	for rows.Next() {
 		var r ReleaseItem
@@ -267,22 +277,13 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 		}
 
 		// Check if organized folder exists in default organized library if not recorded in DB
-		if r.OrganizedFolder == "" && r.MovieID != "" {
-			candidates := []string{
-				filepath.Join("/Volumes/home/BT/organized", actressName),
-			}
-			for _, actDir := range candidates {
-				if entries, err := os.ReadDir(actDir); err == nil {
-					for _, entry := range entries {
-						if entry.IsDir() && strings.Contains(strings.ToUpper(entry.Name()), strings.ToUpper(r.MovieID)) {
-							foundPath := filepath.Join(actDir, entry.Name())
-							r.OrganizedFolder = foundPath
-							_ = s.database.SetOrganized(r.MovieID, foundPath, "")
-							break
-						}
-					}
-				}
-				if r.OrganizedFolder != "" {
+		if r.OrganizedFolder == "" && r.MovieID != "" && len(localDirs) > 0 {
+			upperID := strings.ToUpper(r.MovieID)
+			for _, dirName := range localDirs {
+				if strings.Contains(strings.ToUpper(dirName), upperID) {
+					foundPath := filepath.Join(actDir, dirName)
+					r.OrganizedFolder = foundPath
+					_ = s.database.SetOrganized(r.MovieID, foundPath, "")
 					break
 				}
 			}

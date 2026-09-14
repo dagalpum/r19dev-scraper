@@ -289,7 +289,7 @@ export function renderModalContent(movie, meta, localScreenshots = null) {
               <button class="btn btn-secondary btn-sm" onclick="window.app.copyMovieId('${escapeHtml(id)}', event)" title="Copy ${escapeHtml(id)}">
                 <span class="material-symbols-outlined icon">content_copy</span> Copy ID
               </button>
-            `)))}
+            `))}
           </div>
         </div>
 

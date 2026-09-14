@@ -226,7 +226,23 @@ func InspectLatestActivityTime(dbPath string) (time.Time, error) {
 	if _, err := os.Stat(dbPath); err != nil {
 		return time.Time{}, err
 	}
-	conn, err := sql.Open("sqlite", dbPath+"?mode=ro")
+	openPath := dbPath
+	// If path is on a network mount (e.g. /Volumes/), copy to local temp file first to avoid Darwin smbfs fsctl limitations
+	if strings.HasPrefix(dbPath, "/Volumes/") {
+		tmp, err := os.CreateTemp("", "r19dev_inspect_*.db")
+		if err == nil {
+			tempFile := tmp.Name()
+			src, sErr := os.Open(dbPath)
+			if sErr == nil {
+				_, _ = io.Copy(tmp, src)
+				_ = src.Close()
+			}
+			_ = tmp.Close()
+			openPath = tempFile
+			defer os.Remove(tempFile)
+		}
+	}
+	conn, err := sql.Open("sqlite", openPath+"?mode=ro&_pragma=query_only(true)")
 	if err != nil {
 		return time.Time{}, err
 	}

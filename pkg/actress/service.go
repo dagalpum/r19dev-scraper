@@ -872,8 +872,8 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 }
 
 var (
-	promoSkuRegex         = regexp.MustCompile(`^(?:TK[A-Z]{3,6}[-_]?\d+|[A-Z]9[A-Z]{2,6}[-_]?\d+|9[A-Z]{3,6}\d+|(?:77|88)[A-Z]{3,6}[-_]?\d+)`)
-	compilationRegex      = regexp.MustCompile(`(?i)\d+連発|\d+連射|\d+時間(?:BOX|ベスト)?|ベストセレクション|BESTセレクション|総集編|オムニバス|傑作選`)
+	promoSkuRegex         = regexp.MustCompile(`^(?:TK[A-Z]{3,6}[-_]?\d+|[A-Z]?[4679][A-Z]{2,6}[-_]?\d+|(?:77|88)[A-Z]{3,6}[-_]?\d+)`)
+	compilationRegex      = regexp.MustCompile(`(?i)\d+連発|\d+連射|\d+時間(?:BOX|ベスト)?|ベストセレクション|BESTセレクション|総集編|オムニバス|傑作選|\d+本番ベスト|\d+コーナー|\d+射精|大乱交(?:絶頂)?\d+本番|メモリアルベスト|コンプリートベスト|神BEST|(?:[3-9]\d{2,}|\d{4,})分`)
 	multiBodyRegex        = regexp.MustCompile(`\d+体(?:\d+分)?`)
 	titleDedupeCleanRegex = regexp.MustCompile(`(?i)【.*?】|（.*?）|\(.*?\)|\[.*?\]|ブルーレイエディション|ディレクターズカット版?|未公開映像収録(?:のプレミアムエディション)?|2枚組|[_\s\-]`)
 	marketingPrefixRegex  = regexp.MustCompile(`^【(?:数量限定|FANZA限定|DMM限定|期間限定|初回限定|先行配信|特装版|限定)】\s*`)
@@ -1129,8 +1129,11 @@ func CheckFilmographyInclusion(movieID, title, originalTitle, coverURL string, g
 		}
 	}
 
-	// 8. Known Omnibus series (RBB-, MKCK-)
-	if strings.HasPrefix(upperID, "RBB") || strings.HasPrefix(upperID, "MKCK") {
+	// 8. Known Omnibus series (RBB-, MKCK-, OFJE-, SETH-, etc.)
+	if strings.HasPrefix(upperID, "RBB") || strings.HasPrefix(upperID, "MKCK") ||
+		strings.HasPrefix(upperID, "OFJE") || strings.Contains(upperID, "OFJE") ||
+		strings.HasPrefix(upperID, "SETH") || strings.Contains(upperID, "SETH") ||
+		strings.HasPrefix(upperID, "OFRF") || strings.HasPrefix(upperID, "OFMA") {
 		return true, "Omnibus Compilation"
 	}
 

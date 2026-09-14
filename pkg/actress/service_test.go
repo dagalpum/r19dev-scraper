@@ -121,6 +121,9 @@ func TestPromotionalVariantFiltering(t *testing.T) {
 		// Group 1: Multi-body / Multi-actress omnibus
 		{"RKI-114", "THE AV WORLD SPECIAL このカ・ラ・ダ超絶品。 50体480分", "", nil, true},
 		{"MKCK-417", "Body Specialized For SEX 600min", "", []string{"Over 4 Hours"}, true},
+		{"OFJE-713", "Top Actresses vs a Bunch of Sex-Crazed Guys: Nonstop Action as They Shove Cocks In One After Another—The Best of 50 Orgasmic Orgies", "", nil, true},
+		{"9OFJE-548", "The ultimate superior pleasure! 150 Corner Fellatio with Beautiful Faces", "", nil, true},
+		{"1SETH00008", "【VR】媚薬・キメセク・鬼イカセ 理性崩壊絶頂SEX ノーカット1602分", "", nil, true},
 		// Group 5: Anniversary crossover works MUST NOT be filtered!
 		{"SONE-566", "S1 20th Anniversary Is The Strongest Tag Team Work", "", []string{"Harem"}, false},
 	}

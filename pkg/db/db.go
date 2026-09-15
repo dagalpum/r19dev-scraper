@@ -1235,6 +1235,7 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 				}
 			}
 		}
+		_ = rows.Err()
 		rows.Close()
 
 		for _, ren := range renames {
@@ -1393,6 +1394,7 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 				}
 			}
 		}
+		_ = remRows.Err()
 		remRows.Close()
 
 		for _, dynID := range dynamicDeleteIDs {
@@ -1528,6 +1530,7 @@ func (d *DB) BackfillMovieActresses(dumpDBPath string) (int, error) {
 				}
 			}
 		}
+		_ = rows.Err()
 		rows.Close()
 	}
 	d.mu.RUnlock()
@@ -1578,6 +1581,7 @@ func (d *DB) BackfillMovieActresses(dumpDBPath string) (int, error) {
 			items = append(items, it)
 		}
 	}
+	_ = mRows.Err()
 	mRows.Close()
 	d.mu.RUnlock()
 
@@ -1656,6 +1660,7 @@ func (d *DB) BackfillMovieActresses(dumpDBPath string) (int, error) {
 				orgs = append(orgs, o)
 			}
 		}
+		_ = orgRows.Err()
 		orgRows.Close()
 
 		for _, o := range orgs {

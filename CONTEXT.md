@@ -242,12 +242,23 @@ r19dev-scraper/
 
 ### 4.21 Self-Healing Avatar Caching for Discovered / Unfollowed Actresses
 * **Problem Solved**: Unfollowed performers appearing in library titles lacked pre-cached avatar images in `~/Library/Application Support/r19dev/actress_images/`, causing generic SVG initials to render on the Unfollowed tab.
-* **Architecture**: Web server's `handleActressAvatar` checks local disk cache, queries `r18_dump.db.actresses.image_url` dynamically on cache miss, automatically downloads high-resolution headshots from DMM CloudFront CDN, and caches them permanently to disk.
+### 4.22 Configurable Filter Engine & Compilation Purge Pipeline (`pkg/scraper/filter.go`)
+* **Problem Solved**: Omnibus releases, promotional variants (`TK-`, `-EC`), goods bundles, and studio compilations (e.g. `IPOK-`, `IDBD-`, `MIZD-`, `MIDD-`, `PBD-`, `OBST-`, `SDDE-`, `RBB-`, `MKCK-`, `MKMP-`, `OFJE-`, `SETH-`, `OFRF-`, `OFMA-`, or labels like `Idea Pocket BEST`, `MOODYZ Best`, `PREMIUM BEST`, `SOD BEST`, `Madonna BEST`) previously polluted solo performer filmographies and library listings if hardcoded rules missed new variations or titles like `100本番`.
+* **Dynamic Configuration (`filters.json`)**:
+  - Filter rules are managed via a JSON schema stored at `~/Library/Application Support/r19dev/filters.json` (macOS) or `~/.config/r19dev/filters.json` (Linux).
+  - Configurable arrays: `blocked_prefixes`, `blocked_labels`, `blocked_series`, `blocked_genres`, `blocked_title_keywords`, `blocked_title_regex`, `blocked_cover_patterns`, `min_actress_omnibus_count`, `max_duration_minutes_threshold`.
+  - Automatically created with robust defaults on first startup. Hot-reloaded without requiring Go recompilation.
+* **Database Integration & Series Schema**:
+  - `movies` table schema expanded with `series TEXT` column and automated startup migration (`ALTER TABLE movies ADD COLUMN series TEXT;`).
+  - `SaveMovie` checks `IsPromotionalOrOmnibusVariantWithDetails(m.ID, m.Title, m.OriginalTitle, m.Label, m.Series, m.CoverURL, m.Genres, len(m.Actresses))`.
+  - `PurgePromotionalVariants` executes both direct SQL elimination of known compilation patterns and a dynamic sweep against the active `FilterConfig`, safely deleting unowned excluded titles while strictly preserving any media present on the user's disk or marked as watched/favorite.
+* **CLI & Web REST API**:
+  - CLI: `r19dev filters show`, `r19dev filters path`, `r19dev filters purge`, `r19dev filters reset`.
+  - REST API: `GET /api/filters`, `POST /api/filters`, `POST /api/filters/reset`, `POST /api/filters/purge`.
 
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions
-
 
 1. **Standard Hyphenated**: `[Letters 2-6]-[Numbers 2-5]` (e.g. `MIDA-517`, `SNOS-028`, `WAAA-615`).
 2. **VR 5-Digit**: `[Letters 3-5][Numbers 5]` (e.g. `kavr00428`, `sivr00394`). Display format: `KAVR-428`, `SIVR-394`.
@@ -274,4 +285,10 @@ make test
 
 # CLI Scan
 ./bin/r19dev scan /Volumes/home/BT/2026 --json
+
+# Filter Management
+./bin/r19dev filters show
+./bin/r19dev filters purge
+./bin/r19dev filters reset
 ```
+

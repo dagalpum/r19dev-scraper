@@ -173,6 +173,10 @@ make test
     Solves SQLite Darwin `smbfs` file locking and lack of POSIX shared-memory support by executing `VACUUM INTO` targeting an isolated SSD temp file first, defragmenting database pages before streaming cleanly to the NAS destination as `.r19dev_backup.db`.
 35. **Self-Healing Unfollowed Performer Avatar Caching**:
     On-demand avatar cache handler in `pkg/web/server.go` checks local disk cache, dynamically queries performer profile image URLs from `r18_dump.db`, and downloads authentic HD headshots from DMM CloudFront CDN upon discovery.
+36. **Configurable Filter Engine & Compilation Purge Pipeline (`filters.json`)**:
+    User-customizable JSON rules schema (`~/Library/Application Support/r19dev/filters.json`) allowing instant addition/removal of blocked prefixes (`IPOK`, `IDBD`, `MIZD`, `MIDD`, `PBD`, `OBST`, `SDDE`, etc.), studio labels/series (`Idea Pocket BEST`, `MOODYZ Best`, `PREMIUM BEST`), and title patterns (`100本番`, `\d+連発`). Dynamic database sweep purges unowned duplicates while strictly protecting on-disk media. Accessible via CLI (`r19dev filters [show|path|purge|reset]`) and REST API (`/api/filters`).
+37. **Step-by-Step User Journeys & Extended Documentation**:
+    Comprehensive user journey guide in `README.md` with visual diagrams detailing Ingest & Organize, Actress Hub & Backlog Wishlist, Library & Universal Search (`⌘K`), Custom Filter Configuration, High-Speed Batch Migration, and Database Backup.
 
 ---
 
@@ -209,6 +213,8 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **16-Worker Concurrent HTML Template Upgrader**: Instant re-rendering with fast database lookup bypassing SMB walks.
 - ✅ **Atomic Crash-Consistent Database Backup (`VACUUM INTO`)**: Defragmented SQLite snapshots streamed safely to NAS share.
 - ✅ **Self-Healing Unfollowed Actress Avatar Caching**: Automatic DMM CDN fetch and local caching on discovery.
+- ✅ **Configurable Filter Rules Engine (`filters.json`)**: User-editable exclusion rules, Label/Series omnibus purging, CLI & REST API.
+- ✅ **Step-by-Step User Journeys Guide**: Complete visual guide in README.md.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

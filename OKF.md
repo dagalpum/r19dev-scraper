@@ -131,7 +131,7 @@ To permanently eliminate Cloudflare rate limiting (HTTP 429 and error 1015 IP ba
   - The History Modal features a dedicated `[💾 Backup DB]` button.
 * **Schema & Relations**:
   - `actresses`: Tracked performers with Japanese/Romaji names, `r18_id INTEGER DEFAULT 0` for direct R18.dev links, follower status, and notes.
-  - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, actresses, genres, screenshots). Over 97% of titles populated with authentic English titles.
+  - `movies`: Full cached R18.dev JSON payloads (titles, dates, directors, studio, label, series, actresses, genres, screenshots). Over 97% of titles populated with authentic English titles.
   - `user_state`: User watch state (`is_watched`), ratings (1–5 ⭐), and favorites (`is_favorite`).
   - `library_files`: Scanned file catalog with size, part number, and destination paths.
   - `organized_movies`: Maps `movie_id` to `target_folder` and `target_video` for instant status detection and One-Click Finder access.
@@ -282,13 +282,16 @@ The migrator automates the reorganization of multi-terabyte unorganized or legac
   - Command line: `./bin/r19dev backup /Volumes/home/BT/organized`
   - Web UI: Operation History modal `[💾 Backup DB]` button and direct REST endpoint `/api/db/backup?download=1`.
 
-### 3.11 Self-Healing Avatar Caching for Discovered / Unfollowed Actresses (`pkg/web`)
+### 3.12 Configurable Filter Engine & Compilation Purge Pipeline (`pkg/scraper/filter.go`)
 
-* **Problem Solved**: Discovered or unfollowed performers appearing in organized library movies lacked pre-cached headshots in local disk storage, causing generic SVG initials to display on the Unfollowed tab.
-* **On-Demand Self-Healing Architecture (`handleActressAvatar`)**:
-  1. Checks local filesystem cache in `~/Library/Application Support/r19dev/actress_images/<Name>.jpg`.
-  2. On cache miss, performs an on-demand indexed lookup in `r18_dump.db` for the performer's authentic DMM CloudFront profile image URL.
-  3. Downloads the high-resolution headshot over HTTPS using standard headers and atomically caches it to disk for all future requests.
+* **Problem Solved**: Re-edited omnibus compilations, Best-of compilations, promotional bonus variants, and multi-actress scene reels (e.g. `IPOK-035` with `100本番`, `Idea Pocket BEST` label/series, `MIZD-`, `MIDD-`, `OFJE-`, `SETH-`, `PBD-`, `OBST-`, `SDDE-`, `RBB-`, `MKCK-`, `MKMP-`, `OFRF-`, `OFMA-`) previously bypassed static keyword checks.
+* **JSON Schema & Hot Reloading**:
+  - Filter rules stored in `~/Library/Application Support/r19dev/filters.json` (macOS) or `~/.config/r19dev/filters.json` (Linux).
+  - Configurable arrays: `blocked_prefixes`, `blocked_labels`, `blocked_series`, `blocked_genres`, `blocked_title_keywords`, `blocked_title_regex`, `blocked_cover_patterns`, `min_actress_omnibus_count`, `max_duration_minutes_threshold`.
+  - Can be edited directly, via REST API (`POST /api/filters`), or managed via CLI (`r19dev filters purge`, `r19dev filters reset`).
+* **Dynamic Database Sweep**:
+  - `PurgePromotionalVariants` executes fast SQL matching alongside a comprehensive sweep through unowned movies using `scraper.IsPromotionalOrOmnibusVariantWithDetails(mid, mtitle, morig, mlabel, mseries, mcover, genres)`.
+  - Movies with local media files on disk (`library_files`, `organized_movies`) or marked as watched/favorite in `user_state` are strictly protected and never purged.
 
 ---
 
@@ -310,8 +313,10 @@ The migrator automates the reorganization of multi-terabyte unorganized or legac
 | **Omnibus Clip Compilations** | `BMW-364`, `REbecca STARS` (10–30 actresses) | Filter checks `BMW` prefix, studio tags, and actress count $\ge 10$, excluding omnibus clip reels. |
 | **Unit Test Database Pollution** | Mock data wipes real DB | Isolated temporary SQLite DB passed via `organizer.SetDB()` and `web.Config{DB}`, preventing production DB mutation. |
 | **Partial Metadata Overwrite** | Empty fields on re-save | `SaveMovie` SQL uses `CASE WHEN excluded.* != ''` preserving existing covers, titles, and metadata. |
-| **Tokuten Goods Duplicate SKUs** | `TKCJOD-510`, `TKMFYD-123`, `チェキセット`, `生写真` | `CheckFilmographyInclusion` filters `TK[A-Z]{3,6}` and Japanese title markers; `deduplicateReleases` penalizes promo SKUs (`-100`) so canonical standard releases (`CJOD-510`, `MFYD-123`) always emerge as primary works. |
+| **Tokuten Goods Duplicate SKUs** | `TKCJOD-510`, `TKMFYD-123`, `チェキセット` | `CheckFilmographyInclusion` filters `TK[A-Z]{3,6}` and Japanese title markers; `deduplicateReleases` penalizes promo SKUs (`-100`) so canonical standard releases (`CJOD-510`, `MFYD-123`) always emerge as primary works. |
 | **Omnibus Clip Compilations** | `RBB-334`, `\d+連発`, `80連発`, `\d+時間BOX` | Filter matches `RBB-` series and compilation regexes across both English and Japanese original titles, isolating them in the `Skipped` tab. |
+| **Best-Of Studio Compilations** | `IPOK-035`, `MIZD-550`, `Idea Pocket BEST`, `MOODYZ Best`, `100本番` | Filter checks studio Label/Series name (`*BEST*`, `*総集編*`), compilation prefixes (`IPOK`, `IDBD`, `MIZD`, `PBD`, `OBST`, `SDDE`), and honban patterns (`[1-9]\d*本番`), purging unowned compilations automatically. |
+| **Custom Filter Rules** | User wants to add custom blocked prefixes or keywords | User edits `~/Library/Application Support/r19dev/filters.json` or uses REST API `POST /api/filters`, applying rules instantly with `r19dev filters purge`. |
 | **R18 Direct Outbound 404s** | Algorithmic `combined_id` (`start00223`, `fsdss00685`) yields 404 on R18.dev | 100% of movies are mapped to authentic DMM `content_id` from `r18_dump.db` (`1start223`, `1fsdss685`, `cjod510`), and direct links use `detail/-/id={id}/` ensuring 100% HTTP 200 OK responses. |
 | **Homonymous Actress Search Collisions** | `r18_id = 0` triggers name search landing on wrong performer (e.g. Nao Satsuki 2007 vs 2026) | All 37 followed actresses are 100% matched to authentic DMM `r18_id` in SQLite, generating direct, collision-free profile URLs. |
 | **Symlink Recursion** | Cyclic links in NAS | Skipped unconditionally at `os.Lstat` evaluation phase. |

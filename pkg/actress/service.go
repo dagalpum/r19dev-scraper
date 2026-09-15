@@ -226,9 +226,13 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 	LEFT JOIN user_state u ON u.movie_id = m.id
 	WHERE (
 		LOWER(json_extract(a.value, '$.name')) = LOWER(?)
-		OR LOWER(json_extract(a.value, '$.ja_name')) = LOWER(?)
-		OR LOWER(json_extract(a.value, '$.name')) LIKE '%' || LOWER(?) || '%'
-		OR om.target_folder LIKE '%' || ? || '%'
+		OR (json_extract(a.value, '$.ja_name') != '' AND LOWER(json_extract(a.value, '$.ja_name')) = LOWER(?))
+		OR om.target_folder LIKE '%/' || ? || '/%'
+		OR om.target_folder LIKE '%/' || ? || ' (%'
+	)
+	AND (
+		m.id IN (SELECT DISTINCT movie_id FROM organized_movies WHERE target_folder != '' OR target_video != '')
+		OR m.id IN (SELECT DISTINCT movie_id FROM library_files WHERE file_path != '')
 	)
 	GROUP BY m.id
 	ORDER BY m.release_date DESC;

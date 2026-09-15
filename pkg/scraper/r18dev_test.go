@@ -26,3 +26,27 @@ func TestNormalizeToCombinedID(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeToCanonicalID(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{"1dldss00559", "DLDSS-559"},
+		{"1dldss00545", "DLDSS-545"},
+		{"n_1544prian048", "PRIAN-048"},
+		{"13dsvr01866", "DSVR-1866"},
+		{"sone00682", "SONE-682"},
+		{"MIDA-517", "MIDA-517"},
+		{"snos-38", "SNOS-038"},
+		{"FC2-PPV-1234567", "FC2-PPV-1234567"},
+	}
+
+	for _, tc := range testCases {
+		res := NormalizeToCanonicalID(tc.input)
+		if res != tc.expected {
+			t.Errorf("NormalizeToCanonicalID(%s) = %s; expected %s", tc.input, res, tc.expected)
+		}
+	}
+}
+

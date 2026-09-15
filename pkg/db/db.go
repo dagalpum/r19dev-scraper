@@ -711,6 +711,27 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 		return fmt.Errorf("invalid movie record")
 	}
 
+	// 1. Normalize ID to standard canonical JAV ID format (e.g. 1dldss00559 -> DLDSS-559)
+	canonicalID := scraper.NormalizeToCanonicalID(m.ID)
+	if canonicalID != "" {
+		m.ID = canonicalID
+	}
+	if m.CombinedID == "" {
+		m.CombinedID = scraper.NormalizeToCombinedID(m.ID)
+	}
+
+	// 2. Ingestion Gatekeeper: If unowned, reject promotional variants, goods bundles, and omnibus compilations
+	d.mu.RLock()
+	var ownedCount int
+	_ = d.conn.QueryRow("SELECT COUNT(*) FROM library_files WHERE movie_id = ? UNION ALL SELECT COUNT(*) FROM organized_movies WHERE movie_id = ?", m.ID, m.ID).Scan(&ownedCount)
+	d.mu.RUnlock()
+
+	if ownedCount == 0 {
+		if shouldSkip, _ := scraper.IsPromotionalOrOmnibusVariant(m.ID, m.Title, m.OriginalTitle, m.CoverURL, m.Genres, len(m.Actresses)); shouldSkip {
+			return nil // Safely discard unowned promotional variant / omnibus compilation!
+		}
+	}
+
 	actressesJSON, _ := json.Marshal(m.Actresses)
 	genresJSON, _ := json.Marshal(m.Genres)
 	screenshotsJSON, _ := json.Marshal(m.SampleScreenshots)
@@ -1191,34 +1212,145 @@ func (d *DB) PurgePromotionalVariants() (int64, error) {
 }
 
 func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
+	// 1. Normalize raw content IDs (e.g. 1dldss00559 -> DLDSS-559, n_1544prian048 -> PRIAN-048) for genuine movies
+	rows, err := d.conn.Query(`
+		SELECT id FROM movies 
+		WHERE id GLOB '1[a-zA-Z][a-zA-Z]*' OR id GLOB 'n_[0-9]*' OR id GLOB '13[a-zA-Z]*'
+	`)
+	if err == nil {
+		type renItem struct {
+			oldID string
+			newID string
+		}
+		var renames []renItem
+		for rows.Next() {
+			var oldID string
+			if err := rows.Scan(&oldID); err == nil {
+				newID := scraper.NormalizeToCanonicalID(oldID)
+				if newID != "" && newID != strings.ToUpper(oldID) {
+					renames = append(renames, renItem{oldID: oldID, newID: newID})
+				}
+			}
+		}
+		rows.Close()
+
+		for _, ren := range renames {
+			var exists int
+			_ = d.conn.QueryRow("SELECT COUNT(*) FROM movies WHERE id = ?", ren.newID).Scan(&exists)
+			if exists > 0 {
+				// Target already exists, delete old unnormalized duplicate
+				_, _ = d.conn.Exec("DELETE FROM movies WHERE id = ?", ren.oldID)
+				_, _ = d.conn.Exec("DELETE FROM movie_actresses WHERE movie_id = ?", ren.oldID)
+			} else {
+				// Rename old ID to canonical ID
+				_, _ = d.conn.Exec("UPDATE movies SET id = ? WHERE id = ?", ren.newID, ren.oldID)
+				_, _ = d.conn.Exec("UPDATE movie_actresses SET movie_id = ? WHERE movie_id = ?", ren.newID, ren.oldID)
+			}
+		}
+	}
+
+	// 2. Purge unowned promotional variants, goods bundles, and omnibus compilations
 	query := `
 	DELETE FROM movies
 	WHERE (
 		id GLOB '[CESNK9]9*'
+		OR id GLOB '*TK*'
+		OR id GLOB '*EC'
+		OR id GLOB '*-EC'
+		OR id GLOB '*-T-EC'
+		OR id GLOB 'S209*'
+		OR id GLOB 'C209*'
+		OR id GLOB 'E209*'
+		OR id GLOB 'RBB*'
+		OR id GLOB 'MKCK*'
+		OR id GLOB 'MKMP*'
+		OR id GLOB 'OFJE*'
+		OR id GLOB '*OFJE*'
+		OR id GLOB 'SETH*'
+		OR id GLOB '*SETH*'
+		OR id GLOB 'OFRF*'
+		OR id GLOB 'OFMA*'
+		OR id GLOB 'KCKC*'
+		OR id GLOB 'MLTN*'
+		OR id GLOB 'BMW*'
+		OR id GLOB 'B600*'
+		OR id GLOB 'D600*'
+		OR id GLOB '1[a-zA-Z][a-zA-Z]*'
+		OR id GLOB '13[a-zA-Z]*'
+		OR id GLOB 'n_[0-9]*'
 		OR genres_json LIKE '%Special Offers And Set Products%'
 		OR genres_json LIKE '%Includes Event Participation Rights%'
 		OR genres_json LIKE '%Collection Of Photographs%'
+		OR genres_json LIKE '%"Compilation"%'
+		OR genres_json LIKE '%"Omnibus"%'
 		OR title LIKE '%オンラインサイン会%'
 		OR title LIKE '%購入特典付き%'
 		OR title LIKE '%購入特典付%'
 		OR title LIKE '%チェキ付き%'
 		OR title LIKE '%チェキ付%'
 		OR title LIKE '%チェキセット%'
-		OR id LIKE 'KCKC%'
-		OR id LIKE 'MLTN%'
+		OR title LIKE '%パンティ%'
+		OR original_title LIKE '%パンティ%'
+		OR title LIKE '%生写真%'
+		OR original_title LIKE '%生写真%'
+		OR title LIKE '%ポラロイド%'
+		OR original_title LIKE '%ポラロイド%'
+		OR title LIKE '%数量限定%'
+		OR original_title LIKE '%数量限定%'
+		OR title LIKE '%限定特典%'
+		OR original_title LIKE '%限定特典%'
+		OR title LIKE '%グッズ付き%'
+		OR original_title LIKE '%グッズ付き%'
+		OR title LIKE '%キーホルダー%'
+		OR original_title LIKE '%キーホルダー%'
+		OR title LIKE '%BEST%'
+		OR original_title LIKE '%BEST%'
+		OR title LIKE '%ベスト%'
+		OR original_title LIKE '%ベスト%'
+		OR title LIKE '%総集編%'
+		OR original_title LIKE '%総集編%'
+		OR title LIKE '%オムニバス%'
+		OR original_title LIKE '%オムニバス%'
+		OR title LIKE '%傑作選%'
+		OR original_title LIKE '%傑作選%'
+		OR title LIKE '%名場面%'
+		OR original_title LIKE '%名場面%'
+		OR title LIKE '%全集%'
+		OR original_title LIKE '%全集%'
+		OR title LIKE '%メモリアル%'
+		OR original_title LIKE '%メモリアル%'
+		OR title LIKE '%プレミアムベスト%'
+		OR original_title LIKE '%プレミアムベスト%'
+		OR title LIKE '%ベストセレクション%'
+		OR original_title LIKE '%ベストセレクション%'
+		OR title LIKE '%連発%'
+		OR original_title LIKE '%連発%'
+		OR title LIKE '%連射%'
+		OR original_title LIKE '%連射%'
+		OR title LIKE '%時間BOX%'
+		OR original_title LIKE '%時間BOX%'
+		OR title GLOB '*[1-9]*人*'
+		OR original_title GLOB '*[1-9]*人*'
+		OR title GLOB '*[1-9]*体*'
+		OR original_title GLOB '*[1-9]*体*'
 		OR title LIKE '%カチコチTV%'
 		OR title LIKE '%未公開映像収録%'
 		OR title LIKE '%ディレクターズカット%'
 	)
-	AND id NOT IN (SELECT movie_id FROM user_state)
-	AND id NOT IN (SELECT movie_id FROM library_files)
-	AND id NOT IN (SELECT movie_id FROM organized_movies);
+	AND id NOT IN (SELECT movie_id FROM user_state WHERE is_watched = 1 OR is_favorite = 1)
+	AND id NOT IN (SELECT movie_id FROM library_files WHERE file_path != '')
+	AND id NOT IN (SELECT movie_id FROM organized_movies WHERE target_folder != '' OR target_video != '');
 	`
 	res, err := d.conn.Exec(query)
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	deleted, _ := res.RowsAffected()
+
+	// Clean orphaned movie_actresses
+	_, _ = d.conn.Exec("DELETE FROM movie_actresses WHERE movie_id NOT IN (SELECT id FROM movies)")
+
+	return deleted, nil
 }
 
 // LinkMovieActress creates or updates a relational link between a movie and an actress.

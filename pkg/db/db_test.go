@@ -278,32 +278,31 @@ func TestPurgePromotionalVariants(t *testing.T) {
 	}
 	defer d.Close()
 
-	// Insert genuine release
+	// 1. Genuine release should save normally
 	_ = d.SaveMovie(&scraper.Movie{
 		ID:    "FWAY-095",
 		Title: "Everyone Loves Boobs. Shido Rui",
 	})
+	m, err := d.GetMovie("FWAY-095")
+	if err != nil || m == nil {
+		t.Errorf("Expected FWAY-095 to exist, got %v", m)
+	}
 
-	// Insert promotional variants
+	// 2. Test that SaveMovie Gatekeeper rejects unowned promotional variants
 	_ = d.SaveMovie(&scraper.Movie{
-		ID:     "C9FWAY095",
-		Title:  "紫堂るい 3本購入特典付き",
-		Genres: []string{"Special Offers And Set Products"},
+		ID:    "1DLDSS559TK",
+		Title: "【数量限定】... パンティと写真付き",
 	})
-	_ = d.SaveMovie(&scraper.Movie{
-		ID:     "E9FWAY095",
-		Title:  "紫堂るい 2本購入特典付き",
-		Genres: []string{"Special Offers And Set Products"},
-	})
-	_ = d.SaveMovie(&scraper.Movie{
-		ID:    "S9FWAY095",
-		Title: "【オンラインサイン会】紫堂るい 1本購入特典付き",
-	})
-	_ = d.SaveMovie(&scraper.Movie{
-		ID:     "S209AJMEM00081",
-		Title:  "S1 Campaign 2025 Special Photo Book",
-		Genres: []string{"Collection Of Photographs"},
-	})
+	if blocked, _ := d.GetMovie("1DLDSS559TK"); blocked != nil {
+		t.Errorf("Expected SaveMovie to block 1DLDSS559TK, but it was saved")
+	}
+
+	// 3. Insert legacy variants directly via raw SQL to simulate existing database cleanup
+	_, _ = d.conn.Exec("INSERT INTO movies (id, title, original_title) VALUES (?, ?, ?)", "C9FWAY095", "紫堂るい 3本購入特典付き", "特典")
+	_, _ = d.conn.Exec("INSERT INTO movies (id, title, original_title) VALUES (?, ?, ?)", "1DLDSS545TK", "不良生徒", "【数量限定】パンティ付き")
+	_, _ = d.conn.Exec("INSERT INTO movies (id, title, original_title) VALUES (?, ?, ?)", "MKMP-765", "中出し懇願 白濁マ○コBEST 淫乱30人種付け240分", "30人")
+	_, _ = d.conn.Exec("INSERT INTO movies (id, title, original_title) VALUES (?, ?, ?)", "MIZD-550", "Hinako Mori: MOODYZ Exclusive 1st BEST", "森日向子 MOODYZ専属1stBEST")
+	_, _ = d.conn.Exec("INSERT INTO movies (id, title, original_title) VALUES (?, ?, ?)", "1DLDSS00559", "Teacher Romance", "角奈保")
 
 	deleted, err := d.PurgePromotionalVariants()
 	if err != nil {
@@ -313,18 +312,18 @@ func TestPurgePromotionalVariants(t *testing.T) {
 		t.Errorf("Expected 4 rows deleted, got %d", deleted)
 	}
 
-	// Genuine movie must still exist
-	m, err := d.GetMovie("FWAY-095")
-	if err != nil || m == nil {
-		t.Errorf("Expected FWAY-095 to exist, got %v", m)
-	}
-
 	// Variants must not exist
-	for _, id := range []string{"C9FWAY095", "E9FWAY095", "S9FWAY095", "S209AJMEM00081"} {
+	for _, id := range []string{"C9FWAY095", "1DLDSS545TK", "MKMP-765", "MIZD-550"} {
 		v, _ := d.GetMovie(id)
 		if v != nil {
 			t.Errorf("Expected %s to be purged, but it still exists", id)
 		}
+	}
+
+	// 1DLDSS00559 should have been normalized to DLDSS-559
+	norm, err := d.GetMovie("DLDSS-559")
+	if err != nil || norm == nil {
+		t.Errorf("Expected 1DLDSS00559 to be normalized to DLDSS-559, got %v", norm)
 	}
 }
 

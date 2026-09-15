@@ -111,4 +111,37 @@ func TestWebServerEndpoints(t *testing.T) {
 	if wDiscovered.Code != http.StatusOK || !strings.Contains(wDiscovered.Body.String(), "actresses") {
 		t.Errorf("GET /api/actresses/discovered failed: code %d, body: %s", wDiscovered.Code, wDiscovered.Body.String())
 	}
+
+	// 6. Test /api/filters
+	reqFilters := httptest.NewRequest(http.MethodGet, "/api/filters", nil)
+	wFilters := httptest.NewRecorder()
+	handler.ServeHTTP(wFilters, reqFilters)
+	if wFilters.Code != http.StatusOK || !strings.Contains(wFilters.Body.String(), "blocked_prefixes") {
+		t.Errorf("GET /api/filters failed: code %d, body: %s", wFilters.Code, wFilters.Body.String())
+	}
+
+	// Test POST /api/filters
+	updateBody := bytes.NewBufferString(`{"version":1,"enabled":true,"blocked_prefixes":["IPOK","MYTEST"]}`)
+	reqUpdateFilter := httptest.NewRequest(http.MethodPost, "/api/filters", updateBody)
+	wUpdateFilter := httptest.NewRecorder()
+	handler.ServeHTTP(wUpdateFilter, reqUpdateFilter)
+	if wUpdateFilter.Code != http.StatusOK || !strings.Contains(wUpdateFilter.Body.String(), "MYTEST") {
+		t.Errorf("POST /api/filters failed: code %d, body: %s", wUpdateFilter.Code, wUpdateFilter.Body.String())
+	}
+
+	// Test POST /api/filters/reset
+	reqResetFilter := httptest.NewRequest(http.MethodPost, "/api/filters/reset", nil)
+	wResetFilter := httptest.NewRecorder()
+	handler.ServeHTTP(wResetFilter, reqResetFilter)
+	if wResetFilter.Code != http.StatusOK || !strings.Contains(wResetFilter.Body.String(), "success") {
+		t.Errorf("POST /api/filters/reset failed: code %d, body: %s", wResetFilter.Code, wResetFilter.Body.String())
+	}
+
+	// Test POST /api/filters/purge
+	reqPurge := httptest.NewRequest(http.MethodPost, "/api/filters/purge", nil)
+	wPurge := httptest.NewRecorder()
+	handler.ServeHTTP(wPurge, reqPurge)
+	if wPurge.Code != http.StatusOK || !strings.Contains(wPurge.Body.String(), "purged_count") {
+		t.Errorf("POST /api/filters/purge failed: code %d, body: %s", wPurge.Code, wPurge.Body.String())
+	}
 }

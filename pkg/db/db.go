@@ -473,6 +473,7 @@ func (d *DB) initSchema() error {
 		original_title TEXT,
 		maker TEXT,
 		label TEXT,
+		series TEXT,
 		director TEXT,
 		release_date TEXT,
 		runtime_minutes INTEGER,
@@ -547,6 +548,7 @@ func (d *DB) initSchema() error {
 		return err
 	}
 	// Safe migration for existing installations
+	_, _ = d.conn.Exec("ALTER TABLE movies ADD COLUMN series TEXT;")
 	_, _ = d.conn.Exec("ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;")
 	_ = d.backfillActressR18IDs()
 	_, _ = d.purgePromotionalVariantsLocked()
@@ -727,7 +729,7 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 	d.mu.RUnlock()
 
 	if ownedCount == 0 {
-		if shouldSkip, _ := scraper.IsPromotionalOrOmnibusVariant(m.ID, m.Title, m.OriginalTitle, m.CoverURL, m.Genres, len(m.Actresses)); shouldSkip {
+		if shouldSkip, _ := scraper.IsPromotionalOrOmnibusVariantWithDetails(m.ID, m.Title, m.OriginalTitle, m.Label, m.Series, m.CoverURL, m.Genres, len(m.Actresses)); shouldSkip {
 			return nil // Safely discard unowned promotional variant / omnibus compilation!
 		}
 	}
@@ -741,16 +743,17 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 
 	query := `
 	INSERT INTO movies (
-		id, combined_id, title, original_title, maker, label, director,
+		id, combined_id, title, original_title, maker, label, series, director,
 		release_date, runtime_minutes, cover_url, poster_url, trailer_url,
 		actresses_json, genres_json, screenshots_json, scraped_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		combined_id = CASE WHEN excluded.combined_id != '' THEN excluded.combined_id ELSE movies.combined_id END,
 		title = CASE WHEN excluded.title != '' THEN excluded.title ELSE movies.title END,
 		original_title = CASE WHEN excluded.original_title != '' THEN excluded.original_title ELSE movies.original_title END,
 		maker = CASE WHEN excluded.maker != '' THEN excluded.maker ELSE movies.maker END,
 		label = CASE WHEN excluded.label != '' THEN excluded.label ELSE movies.label END,
+		series = CASE WHEN excluded.series != '' THEN excluded.series ELSE movies.series END,
 		director = CASE WHEN excluded.director != '' THEN excluded.director ELSE movies.director END,
 		release_date = CASE WHEN excluded.release_date != '' THEN excluded.release_date ELSE movies.release_date END,
 		runtime_minutes = CASE WHEN excluded.runtime_minutes > 0 THEN excluded.runtime_minutes ELSE movies.runtime_minutes END,
@@ -764,7 +767,7 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 	`
 
 	_, err := d.conn.Exec(query,
-		m.ID, m.CombinedID, m.Title, m.OriginalTitle, m.Maker, m.Label, m.Director,
+		m.ID, m.CombinedID, m.Title, m.OriginalTitle, m.Maker, m.Label, m.Series, m.Director,
 		m.ReleaseDate, m.RuntimeMinutes, m.CoverURL, m.PosterURL, m.TrailerURL,
 		string(actressesJSON), string(genresJSON), string(screenshotsJSON), time.Now(),
 	)
@@ -807,7 +810,7 @@ func (d *DB) GetMovie(id string) (*scraper.Movie, error) {
 
 	query := `
 	SELECT id, COALESCE(combined_id, ''), COALESCE(title, ''), COALESCE(original_title, ''),
-	       COALESCE(maker, ''), COALESCE(label, ''), COALESCE(director, ''),
+	       COALESCE(maker, ''), COALESCE(label, ''), COALESCE(series, ''), COALESCE(director, ''),
 	       COALESCE(release_date, ''), COALESCE(runtime_minutes, 0),
 	       COALESCE(cover_url, ''), COALESCE(poster_url, ''), COALESCE(trailer_url, ''),
 	       COALESCE(actresses_json, '[]'), COALESCE(genres_json, '[]'), COALESCE(screenshots_json, '[]'),
@@ -820,7 +823,7 @@ func (d *DB) GetMovie(id string) (*scraper.Movie, error) {
 	var actJSON, genJSON, scJSON string
 	var scrapedAt sql.NullTime
 	err := d.conn.QueryRow(query, id, combinedID).Scan(
-		&m.ID, &m.CombinedID, &m.Title, &m.OriginalTitle, &m.Maker, &m.Label, &m.Director,
+		&m.ID, &m.CombinedID, &m.Title, &m.OriginalTitle, &m.Maker, &m.Label, &m.Series, &m.Director,
 		&m.ReleaseDate, &m.RuntimeMinutes, &m.CoverURL, &m.PosterURL, &m.TrailerURL,
 		&actJSON, &genJSON, &scJSON, &scrapedAt,
 	)
@@ -1261,6 +1264,13 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		OR id GLOB 'S209*'
 		OR id GLOB 'C209*'
 		OR id GLOB 'E209*'
+		OR id GLOB 'IPOK*'
+		OR id GLOB 'IDBD*'
+		OR id GLOB 'PBD*'
+		OR id GLOB 'OBST*'
+		OR id GLOB 'SDDE*'
+		OR id GLOB 'MIZD*'
+		OR id GLOB 'MIDD*'
 		OR id GLOB 'RBB*'
 		OR id GLOB 'MKCK*'
 		OR id GLOB 'MKMP*'
@@ -1278,6 +1288,20 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		OR id GLOB '1[a-zA-Z][a-zA-Z]*'
 		OR id GLOB '13[a-zA-Z]*'
 		OR id GLOB 'n_[0-9]*'
+		OR label LIKE '%BEST%'
+		OR label LIKE '%ベスト%'
+		OR label LIKE '%総集編%'
+		OR label LIKE '%Compilation%'
+		OR label LIKE '%Omnibus%'
+		OR label LIKE '%Selection%'
+		OR label LIKE '%セレクション%'
+		OR series LIKE '%BEST%'
+		OR series LIKE '%ベスト%'
+		OR series LIKE '%総集編%'
+		OR series LIKE '%Compilation%'
+		OR series LIKE '%Omnibus%'
+		OR series LIKE '%Selection%'
+		OR series LIKE '%セレクション%'
 		OR genres_json LIKE '%Special Offers And Set Products%'
 		OR genres_json LIKE '%Includes Event Participation Rights%'
 		OR genres_json LIKE '%Collection Of Photographs%'
@@ -1329,6 +1353,8 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		OR original_title LIKE '%連射%'
 		OR title LIKE '%時間BOX%'
 		OR original_title LIKE '%時間BOX%'
+		OR title GLOB '*[1-9]*本番*'
+		OR original_title GLOB '*[1-9]*本番*'
 		OR title GLOB '*[1-9]*人*'
 		OR original_title GLOB '*[1-9]*人*'
 		OR title GLOB '*[1-9]*体*'
@@ -1346,6 +1372,35 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		return 0, err
 	}
 	deleted, _ := res.RowsAffected()
+
+	// 3. Dynamic Filter Sweep: query remaining unowned movies and verify against active FilterConfig
+	remRows, rErr := d.conn.Query(`
+		SELECT id, title, original_title, label, series, cover_url, genres_json
+		FROM movies
+		WHERE id NOT IN (SELECT movie_id FROM user_state WHERE is_watched = 1 OR is_favorite = 1)
+		  AND id NOT IN (SELECT movie_id FROM library_files WHERE file_path != '')
+		  AND id NOT IN (SELECT movie_id FROM organized_movies WHERE target_folder != '' OR target_video != '');
+	`)
+	if rErr == nil {
+		var dynamicDeleteIDs []string
+		for remRows.Next() {
+			var mid, mtitle, morig, mlabel, mseries, mcover, mgenresJSON string
+			if scanErr := remRows.Scan(&mid, &mtitle, &morig, &mlabel, &mseries, &mcover, &mgenresJSON); scanErr == nil {
+				var genres []string
+				_ = json.Unmarshal([]byte(mgenresJSON), &genres)
+				if shouldSkip, _ := scraper.IsPromotionalOrOmnibusVariantWithDetails(mid, mtitle, morig, mlabel, mseries, mcover, genres); shouldSkip {
+					dynamicDeleteIDs = append(dynamicDeleteIDs, mid)
+				}
+			}
+		}
+		remRows.Close()
+
+		for _, dynID := range dynamicDeleteIDs {
+			if _, delErr := d.conn.Exec("DELETE FROM movies WHERE id = ?", dynID); delErr == nil {
+				deleted++
+			}
+		}
+	}
 
 	// Clean orphaned movie_actresses
 	_, _ = d.conn.Exec("DELETE FROM movie_actresses WHERE movie_id NOT IN (SELECT id FROM movies)")

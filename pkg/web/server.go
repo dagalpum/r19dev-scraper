@@ -138,6 +138,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/history", s.handleHistory)
 	mux.HandleFunc("/api/history/detail", s.handleHistoryDetail)
 	mux.HandleFunc("/api/db/backup", s.handleDatabaseBackup)
+	mux.HandleFunc("/api/filters", s.handleFilters)
+	mux.HandleFunc("/api/filters/reset", s.handleFiltersReset)
+	mux.HandleFunc("/api/filters/purge", s.handleFiltersPurge)
 
 	// Favicon SVG
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
@@ -1860,6 +1863,85 @@ func (s *Server) handleVideoStream(w http.ResponseWriter, r *http.Request) {
 
 	// Serve with HTTP Range support
 	http.ServeFile(w, r, videoPath)
+}
+
+func (s *Server) handleFilters(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		cfg := scraper.GetActiveFilterConfig()
+		cfgPath := scraper.GetFilterConfigPath()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"config":      cfg,
+			"config_path": cfgPath,
+		})
+	case http.MethodPost:
+		var newCfg scraper.FilterConfig
+		if err := json.NewDecoder(r.Body).Decode(&newCfg); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "invalid json: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+		if err := scraper.SaveFilterConfig(&newCfg); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to save config: %v"}`, err), http.StatusInternalServerError)
+			return
+		}
+		var purged int64
+		if s.db != nil {
+			purged, _ = s.db.PurgePromotionalVariants()
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success":      true,
+			"purged_count": purged,
+			"config":       scraper.GetActiveFilterConfig(),
+			"config_path":  scraper.GetFilterConfigPath(),
+		})
+	default:
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) handleFiltersReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	cfg, err := scraper.ResetFilterConfig()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "failed to reset config: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+	var purged int64
+	if s.db != nil {
+		purged, _ = s.db.PurgePromotionalVariants()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success":      true,
+		"purged_count": purged,
+		"config":       cfg,
+		"config_path":  scraper.GetFilterConfigPath(),
+	})
+}
+
+func (s *Server) handleFiltersPurge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var purged int64
+	var err error
+	if s.db != nil {
+		purged, err = s.db.PurgePromotionalVariants()
+	}
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "failed to purge: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success":      true,
+		"purged_count": purged,
+	})
 }
 
 

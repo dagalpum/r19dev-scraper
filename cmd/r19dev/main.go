@@ -113,6 +113,9 @@ func main() {
 	case "backup":
 		runBackup(args[1:])
 
+	case "filters", "filter":
+		runFilters(args[1:])
+
 	case "cache-clear", "clear-cache":
 		if err := cache.Default().Clear(); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to clear cache: %v\n", err)
@@ -613,6 +616,58 @@ func runBackup(args []string) {
 	fmt.Printf("✨ Backup successful! Saved to %s (%.2f MB) in %s\n", absDest, sizeMB, time.Since(t0).Round(time.Millisecond))
 }
 
+func runFilters(args []string) {
+	subCmd := "show"
+	if len(args) > 0 {
+		subCmd = strings.ToLower(args[0])
+	}
+
+	switch subCmd {
+	case "path":
+		fmt.Println(scraper.GetFilterConfigPath())
+
+	case "reset":
+		cfg, err := scraper.ResetFilterConfig()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to reset filter config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ Filter configuration reset to default (%s)\n", scraper.GetFilterConfigPath())
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(cfg)
+
+	case "purge":
+		d, err := db.Default()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to open database: %v\n", err)
+			os.Exit(1)
+		}
+		defer d.Close()
+
+		fmt.Printf("🧹 Scanning and purging unowned compilations & promotional variants matching filter rules...\n")
+		t0 := time.Now()
+		purged, err := d.PurgePromotionalVariants()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Purge failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✨ Purged %d unowned duplicate/compilation movies in %s\n", purged, time.Since(t0).Round(time.Millisecond))
+
+	case "show", "list", "view":
+		fallthrough
+	default:
+		cfg := scraper.GetActiveFilterConfig()
+		cfgPath := scraper.GetFilterConfigPath()
+		fmt.Printf("📋 Active Filter Configuration (%s):\n\n", cfgPath)
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(cfg)
+		fmt.Printf("\n💡 To customize rules, edit: %s\n", cfgPath)
+		fmt.Println("💡 To apply changes and purge matching titles: r19dev filters purge")
+	}
+}
+
 func printHelp() {
 	fmt.Println(`🎬 R19DEV Scraper - JAV Scanner, Matcher, Actress Tracker & NAS Jellyfin Organizer
 
@@ -652,6 +707,13 @@ Usage:
                               - Reuses local assets (poster, fanart, extrafanart/) instantly
                               - Generates Jellyfin NFO and Cinematic movie.html for new items
                               - Use --upgrade-all-html to also upgrade existing library items
+
+  r19dev filters [cmd]        Manage promotional & omnibus exclusion rules:
+                              Commands:
+                                show                    View active filter configuration (default)
+                                path                    Print path to filters.json
+                                purge                   Purge unowned titles matching filter rules
+                                reset                   Reset filters.json to factory defaults
 
   r19dev upgrade-html [path]  Concurrently upgrade all movie.html to Cinematic template
   r19dev backup [path]        Create crash-consistent SQLite backup snapshot (default: NAS)

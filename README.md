@@ -120,6 +120,151 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 
 ---
 
+## 🧭 Step-by-Step User Journeys (คู่มือการใช้งานแต่ละ Journey)
+
+### 📥 Journey 1: จัดระเบียบไฟล์หนังใหม่เข้า NAS Jellyfin (Ingest & Organize)
+**เป้าหมาย**: ดาวน์โหลดไฟล์หนังมาไว้ในโฟลเดอร์ (เช่น `/Volumes/home/BT/2026`) และต้องการให้ระบบจัดระเบียบสร้างโฟลเดอร์ตามชื่อนักแสดง โหลดโปสเตอร์ แบคดรอป ภาพตัวอย่าง และสร้างไฟล์ Jellyfin NFO + movie.html
+
+```mermaid
+graph LR
+    A["1. Ingest Folder\n(/Volumes/home/BT/2026)"] --> B["2. Incoming Tab\n(Auto Scan & Match)"]
+    B --> C["3. Batch Organize\n(Click '⚡ Batch Organize')"]
+    C --> D["4. NAS Library\n(/Volumes/home/BT/organized)"]
+```
+
+1. **เปิด Web UI Studio**:
+   ```bash
+   ./bin/r19dev web /Volumes/home/BT/2026
+   ```
+2. **ไปที่แท็บ `📥 Incoming`**:
+   - ระบบจะสแกนโฟลเดอร์และ Match รหัส JAV ID ให้อัตโนมัติในเสี้ยววินาที (<1ms จาก `r18_dump.db`)
+   - ไฟล์ที่เป็น Multi-part (เช่น `-cd1.mp4`, `-cd2.mp4`) จะถูกรวมเป็นการ์ดเดียวอัตโนมัติ
+3. **กำหนดโฟลเดอร์ปลายทาง (Destination Root)**:
+   - ค่าเริ่มต้น: `/Volumes/home/BT/organized` (หรือเลือกเปลี่ยนปลายทางได้ตามต้องการ)
+4. **กดปุ่ม `⚡ Batch Organize`**:
+   - ระบบจะย้ายไฟล์หนังเข้าสู่โครงสร้าง: `{Dest}/{Actress_Name}/{JAV-ID} {English_Title}/`
+   - ดาวน์โหลด `poster.jpg`, `fanart.jpg`, และภาพตัวอย่างใส่โฟลเดอร์ `extrafanart/`
+   - สร้างไฟล์ `{JAV-ID}.nfo` สำหรับ Jellyfin และ `movie.html` สำหรับเปิดดูออฟไลน์
+
+---
+
+### 👤 Journey 2: ติดตามนักแสดงคนโปรด & ตรวจสอบผลงานที่ยังขาด (Actress Hub & Backlog Tracker)
+**เป้าหมาย**: เช็คประวัติผลงาน (Solo Filmography), ดูเปอร์เซ็นต์สะสม (% Completed), สตอเรจที่ใช้ใน NAS, และหาผลงานที่ยังขาด
+
+1. **ไปที่แท็บ `👤 Actresses`**:
+   - ดูรายชื่อนักแสดงที่ติดตาม (Followed Actresses) พร้อมเปอร์เซ็นต์สะสม เช่น `24/30 (80%)` และพื้นที่จัดเก็บ
+   - ดูนักแสดงที่พบในไฟล์แต่ยังไม่ได้ติดตามในแท็บ `Unfollowed` และกด `+ Follow` ได้ใน 1 คลิก
+2. **คลิกเลือกนักแสดง**:
+   - **แถบซ้าย (Bento Sidebar)**: แสดงรูปโปรไฟล์ HD, รหัส R18 ID, ช่วงปีที่แสดง (Career Span), พื้นที่ NAS ที่ใช้, และ Top Genres (คลิกแท็กแนวเพื่อกรองได้ทันที)
+   - **แถบขวา (Filmography Stage)**: แสดงผลงานทั้งหมด เรียงตามวันที่วางจำหน่าย
+3. **ใช้งาน Sub-Filters & Quick Actions**:
+   - `All Works`: ผลงานทั้งหมดของนักแสดง
+   - `In Library`: เฉพาะเรื่องที่มีอยู่ใน NAS (กดปุ่ม `[📂 Finder]` เพื่อเปิดไฟล์ในเครื่องได้ทันที)
+   - `Missing`: เรื่องที่ยังไม่มีใน NAS (กดปุ่ม `[🌐 R18 ↗]` เพื่อดูรายละเอียด/ตัวอย่างบน R18.dev)
+   - `Skipped`: เรื่องที่ถูกคัดกรองออก (เช่น รวมฮิต/Best, รายการทอล์คโชว์, โฟโต้บุ๊ค) พร้อมแสดงเหตุผลชัดเจน
+
+---
+
+### 🎬 Journey 3: ค้นหาและเปิดดูหนังในคลัง (Library Catalog & Universal Search)
+**เป้าหมาย**: เปิดดูคลังหนังทั้งหมดที่มีอยู่ใน NAS แบบ Cinematic และค้นหาหนังได้อย่างรวดเร็ว
+
+1. **กดปุ่มลัด `⌘K` (macOS) หรือ `Ctrl+K` (Windows/Linux)** หรือพิมพ์ในช่อง Search Bar ด้านบน:
+   - ค้นหาได้ทันทีทั้งรหัส JAV (เช่น `SNOS`, `IPX`), ชื่อเรื่องภาษาอังกฤษ/ญี่ปุ่น, หรือชื่อนักแสดง
+2. **ไปที่แท็บ `🎬 Library`**:
+   - แสดงรายการหนังทั้งหมดที่พร้อมดู กรองตามสถานะ: `All`, `Watched (👁️)`, `Favorites (❤️)`, `Rated (⭐)`
+   - ปรับ Grid Density ได้ 1 ถึง 5 การ์ดต่อแถว หรือกดเรียงตาม วันที่ / เรตติ้ง / ค่าย / รหัส
+3. **คลิกการ์ดหนังเพื่อเปิด Hero Modal**:
+   - แสดงภาพปกใหญ่คมชัดระดับ HD พร้อม Ambient Backdrop
+   - ให้คะแนน 1-5 ดาว ⭐, กดปุ่มดูแล้ว 👁️, หรือกดถูกใจ ❤️
+   - กดปุ่ม `▶ Play Movie` เพื่อเล่นไฟล์ผ่านโปรแกรมเล่นวิดีโอ (VLC, IINA) หรือเปิดดูบนเบราว์เซอร์
+   - เลื่อนดู Gallery ภาพตัวอย่างและกดดูภาพขยายแบบ Lightbox
+
+---
+
+### 🎛️ Journey 4: ปรับแต่งตัวกรองหนังรวมฮิต/ของแถม (Customizing Filter Rules)
+**เป้าหมาย**: ต้องการเพิ่ม/ลดรหัส Prefix, ค่าย (Label), ซีรีส์ (Series), หรือคำค้น (Keywords) ที่ไม่ต้องการให้แสดงในระบบ
+
+1. **ดูการตั้งค่าตัวกรองปัจจุบัน**:
+   ```bash
+   ./bin/r19dev filters show
+   # หรือดู path ของไฟล์:
+   ./bin/r19dev filters path
+   ```
+2. **แก้ไขไฟล์ `filters.json`**:
+   - ไฟล์อยู่ที่: `~/Library/Application Support/r19dev/filters.json` (macOS) หรือ `~/.config/r19dev/filters.json` (Linux)
+   - สามารถเพิ่ม Prefix เช่น `"IPOK"`, `"MIZD"`, ชื่อค่าย `"Idea Pocket BEST"`, คำในชื่อเรื่อง `"100本番"`, หรือคำอื่นๆ
+   ```json
+   {
+     "version": 1,
+     "enabled": true,
+     "blocked_prefixes": [
+       "IPOK", "IDBD", "MIZD", "MIDD", "PBD", "OBST", "SDDE",
+       "RBB", "MKCK", "MKMP", "OFJE", "SETH", "OFRF", "OFMA",
+       "KCKC", "MLTN", "BMW", "B600", "D600", "DG", "JQRE"
+     ],
+     "blocked_labels": [
+       "Idea Pocket BEST", "MOODYZ Best", "PREMIUM BEST", "SOD BEST",
+       "Madonna BEST", "S1 NO.1 STYLE BEST", "BEST", "ベスト", "総集編"
+     ],
+     "blocked_title_keywords": [
+       "100本番", "ベストセレクション", "BESTセレクション", "総集編", "オムニバス",
+       "傑作選", "名場面", "全集", "メモリアル", "プレミアムベスト", "連発", "連射"
+     ]
+   }
+   ```
+3. **สั่ง Purge ลบหนังที่ไม่ต้องการออกจากฐานข้อมูลทันที**:
+   ```bash
+   ./bin/r19dev filters purge
+   ```
+   *(หรือสามารถเรียกผ่าน REST API: `POST /api/filters` เพื่ออัปเดตและสั่ง purge อัตโนมัติ)*
+4. **รีเซ็ตการตั้งค่ากลับเป็นค่าเริ่มต้น (หากต้องการ)**:
+   ```bash
+   ./bin/r19dev filters reset
+   ```
+
+---
+
+### 🚚 Journey 5: ย้ายคลังหนังขนาดใหญ่แบบ Batch Migration (`r19dev migrate`)
+**เป้าหมาย**: ย้ายไฟล์หนังจำนวนมากจากโฟลเดอร์เก่าเข้าสู่คลัง NAS พร้อมสร้าง Metadata แบบความเร็วสูง
+
+1. **รันคำสั่ง Interactive TUI Migration**:
+   ```bash
+   ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized
+   ```
+2. **ตรวจสอบหน้าสรุป Pre-flight**:
+   - ระบบจะตรวจเช็ครหัสหนังกับ `r18_dump.db` ออฟไลน์ (<1ms ต่อเรื่อง) และคำนวณปลายทางให้ล่วงหน้า
+   - กด `Enter` เพื่อยืนยันการย้ายไฟล์ หรือกด `q` เพื่อยกเลิก
+3. **ติดตามสถานะสด (Live Progress Bar & Speed Tracker)**:
+   - แสดง Progress Bar แบบเปอร์เซ็นต์, ความเร็วในการย้าย (เช่น `1.2 movies/s`), และ Log การย้ายแบบเรียลไทม์
+4. **โหมดคำสั่งสำหรับรันสคริปต์อัตโนมัติ (Headless / Non-Interactive)**:
+   ```bash
+   ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized --yes --no-tui
+   ```
+
+---
+
+### 🛠️ Journey 6: อัปเกรดหน้าเว็บหนัง `movie.html` ทั้งหมดในคลัง (`r19dev upgrade-html`)
+**เป้าหมาย**: ปรับปรุงหน้า `movie.html` ที่มีอยู่เดิมใน NAS ให้เป็น Cinematic Template รุ่นล่าสุดแบบพร้อมกันหลาย Thread
+
+1. **รันคำสั่ง Upgrade**:
+   ```bash
+   ./bin/r19dev upgrade-html /Volumes/home/BT/organized
+   ```
+2. ระบบจะใช้ Worker Pool 16 คอร์ทำการ Render ไฟล์ `movie.html` ใหม่ทั้งหมดด้วยความเร็วสูง (~50-100 ไฟล์/วินาที)
+
+---
+
+### 💾 Journey 7: สำรองข้อมูลฐานข้อมูล (`r19dev backup`)
+**เป้าหมาย**: สร้าง Snapshot สำรองของฐานข้อมูล `r19dev.db` ไปเก็บไว้บน NAS เพื่อป้องกันข้อมูลสูญหาย
+
+1. **รันคำสั่ง Backup**:
+   ```bash
+   ./bin/r19dev backup /Volumes/home/BT/organized
+   ```
+2. ไฟล์สำรองจะถูกบันทึกเป็น `.r19dev_backup.db` บน NAS อัตโนมัติ (และสามารถกดปุ่ม `[💾 Backup DB]` ผ่าน Web UI History Modal ได้เช่นกัน)
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Build Single Binary
@@ -158,7 +303,19 @@ make build
 ./bin/r19dev actress check
 ```
 
-### 5. NAS Directory Organize via CLI
+### 5. Filter Rules Management (`r19dev filters`)
+```bash
+# Show current filter configuration and JSON path
+./bin/r19dev filters show
+
+# Purge unowned titles matching filter rules
+./bin/r19dev filters purge
+
+# Reset filters.json to factory defaults
+./bin/r19dev filters reset
+```
+
+### 6. NAS Directory Organize via CLI
 ```bash
 # Safe preview without moving files (Dry-Run)
 ./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized --dry-run
@@ -167,7 +324,7 @@ make build
 ./bin/r19dev organize /Volumes/home/BT/2026 /Volumes/home/BT/organized
 ```
 
-### 6. High-Performance Batch Migration (`r19dev migrate`)
+### 7. High-Performance Batch Migration (`r19dev migrate`)
 ```bash
 # Interactive TUI migration with live progress bar and pre-flight confirmation
 ./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized
@@ -182,7 +339,7 @@ make build
 ./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized --upgrade-all-html
 ```
 
-### 7. Standalone Utilities (`backup` & `upgrade-html`)
+### 8. Standalone Utilities (`backup` & `upgrade-html`)
 ```bash
 # Create atomic, crash-consistent SQLite backup snapshot directly onto NAS:
 ./bin/r19dev backup /Volumes/home/BT/organized

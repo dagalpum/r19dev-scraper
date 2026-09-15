@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/dagalp/r19dev-scraper/pkg/jellyfin"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
@@ -733,6 +734,25 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 				actresses_json=coalesce(nullif(excluded.actresses_json, ''), movies.actresses_json)`,
 			item.MovieID, item.NormID, movie.Title, movie.OriginalTitle, movie.Maker, movie.ReleaseDate, movie.CoverURL,
 			string(actBytes), string(genBytes), string(shotBytes), nowStr)
+
+		for _, act := range movie.Actresses {
+			name := strings.TrimSpace(act.Name)
+			if name != "" {
+				actressID := db.GenerateActressID(act.ID, name)
+				source := "dmm"
+				if act.ID == 0 {
+					source = "custom"
+				}
+				_, _ = appDB.Exec(`
+					INSERT INTO movie_actresses (movie_id, actress_id, actress_name, actress_ja_name, source)
+					VALUES (?, ?, ?, ?, ?)
+					ON CONFLICT(movie_id, actress_id) DO UPDATE SET
+						actress_name = excluded.actress_name,
+						actress_ja_name = CASE WHEN excluded.actress_ja_name != '' THEN excluded.actress_ja_name ELSE movie_actresses.actress_ja_name END,
+						source = excluded.source`,
+					item.MovieID, actressID, name, act.JaName, source)
+			}
+		}
 
 		_, _ = appDB.Exec(`
 			INSERT INTO organized_movies (movie_id, target_folder, target_video, organized_at)

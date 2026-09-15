@@ -147,26 +147,26 @@ func (s *Service) ListDiscoveredActresses() ([]DiscoveredActress, error) {
 
 	query := `
 	SELECT 
-		json_extract(a.value, '$.name') AS actress_name,
-		COALESCE(json_extract(a.value, '$.ja_name'), '') AS ja_name,
-		COALESCE(json_extract(a.value, '$.image_url'), '') AS image_url,
-		COUNT(DISTINCT m.id) AS movie_count,
+		ma.actress_name AS actress_name,
+		COALESCE(MAX(ma.actress_ja_name), '') AS ja_name,
+		'' AS image_url,
+		COUNT(DISTINCT ma.movie_id) AS movie_count,
 		COALESCE(MAX(m.release_date), '') AS latest_release
-	FROM movies m
-	JOIN json_each(m.actresses_json) a
+	FROM movie_actresses ma
+	JOIN movies m ON m.id = ma.movie_id
 	LEFT JOIN actresses act ON (
-		LOWER(act.name) = LOWER(json_extract(a.value, '$.name'))
-		OR (act.ja_name != '' AND LOWER(act.ja_name) = LOWER(json_extract(a.value, '$.name')))
-		OR (act.ja_name != '' AND LOWER(act.ja_name) = LOWER(json_extract(a.value, '$.ja_name')))
+		LOWER(act.name) = LOWER(ma.actress_name)
+		OR (act.ja_name != '' AND LOWER(act.ja_name) = LOWER(ma.actress_name))
+		OR (ma.actress_ja_name != '' AND act.ja_name != '' AND LOWER(act.ja_name) = LOWER(ma.actress_ja_name))
 	)
 	WHERE act.name IS NULL
-	  AND json_extract(a.value, '$.name') IS NOT NULL
-	  AND TRIM(json_extract(a.value, '$.name')) != ''
+	  AND ma.actress_name != ''
+	  AND LOWER(ma.actress_name) NOT IN ('unknown', 'unknown actress', '素人')
 	  AND (
-		m.id IN (SELECT DISTINCT movie_id FROM organized_movies WHERE target_folder != '' OR target_video != '')
-		OR m.id IN (SELECT DISTINCT movie_id FROM library_files WHERE file_path != '')
+		ma.movie_id IN (SELECT DISTINCT movie_id FROM organized_movies WHERE target_folder != '' OR target_video != '')
+		OR ma.movie_id IN (SELECT DISTINCT movie_id FROM library_files WHERE file_path != '')
 	  )
-	GROUP BY LOWER(json_extract(a.value, '$.name'))
+	GROUP BY LOWER(ma.actress_name)
 	ORDER BY movie_count DESC, actress_name ASC
 	`
 
@@ -220,15 +220,14 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 		COALESCE(u.user_rating, 0),
 		COALESCE(u.is_favorite, 0)
 	FROM movies m
-	JOIN json_each(m.actresses_json) a
+	JOIN movie_actresses ma ON ma.movie_id = m.id
 	LEFT JOIN organized_movies om ON om.movie_id = m.id
 	LEFT JOIN library_files lf ON lf.movie_id = m.id
 	LEFT JOIN user_state u ON u.movie_id = m.id
 	WHERE (
-		LOWER(json_extract(a.value, '$.name')) = LOWER(?)
-		OR (json_extract(a.value, '$.ja_name') != '' AND LOWER(json_extract(a.value, '$.ja_name')) = LOWER(?))
-		OR om.target_folder LIKE '%/' || ? || '/%'
-		OR om.target_folder LIKE '%/' || ? || ' (%'
+		ma.actress_name = ? COLLATE NOCASE
+		OR (ma.actress_ja_name != '' AND ma.actress_ja_name = ?)
+		OR ma.actress_id = ?
 	)
 	AND (
 		m.id IN (SELECT DISTINCT movie_id FROM organized_movies WHERE target_folder != '' OR target_video != '')
@@ -238,7 +237,8 @@ func (s *Service) GetDiscoveredActressMovies(ctx context.Context, actressName st
 	ORDER BY m.release_date DESC;
 	`
 
-	rows, err := s.database.Query(query, actressName, actressName, actressName, actressName)
+	actressID := db.GenerateActressID(0, actressName)
+	rows, err := s.database.Query(query, actressName, actressName, actressID)
 	if err != nil {
 		return nil, err
 	}
@@ -408,12 +408,17 @@ func (s *Service) GetActressSummaryForRecord(ctx context.Context, actRec db.Actr
 		}
 	}
 
-	whereClause := "(m.actresses_json LIKE ? COLLATE NOCASE OR om.target_folder LIKE ? COLLATE NOCASE)"
-	args := []any{"%" + actressName + "%", "%/" + actressName + "/%"}
-	if actRec.JaName != "" {
-		whereClause += " OR (m.actresses_json LIKE ? COLLATE NOCASE OR om.target_folder LIKE ? COLLATE NOCASE)"
-		args = append(args, "%"+actRec.JaName+"%", "%/"+actRec.JaName+"/%")
+	whereClause := "m.id IN (SELECT movie_id FROM movie_actresses WHERE actress_name = ? COLLATE NOCASE"
+	args := []any{actressName}
+	if actRec.R18ID > 0 {
+		whereClause += " OR actress_id = ?"
+		args = append(args, fmt.Sprintf("dmm:%d", actRec.R18ID))
 	}
+	if actRec.JaName != "" && actRec.JaName != actressName {
+		whereClause += " OR actress_ja_name = ? OR actress_name = ? COLLATE NOCASE"
+		args = append(args, actRec.JaName, actRec.JaName)
+	}
+	whereClause += ")"
 
 	query := fmt.Sprintf(`
 	SELECT m.id, COALESCE(m.combined_id, ''), COALESCE(m.title, m.id), COALESCE(m.original_title, ''), COALESCE(m.maker, ''), COALESCE(m.release_date, ''), COALESCE(m.cover_url, ''), COALESCE(m.actresses_json, '[]'),
@@ -718,7 +723,40 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 		return nil, err
 	}
 
-	// 2. Parallel in-memory matching across 8 workers
+	// 2. Pre-index movie_actresses for instant, zero-false-positive actress matching
+	actressToMovies := make(map[string]map[string]bool)
+	maRows, maErr := s.database.Query("SELECT movie_id, actress_id, actress_name, COALESCE(actress_ja_name, '') FROM movie_actresses")
+	if maErr == nil {
+		for maRows.Next() {
+			var mID, aID, aName, aJa string
+			if err := maRows.Scan(&mID, &aID, &aName, &aJa); err == nil {
+				if aID != "" {
+					k := strings.ToUpper(aID)
+					if actressToMovies[k] == nil {
+						actressToMovies[k] = make(map[string]bool)
+					}
+					actressToMovies[k][mID] = true
+				}
+				if aName != "" {
+					k := strings.ToUpper(aName)
+					if actressToMovies[k] == nil {
+						actressToMovies[k] = make(map[string]bool)
+					}
+					actressToMovies[k][mID] = true
+				}
+				if aJa != "" {
+					k := strings.ToUpper(aJa)
+					if actressToMovies[k] == nil {
+						actressToMovies[k] = make(map[string]bool)
+					}
+					actressToMovies[k][mID] = true
+				}
+			}
+		}
+		maRows.Close()
+	}
+
+	// 3. Parallel in-memory matching across 8 workers
 	var results []ActressSummary
 	var mu sync.Mutex
 
@@ -748,6 +786,22 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 				actNameUpper := strings.ToUpper(a.Name)
 				actJaUpper := strings.ToUpper(a.JaName)
 
+				matchedMovieIDs := make(map[string]bool)
+				if a.R18ID > 0 {
+					dmmKey := strings.ToUpper(fmt.Sprintf("dmm:%d", a.R18ID))
+					for mID := range actressToMovies[dmmKey] {
+						matchedMovieIDs[mID] = true
+					}
+				}
+				for mID := range actressToMovies[actNameUpper] {
+					matchedMovieIDs[mID] = true
+				}
+				if actJaUpper != "" {
+					for mID := range actressToMovies[actJaUpper] {
+						matchedMovieIDs[mID] = true
+					}
+				}
+
 				var rawReleases []ReleaseItem
 				var skippedReleases []ReleaseItem
 				downloadedCount := 0
@@ -761,17 +815,7 @@ func (s *Service) CheckAllFollowed(ctx context.Context) ([]ActressSummary, error
 				latestIsDownloaded := false
 
 				for _, rm := range allMovies {
-					matched := strings.Contains(strings.ToUpper(rm.actsJSON), actNameUpper)
-					if !matched && actJaUpper != "" {
-						matched = strings.Contains(strings.ToUpper(rm.actsJSON), actJaUpper)
-					}
-					if !matched && rm.r.OrganizedFolder != "" {
-						matched = strings.Contains(strings.ToUpper(rm.r.OrganizedFolder), "/"+actNameUpper+"/")
-						if !matched && actJaUpper != "" {
-							matched = strings.Contains(strings.ToUpper(rm.r.OrganizedFolder), "/"+actJaUpper+"/")
-						}
-					}
-					if !matched {
+					if !matchedMovieIDs[rm.r.MovieID] {
 						continue
 					}
 

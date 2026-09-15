@@ -64,6 +64,49 @@ type OperationRecord struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// MovieActressRecord stores a relational mapping between a movie and an actress.
+type MovieActressRecord struct {
+	MovieID       string    `json:"movie_id"`
+	ActressID     string    `json:"actress_id"`
+	ActressName   string    `json:"actress_name"`
+	ActressJaName string    `json:"actress_ja_name"`
+	Source        string    `json:"source"` // 'dmm', 'fc2', 'custom', 'folder'
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// GenerateActressID produces a deterministic, namespaced actress ID.
+// - If dmmID > 0: "dmm:{dmmID}"
+// - If name starts with "FC2" or seller tag: "seller:{slug}" or "fc2:{slug}"
+// - Otherwise: "custom:{slug}"
+func GenerateActressID(dmmID int, name string) string {
+	if dmmID > 0 {
+		return fmt.Sprintf("dmm:%d", dmmID)
+	}
+	clean := strings.TrimSpace(strings.ToLower(name))
+	if clean == "" || clean == "unknown actress" || clean == "unknown" || clean == "素人" {
+		return "custom:unknown"
+	}
+	var b strings.Builder
+	for _, r := range clean {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else if r == ' ' || r == '-' || r == '_' {
+			b.WriteRune('_')
+		}
+	}
+	slug := strings.Trim(b.String(), "_")
+	if slug == "" {
+		return "custom:unknown"
+	}
+	if strings.HasPrefix(slug, "fc2") {
+		return "fc2:" + slug
+	}
+	if strings.HasPrefix(slug, "seller_") || strings.HasPrefix(slug, "good0") {
+		return "seller:" + slug
+	}
+	return "custom:" + slug
+}
+
 // DB wraps SQLite operations for R19DEV.
 type DB struct {
 	conn *sql.DB
@@ -485,6 +528,19 @@ func (d *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_movies_release ON movies(release_date);
 	CREATE INDEX IF NOT EXISTS idx_library_movie_id ON library_files(movie_id);
 	CREATE INDEX IF NOT EXISTS idx_operation_created ON operation_history(created_at DESC);
+
+	CREATE TABLE IF NOT EXISTS movie_actresses (
+		movie_id TEXT NOT NULL,
+		actress_id TEXT NOT NULL,
+		actress_name TEXT NOT NULL,
+		actress_ja_name TEXT DEFAULT '',
+		source TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (movie_id, actress_id)
+	);
+	CREATE INDEX IF NOT EXISTS idx_ma_actress_id ON movie_actresses(actress_id);
+	CREATE INDEX IF NOT EXISTS idx_ma_movie_id ON movie_actresses(movie_id);
+	CREATE INDEX IF NOT EXISTS idx_ma_actress_name ON movie_actresses(actress_name COLLATE NOCASE);
 	`
 	_, err := d.conn.Exec(schema)
 	if err != nil {
@@ -494,6 +550,7 @@ func (d *DB) initSchema() error {
 	_, _ = d.conn.Exec("ALTER TABLE actresses ADD COLUMN r18_id INTEGER DEFAULT 0;")
 	_ = d.backfillActressR18IDs()
 	_, _ = d.purgePromotionalVariantsLocked()
+	_ = d.autoMigrateMovieActresses()
 	return nil
 }
 
@@ -692,6 +749,23 @@ func (d *DB) SaveMovie(m *scraper.Movie) error {
 	)
 	if err == nil {
 		for _, act := range m.Actresses {
+			name := strings.TrimSpace(act.Name)
+			if name != "" {
+				actressID := GenerateActressID(act.ID, name)
+				source := "dmm"
+				if act.ID == 0 {
+					source = "custom"
+				}
+				maQuery := `
+				INSERT INTO movie_actresses (movie_id, actress_id, actress_name, actress_ja_name, source)
+				VALUES (?, ?, ?, ?, ?)
+				ON CONFLICT(movie_id, actress_id) DO UPDATE SET
+					actress_name = excluded.actress_name,
+					actress_ja_name = CASE WHEN excluded.actress_ja_name != '' THEN excluded.actress_ja_name ELSE movie_actresses.actress_ja_name END,
+					source = excluded.source;
+				`
+				_, _ = d.conn.Exec(maQuery, m.ID, actressID, name, act.JaName, source)
+			}
 			if act.ID != 0 && act.Name != "" {
 				_, _ = d.conn.Exec("UPDATE actresses SET r18_id = ? WHERE (name = ? COLLATE NOCASE OR ja_name = ?) AND (r18_id IS NULL OR r18_id = 0)", act.ID, act.Name, act.JaName)
 			}
@@ -1145,5 +1219,285 @@ func (d *DB) purgePromotionalVariantsLocked() (int64, error) {
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// LinkMovieActress creates or updates a relational link between a movie and an actress.
+func (d *DB) LinkMovieActress(movieID, actressID, name, jaName, source string) error {
+	if d == nil || d.conn == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	movieID = strings.TrimSpace(movieID)
+	actressID = strings.TrimSpace(actressID)
+	if movieID == "" || actressID == "" {
+		return fmt.Errorf("movie_id and actress_id required")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `
+	INSERT INTO movie_actresses (movie_id, actress_id, actress_name, actress_ja_name, source)
+	VALUES (?, ?, ?, ?, ?)
+	ON CONFLICT(movie_id, actress_id) DO UPDATE SET
+		actress_name = excluded.actress_name,
+		actress_ja_name = CASE WHEN excluded.actress_ja_name != '' THEN excluded.actress_ja_name ELSE movie_actresses.actress_ja_name END,
+		source = excluded.source;
+	`
+	_, err := d.conn.Exec(query, movieID, actressID, name, jaName, source)
+	return err
+}
+
+// GetMovieActresses returns all performers linked to a movie.
+func (d *DB) GetMovieActresses(movieID string) ([]MovieActressRecord, error) {
+	if d == nil || d.conn == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	query := `SELECT movie_id, actress_id, actress_name, actress_ja_name, source, created_at 
+	          FROM movie_actresses WHERE movie_id = ? ORDER BY actress_name ASC`
+	rows, err := d.conn.Query(query, movieID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []MovieActressRecord
+	for rows.Next() {
+		var r MovieActressRecord
+		if err := rows.Scan(&r.MovieID, &r.ActressID, &r.ActressName, &r.ActressJaName, &r.Source, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		records = append(records, r)
+	}
+	return records, rows.Err()
+}
+
+// GetActressMovieIDs returns all movie IDs associated with an actress_id or exact actress_name.
+func (d *DB) GetActressMovieIDs(actressIDOrName string) ([]string, error) {
+	if d == nil || d.conn == nil {
+		return nil, fmt.Errorf("database not initialized")
+	}
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	query := `
+	SELECT DISTINCT movie_id FROM movie_actresses 
+	WHERE actress_id = ? 
+	   OR actress_name = ? COLLATE NOCASE 
+	   OR actress_ja_name = ?
+	`
+	rows, err := d.conn.Query(query, actressIDOrName, actressIDOrName, actressIDOrName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var movieIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			movieIDs = append(movieIDs, id)
+		}
+	}
+	return movieIDs, rows.Err()
+}
+
+func (d *DB) autoMigrateMovieActresses() error {
+	var count int
+	_ = d.conn.QueryRow("SELECT COUNT(*) FROM movie_actresses").Scan(&count)
+	if count > 0 {
+		return nil
+	}
+	// Run initial backfill asynchronously or synchronously
+	go func() {
+		_, _ = d.BackfillMovieActresses("")
+	}()
+	return nil
+}
+
+// BackfillMovieActresses populates movie_actresses from existing movies.actresses_json and organized_movies.
+func (d *DB) BackfillMovieActresses(dumpDBPath string) (int, error) {
+	if d == nil || d.conn == nil {
+		return 0, fmt.Errorf("database not initialized")
+	}
+
+	if dumpDBPath == "" {
+		dumpDBPath = filepath.Join(filepath.Dir(d.path), "r18_dump.db")
+	}
+
+	// Cache actress name -> r18_id
+	actressIDs := make(map[string]int)
+	d.mu.RLock()
+	rows, err := d.conn.Query("SELECT name, COALESCE(ja_name, ''), r18_id FROM actresses WHERE r18_id > 0")
+	if err == nil {
+		for rows.Next() {
+			var n, jn string
+			var id int
+			if err := rows.Scan(&n, &jn, &id); err == nil && id > 0 {
+				actressIDs[strings.ToLower(n)] = id
+				if jn != "" {
+					actressIDs[strings.ToLower(jn)] = id
+				}
+			}
+		}
+		rows.Close()
+	}
+	d.mu.RUnlock()
+
+	// If dump DB exists, also load additional actress IDs on demand
+	var dumpDB *sql.DB
+	if _, err := os.Stat(dumpDBPath); err == nil {
+		dumpDB, _ = sql.Open("sqlite", dumpDBPath+"?mode=ro&_pragma=query_only(true)")
+		if dumpDB != nil {
+			defer dumpDB.Close()
+		}
+	}
+
+	getActressDMMID := func(name, jaName string) int {
+		if id, ok := actressIDs[strings.ToLower(name)]; ok && id > 0 {
+			return id
+		}
+		if jaName != "" {
+			if id, ok := actressIDs[strings.ToLower(jaName)]; ok && id > 0 {
+				return id
+			}
+		}
+		if dumpDB != nil {
+			var dmmID int
+			_ = dumpDB.QueryRow("SELECT id FROM actresses WHERE name_romaji = ? COLLATE NOCASE OR name_kanji = ? LIMIT 1", name, jaName).Scan(&dmmID)
+			if dmmID > 0 {
+				actressIDs[strings.ToLower(name)] = dmmID
+				return dmmID
+			}
+		}
+		return 0
+	}
+
+	d.mu.RLock()
+	mRows, err := d.conn.Query("SELECT id, COALESCE(actresses_json, '[]') FROM movies")
+	if err != nil {
+		d.mu.RUnlock()
+		return 0, err
+	}
+	type item struct {
+		id   string
+		json string
+	}
+	var items []item
+	for mRows.Next() {
+		var it item
+		if err := mRows.Scan(&it.id, &it.json); err == nil {
+			items = append(items, it)
+		}
+	}
+	mRows.Close()
+	d.mu.RUnlock()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tx, err := d.conn.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO movie_actresses (movie_id, actress_id, actress_name, actress_ja_name, source)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(movie_id, actress_id) DO UPDATE SET
+			actress_name = excluded.actress_name,
+			actress_ja_name = CASE WHEN excluded.actress_ja_name != '' THEN excluded.actress_ja_name ELSE movie_actresses.actress_ja_name END,
+			source = excluded.source;
+	`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+
+	count := 0
+	type actressObj struct {
+		ID     int    `json:"id"`
+		Name   string `json:"name"`
+		JaName string `json:"ja_name"`
+	}
+
+	for _, it := range items {
+		if it.json == "" || it.json == "[]" {
+			continue
+		}
+		var acts []actressObj
+		if err := json.Unmarshal([]byte(it.json), &acts); err != nil {
+			continue
+		}
+		for _, act := range acts {
+			name := strings.TrimSpace(act.Name)
+			if name == "" {
+				continue
+			}
+			dmmID := act.ID
+			if dmmID == 0 {
+				dmmID = getActressDMMID(name, act.JaName)
+			}
+			source := "dmm"
+			if dmmID == 0 {
+				source = "custom"
+			}
+			actressID := GenerateActressID(dmmID, name)
+			if _, err := stmt.Exec(it.id, actressID, name, act.JaName, source); err == nil {
+				count++
+			}
+		}
+	}
+
+	// Also link organized_movies folders that might not have actresses in JSON (e.g. FC2)
+	orgRows, err := tx.Query(`
+		SELECT om.movie_id, om.target_folder 
+		FROM organized_movies om 
+		WHERE om.target_folder != ''
+	`)
+	if err == nil {
+		type orgItem struct {
+			movieID string
+			folder  string
+		}
+		var orgs []orgItem
+		for orgRows.Next() {
+			var o orgItem
+			if err := orgRows.Scan(&o.movieID, &o.folder); err == nil {
+				orgs = append(orgs, o)
+			}
+		}
+		orgRows.Close()
+
+		for _, o := range orgs {
+			cleanFolder := filepath.Clean(o.folder)
+			parent := filepath.Dir(cleanFolder)
+			actressDir := filepath.Base(parent)
+			if actressDir == "" || actressDir == "." || actressDir == "/" || actressDir == "organized" {
+				continue
+			}
+			var exists int
+			_ = tx.QueryRow("SELECT COUNT(*) FROM movie_actresses WHERE movie_id = ?", o.movieID).Scan(&exists)
+			if exists == 0 {
+				dmmID := getActressDMMID(actressDir, "")
+				source := "folder"
+				if dmmID > 0 {
+					source = "dmm"
+				}
+				actressID := GenerateActressID(dmmID, actressDir)
+				if _, err := stmt.Exec(o.movieID, actressID, actressDir, "", source); err == nil {
+					count++
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+
+	return count, nil
 }
 

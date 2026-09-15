@@ -328,6 +328,105 @@ func TestPurgePromotionalVariants(t *testing.T) {
 	}
 }
 
+func TestMovieActresses(t *testing.T) {
+	// 1. Test GenerateActressID
+	if id := GenerateActressID(1089946, "Kanna Seto"); id != "dmm:1089946" {
+		t.Errorf("Expected dmm:1089946, got %s", id)
+	}
+	if id := GenerateActressID(0, "Nanami"); id != "custom:nanami" {
+		t.Errorf("Expected custom:nanami, got %s", id)
+	}
+	if id := GenerateActressID(0, "FC2-PPV 12345"); id != "fc2:fc2_ppv_12345" {
+		t.Errorf("Expected fc2:fc2_ppv_12345, got %s", id)
+	}
+	if id := GenerateActressID(0, "seller_good0115"); id != "seller:seller_good0115" {
+		t.Errorf("Expected seller:seller_good0115, got %s", id)
+	}
+	if id := GenerateActressID(0, "unknown actress"); id != "custom:unknown" {
+		t.Errorf("Expected custom:unknown, got %s", id)
+	}
+
+	// 2. Setup temporary DB
+	tempDir, err := os.MkdirTemp("", "r19dev_movie_actresses_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	d, err := Open(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer d.Close()
+
+	// 3. Test SaveMovie automatically populates movie_actresses
+	movie1 := &scraper.Movie{
+		ID:         "SONE-682",
+		CombinedID: "sone00682",
+		Title:      "Potential Star Kanna Seto",
+		Actresses: []scraper.Actress{
+			{ID: 1089946, Name: "Kanna Seto", JaName: "瀬戸環奈"},
+		},
+	}
+	movie2 := &scraper.Movie{
+		ID:         "ENFD-4319",
+		CombinedID: "enfd04319",
+		Title:      "Tia Solo",
+		Actresses: []scraper.Actress{
+			{ID: 1010368, Name: "Tia", JaName: "ティア"},
+		},
+	}
+	if err := d.SaveMovie(movie1); err != nil {
+		t.Fatalf("SaveMovie movie1 failed: %v", err)
+	}
+	if err := d.SaveMovie(movie2); err != nil {
+		t.Fatalf("SaveMovie movie2 failed: %v", err)
+	}
+
+	// 4. Test GetMovieActresses
+	m1Acts, err := d.GetMovieActresses("SONE-682")
+	if err != nil || len(m1Acts) != 1 {
+		t.Fatalf("GetMovieActresses SONE-682 failed: %v, acts: %+v", err, m1Acts)
+	}
+	if m1Acts[0].ActressID != "dmm:1089946" || m1Acts[0].ActressName != "Kanna Seto" {
+		t.Errorf("Unexpected actress record: %+v", m1Acts[0])
+	}
+
+	// 5. Test GetActressMovieIDs
+	// Tia should ONLY return ENFD-4319, NOT SONE-682 (even though SONE-682 has 'Potential' which contains 'tia')
+	tiaMovies, err := d.GetActressMovieIDs("Tia")
+	if err != nil {
+		t.Fatalf("GetActressMovieIDs failed: %v", err)
+	}
+	if len(tiaMovies) != 1 || tiaMovies[0] != "ENFD-4319" {
+		t.Errorf("Expected strictly [ENFD-4319] for Tia, got %+v", tiaMovies)
+	}
+
+	// Kanna Seto should return SONE-682
+	kannaMovies, err := d.GetActressMovieIDs("dmm:1089946")
+	if err != nil {
+		t.Fatalf("GetActressMovieIDs failed: %v", err)
+	}
+	if len(kannaMovies) != 1 || kannaMovies[0] != "SONE-682" {
+		t.Errorf("Expected strictly [SONE-682] for Kanna Seto, got %+v", kannaMovies)
+	}
+
+	// 6. Test LinkMovieActress manual / custom
+	fc2Movie := &scraper.Movie{
+		ID:    "FC2-PPV-1234567",
+		Title: "Amateur Girl",
+	}
+	_ = d.SaveMovie(fc2Movie)
+	if err := d.LinkMovieActress("FC2-PPV-1234567", "custom:nanami", "Nanami", "", "custom"); err != nil {
+		t.Fatalf("LinkMovieActress failed: %v", err)
+	}
+
+	nanamiMovies, err := d.GetActressMovieIDs("Nanami")
+	if err != nil || len(nanamiMovies) != 1 || nanamiMovies[0] != "FC2-PPV-1234567" {
+		t.Errorf("Expected [FC2-PPV-1234567] for Nanami, got %+v (err: %v)", nanamiMovies, err)
+	}
+}
+
 
 
 

@@ -11,6 +11,8 @@ type Config struct {
 	DryRun         bool
 	AutoConfirm    bool
 	UpdateExisting bool
+	AuditAfter     bool
+	AutoHeal       bool
 	NoTUI          bool
 }
 
@@ -29,6 +31,10 @@ const (
 	EventMoveSkip      EventType = "move_skip"
 	EventMoveError     EventType = "move_error"
 	EventUpdateHTML    EventType = "update_html"
+	EventAuditStart    EventType = "audit_start"
+	EventAuditProgress EventType = "audit_progress"
+	EventAuditHealed   EventType = "audit_healed"
+	EventAuditDone     EventType = "audit_done"
 	EventCleanArchive  EventType = "clean_archive"
 	EventDone          EventType = "done"
 )
@@ -51,13 +57,17 @@ type ProgressEvent struct {
 
 // Summary stores the outcome of the migration run.
 type Summary struct {
-	TotalDiscovered int           `json:"total_discovered"`
-	OrganizedCount  int           `json:"organized_count"`
-	DuplicateCount  int           `json:"duplicate_count"`
-	SkippedCount    int           `json:"skipped_count"`
-	ErrorCount      int           `json:"error_count"`
-	UpdatedHTMLNum  int           `json:"updated_html_num"`
-	Duration        time.Duration `json:"duration"`
-	SkippedDetails  []string      `json:"skipped_details,omitempty"`
-	Errors          []string      `json:"errors,omitempty"`
+	TotalDiscovered      int           `json:"total_discovered"`
+	OrganizedCount       int           `json:"organized_count"`
+	DuplicateCount       int           `json:"duplicate_count"`
+	SkippedCount         int           `json:"skipped_count"`
+	ErrorCount           int           `json:"error_count"`
+	UpdatedHTMLNum       int           `json:"updated_html_num"`
+	AuditedCount         int           `json:"audited_count"`
+	HealedCount          int           `json:"healed_count"`
+	AuditCompleteCount   int           `json:"audit_complete_count"`
+	AuditIncompleteCount int           `json:"audit_incomplete_count"`
+	Duration             time.Duration `json:"duration"`
+	SkippedDetails       []string      `json:"skipped_details,omitempty"`
+	Errors               []string      `json:"errors,omitempty"`
 }

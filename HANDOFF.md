@@ -39,6 +39,7 @@ pkg/
 ├── migrator/             -> High-speed batch migration engine, pre-flight safety gate, Bubble Tea TUI, 16-worker HTML upgrader
 ├── jellyfin/             -> Kodi/Jellyfin NFO XML generator, 180-byte safe filename sanitizer, HTML viewer, asset downloader
 ├── actress/              -> Actress tracking service, filmography tracker, and local release comparator
+├── audit/                -> Movie completeness auditor & doctor engine, Bubble Tea split-pane TUI, interactive quick-fix
 ├── cache/                -> Persistent disk cache for API payloads and images (~/.cache or ~/Library/Caches)
 ├── web/                  -> Single-binary Web UI Studio server, SSE streaming, REST API, embedded SPA frontend, self-healing avatar cache
 │   └── static/           -> Static web assets (embedded via embed.FS)
@@ -177,6 +178,14 @@ make test
     User-customizable JSON rules schema (`~/Library/Application Support/r19dev/filters.json`) allowing instant addition/removal of blocked prefixes (`IPOK`, `IDBD`, `MIZD`, `MIDD`, `PBD`, `OBST`, `SDDE`, etc.), studio labels/series (`Idea Pocket BEST`, `MOODYZ Best`, `PREMIUM BEST`), and title patterns (`100本番`, `\d+連発`). Dynamic database sweep purges unowned duplicates while strictly protecting on-disk media. Accessible via CLI (`r19dev filters [show|path|purge|reset]`) and REST API (`/api/filters`).
 37. **Step-by-Step User Journeys & Extended Documentation**:
     Comprehensive user journey guide in `README.md` with visual diagrams detailing Ingest & Organize, Actress Hub & Backlog Wishlist, Library & Universal Search (`⌘K`), Custom Filter Configuration, High-Speed Batch Migration, and Database Backup.
+38. **Interactive Terminal Doctor & Movie Auditor (`pkg/audit`)**:
+    Split-pane Bubble Tea TUI (`r19dev audit`), comprehensive 6-point completeness checklist (video, NFO, HTML, poster, fanart, extrafanart), fast image header decoding, aspect ratio validation, 0-byte file detection, and interactive/batch auto-healing (`f` / `F`).
+39. **Post-Migration Verification & Deep Audit Pipeline (`r19dev migrate --audit`)**:
+    Integrates lightweight zero-overhead sanity checks (file size equality, non-empty NFO/HTML) by default, alongside opt-in deep asset auditing and automatic healing (`auditor.FixMovie`) to ensure 100% complete libraries after migration.
+40. **Multi-Studio Numerical Prefix Normalizer (`CandidateCombinedIDs`)**:
+    Solves non-standard DMM numerical prefixes for Prestige (`118abp00966`), SOD (`1dldss00077`), and VR (`13kavr00403`), ensuring seamless metadata lookup across all studio brands.
+41. **High-Res Local Image Serving Priority & Stale Thumbnail Purge**:
+    Eliminates low-resolution cover display on Web UI modals (`MFYD-123` 147x200px vs 800x538px) by prioritizing local Full HD `poster.jpg` files on disk over RAM/disk cache and enforcing a $>20\text{KB}$ quality threshold.
 
 ---
 
@@ -215,6 +224,10 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Self-Healing Unfollowed Actress Avatar Caching**: Automatic DMM CDN fetch and local caching on discovery.
 - ✅ **Configurable Filter Rules Engine (`filters.json`)**: User-editable exclusion rules, Label/Series omnibus purging, CLI & REST API.
 - ✅ **Step-by-Step User Journeys Guide**: Complete visual guide in README.md.
+- ✅ **Quality Auditor & Doctor Engine (`pkg/audit`)**: 6-point completeness verification and batch auto-healing.
+- ✅ **Post-Migration Verification & Deep Auto-Heal**: Integrated in `r19dev migrate --audit`.
+- ✅ **Multi-Studio Numerical Prefix Generator**: Maps Prestige (`118`), SOD (`1`), VR (`13`), and standard prefixes.
+- ✅ **High-Res Local Image Serving Priority**: Prioritizes local Full HD poster files over cached thumbnails.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

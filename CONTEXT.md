@@ -79,6 +79,10 @@ r19dev-scraper/
 │   │   ├── tui.go            # Interactive Charm Bubble Tea TUI with real-time progress bar & log pane
 │   │   ├── cli.go            # Headless non-interactive CLI runner for scripts and servers
 │   │   └── types.go          # Event definitions, config, and migration summary types
+│   ├── audit/                # Module 13: Quality Auditor & Doctor
+│   │   ├── auditor.go        # Fast image header decoder, aspect ratio validation, multi-part checker, and auto-healer
+│   │   ├── auditor_test.go   # Unit tests for inspection rules and asset repair
+│   │   └── tui.go            # Interactive Terminal TUI Doctor (filtering, live status, batch fix)
 │   └── tui/                  # Module 12: Interactive Terminal Dashboard
 │       ├── app.go            # Bubble Tea Model (Init, Update, async Cmd handlers)
 │       ├── views.go          # View layout: Split screen (file table + metadata inspector)
@@ -255,6 +259,32 @@ r19dev-scraper/
 * **CLI & Web REST API**:
   - CLI: `r19dev filters show`, `r19dev filters path`, `r19dev filters purge`, `r19dev filters reset`.
   - REST API: `GET /api/filters`, `POST /api/filters`, `POST /api/filters/reset`, `POST /api/filters/purge`.
+
+### 4.23 Post-Migration Verification & Deep Audit Pipeline (`pkg/migrator`, `pkg/audit`)
+* **Two-Tier Verification Philosophy**:
+  - **Tier 1 (Lightweight Assertion - Default)**: Inline zero-overhead check asserting destination video file exists, is non-zero, matches source byte size, and `.nfo`/`movie.html` sizes $> 0$.
+  - **Tier 2 (Deep Asset Audit & Auto-Heal - Opt-in via `--audit` / `-a` / `--heal`)**: Following migration, `auditor.InspectFolder` concurrently inspects all organized targets for genuine Full HD `poster.jpg` (> 25KB), `fanart.jpg`, and `extrafanart/` sample screenshots. Missing/corrupted assets are auto-healed via `auditor.FixMovie` by scraping provider CDNs directly.
+* **TUI & CLI Event Pipeline**: Emits `EventAuditStart`, `EventAuditProgress`, `EventAuditHealed`, and `EventAuditDone`, rendering an updated `✨ Healed: X` badge counter in TUI.
+
+### 4.24 Multi-Studio Combined ID Candidate Generator & Online Fallback (`pkg/scraper/normalizer.go`)
+* **Studio Prefix Mapping Matrix**: DMM uses non-standard numerical prefixes for specific labels:
+  - Prestige (`ABP`, `ABW`, `ONEZ`, `EZD`): Prefix `118` (e.g. `ABP-966` $\rightarrow$ `118abp00966`, `118abp0966`, `abp00966`).
+  - SOD Create (`DLDSS`, `MIST`, `KMHR`): Prefix `1` (e.g. `DLDSS-077` $\rightarrow$ `1dldss00077`, `dldss00077`).
+  - VR Studios (`KAVR`, `SIVR`, `VRTM`): Prefix `13` (e.g. `KAVR-403` $\rightarrow$ `13kavr00403`, `kavr00403`).
+  - Wanz Factory / Premium (`PPPD`, `PRED`, `EBOD`): Suffix `so` or standard zero-padding (e.g. `PRED-224` $\rightarrow$ `pred00224`, `h_068pred00224`).
+* **Candidate Resolution Pipeline**: `CandidateCombinedIDs(id)` generates all plausible DMM content IDs in priority order. `Scrape` in `pkg/scraper/r18dev.go` tries candidate queries sequentially against both `r18_dump.db` and live R18.dev REST APIs before declaring a title unmatched.
+
+### 4.25 High-Res Image Cache Priority Invariant (`pkg/web/server.go`)
+* **Priority Invariant**: `/api/images/{id}` prioritizes genuine local disk `poster.jpg` / `fanart.jpg` from the organized directory over stale disk cache (`~/Library/Caches/r19dev/images/`).
+* **Thumbnail Purge & High-Res Threshold**: Rejects cached thumbnails $< 20\text{KB}$ or $< 350\text{px}$ wide, upgrading remote DMM URLs automatically via `jellyfin.UpgradeDMMImageURL` (`ps.jpg` $\rightarrow$ `pl.jpg`, `pt.jpg` $\rightarrow$ `pl.jpg`) to ensure full-width hero covers render in Full HD (800×538) without blur.
+
+### 4.26 Cross-User NAS Migration Architecture (Multi-User SMB Mounts)
+* **Problem Solved**: Handling scenarios where source media belongs to one user (e.g. User D) and the target destination library belongs to another user (e.g. User P) on Synology/Linux NAS.
+* **Architectural Solutions**:
+  1. *Admin `homes` SMB Share*: Mounting `smb://<nas>/homes` allows direct pathing between `/Volumes/homes/User_D/...` and `/Volumes/homes/User_P/...`.
+  2. *NAS ACL Permissions*: Setting File Station Read/Write ACLs on destination folders.
+  3. *Shared Media Volume*: Best practice centralization to `/Volumes/video/organized` accessible by all users and media server daemons (Jellyfin/Emby).
+* **Streaming Fallback Resilience**: `moveFile` / `movePath` automatically detects cross-device mount link errors (`EXDEV`) and falls back to atomic stream copy + source deletion after destination byte-size assertion.
 
 ---
 

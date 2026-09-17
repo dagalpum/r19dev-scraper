@@ -426,15 +426,7 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Check in-memory image cache
-	if imgBytes, found := cache.Default().GetImage(id); found && len(imgBytes) > 0 {
-		w.Header().Set("Content-Type", "image/jpeg")
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-		_, _ = w.Write(imgBytes)
-		return
-	}
-
-	// 2. Check local disk in organized folder from database
+	// 1. Check local disk in organized folder from database FIRST (highest fidelity Full HD poster)
 	if s.db != nil {
 		if targetFolder, _, err := s.db.GetOrganizedDetails(id); err == nil && targetFolder != "" {
 			for _, candidate := range []string{"poster.jpg", "fanart.jpg", "cover.jpg"} {
@@ -450,7 +442,7 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Fallback: Search organized directories on disk
+	// 2. Search organized directories on disk
 	if defaultOrg := defaultOrganizedDir(s.targetDir); defaultOrg != "" {
 		matches, _ := filepath.Glob(filepath.Join(defaultOrg, "*", "*"+id+"*", "poster.jpg"))
 		if len(matches) > 0 {
@@ -464,7 +456,15 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Fallback: Fetch from remote cover_url if available in database
+	// 3. Check in-memory/disk image cache (require valid high-res image > 20KB)
+	if imgBytes, found := cache.Default().GetImage(id); found && len(imgBytes) > 20000 {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(imgBytes)
+		return
+	}
+
+	// 4. Fallback: Fetch from remote cover_url if available in database (upgraded to Full HD pl.jpg)
 	if s.db != nil {
 		if mov, err := s.db.GetMovie(id); err == nil && mov != nil {
 			fetchURL := mov.CoverURL
@@ -477,7 +477,7 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 				if reqErr == nil {
 					req.Header.Set("User-Agent", scraper.DefaultUA)
 					req.Header.Set("Referer", "https://r18.dev/")
-					client := &http.Client{Timeout: 2 * time.Second}
+					client := &http.Client{Timeout: 3 * time.Second}
 					resp, doErr := client.Do(req)
 					if doErr == nil && resp.StatusCode == http.StatusOK {
 						defer resp.Body.Close()
@@ -493,6 +493,14 @@ func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+	}
+
+	// 5. Final fallback: If cache exists (even small) and nothing else worked
+	if imgBytes, found := cache.Default().GetImage(id); found && len(imgBytes) > 0 {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(imgBytes)
+		return
 	}
 
 	http.NotFound(w, r)

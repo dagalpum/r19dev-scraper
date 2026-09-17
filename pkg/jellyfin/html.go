@@ -211,7 +211,7 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState, videoFilenames 
 		/* Movie Header Card */
 		.movie-header {
 			display: grid;
-			grid-template-columns: 360px 1fr;
+			grid-template-columns: minmax(380px, 480px) 1fr;
 			gap: 2.5rem;
 			background: var(--glass);
 			backdrop-filter: blur(20px);
@@ -221,8 +221,9 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState, videoFilenames 
 			padding: 2.2rem;
 			box-shadow: 0 20px 48px rgba(0,0,0,0.65);
 			margin-bottom: 2.5rem;
+			align-items: start;
 		}
-		@media (max-width: 920px) {
+		@media (max-width: 1024px) {
 			.movie-header { grid-template-columns: 1fr; gap: 1.8rem; }
 		}
 
@@ -237,6 +238,7 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState, videoFilenames 
 			display: flex;
 			align-items: center;
 			justify-content: center;
+			cursor: zoom-in;
 		}
 		.poster-img {
 			width: 100%%;
@@ -245,7 +247,26 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState, videoFilenames 
 			transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 		}
 		.poster-wrapper:hover .poster-img {
-			transform: scale(1.03);
+			transform: scale(1.025);
+		}
+		.poster-zoom-hint {
+			position: absolute;
+			bottom: 12px;
+			right: 12px;
+			background: rgba(12, 13, 20, 0.82);
+			backdrop-filter: blur(6px);
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			color: #fff;
+			padding: 0.35rem 0.75rem;
+			border-radius: 8px;
+			font-size: 0.8rem;
+			font-weight: 700;
+			opacity: 0;
+			transition: opacity 0.2s ease;
+			pointer-events: none;
+		}
+		.poster-wrapper:hover .poster-zoom-hint {
+			opacity: 1;
 		}
 
 		/* Top Badges & ID */
@@ -625,8 +646,9 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState, videoFilenames 
 	<div class="container">
 		<!-- Main Movie Header -->
 		<div class="movie-header">
-			<div class="poster-wrapper">
+			<div class="poster-wrapper" onclick="openCoverLightbox()" title="Click to view full cover in high resolution">
 				<img class="poster-img" src="poster.jpg" alt="%s Poster" onerror="if(this.src.indexOf('folder.jpg')===-1){this.src='folder.jpg';}else{this.src='fanart.jpg';}" />
+				<div class="poster-zoom-hint">🔍 Full Cover</div>
 			</div>
 			<div class="movie-info">
 				<div class="badge-row">
@@ -730,6 +752,12 @@ func GenerateHTML(movie *scraper.Movie, userState *db.UserState, videoFilenames 
 		// Lightbox Gallery
 		const galleryImages = %s;
 		let currentGalleryIndex = 0;
+
+		function openCoverLightbox() {
+			document.getElementById('lightbox-img').src = 'poster.jpg';
+			document.getElementById('lightbox-counter').textContent = 'Cover Jacket (Full Resolution)';
+			document.getElementById('lightbox').classList.add('active');
+		}
 
 		function openLightbox(index) {
 			if (!galleryImages || galleryImages.length === 0) return;

@@ -70,6 +70,7 @@ type tuiModel struct {
 	duplicates        int
 	skipped           int
 	errors            int
+	healed            int
 	startTime         time.Time
 	summary           *Summary
 	done              bool
@@ -291,6 +292,31 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.addLog(nowStr, "🔄", colorCyan, e.Message)
 			}
 
+		case EventAuditStart:
+			m.phase = "QUALITY AUDIT & HEAL"
+			m.currentMsg = e.Message
+			m.addLog(nowStr, "🩺", colorPurple, e.Message)
+
+		case EventAuditProgress:
+			m.phase = "QUALITY AUDIT & HEAL"
+			m.current = e.Current
+			m.total = e.Total
+			m.currentID = e.MovieID
+			m.currentAct = e.Actress
+			m.currentMsg = e.Message
+			if e.Current <= 5 || e.Current%20 == 0 || e.Current == e.Total || strings.Contains(e.Message, "Auto-healing") {
+				m.addLog(nowStr, "🔍", colorCyan, e.Message)
+			}
+
+		case EventAuditHealed:
+			m.healed++
+			m.addLog(nowStr, "✨", colorGreen, e.Message)
+
+		case EventAuditDone:
+			m.phase = "AUDIT COMPLETE"
+			m.currentMsg = e.Message
+			m.addLog(nowStr, "🏁", colorGreen, e.Message)
+
 		case EventCleanArchive:
 			m.phase = "CLEANING UP"
 			m.currentMsg = e.Message
@@ -402,12 +428,16 @@ func (m tuiModel) View() string {
 	}
 
 	// 4. Metrics Counters
-	stats := fmt.Sprintf("  %s %s %s %s",
+	statsList := []string{
 		tuiBadge.Foreground(lipgloss.Color("#FFFFFF")).Background(colorGreen).Render(fmt.Sprintf("✔ Organized: %d", m.organized)),
 		tuiBadge.Foreground(lipgloss.Color("#FFFFFF")).Background(colorCyan).Render(fmt.Sprintf("ℹ Duplicates: %d", m.duplicates)),
 		tuiBadge.Foreground(lipgloss.Color("#FFFFFF")).Background(colorAmber).Render(fmt.Sprintf("⚠ Skipped: %d", m.skipped)),
 		tuiBadge.Foreground(lipgloss.Color("#FFFFFF")).Background(colorRed).Render(fmt.Sprintf("✖ Errors: %d", m.errors)),
-	)
+	}
+	if m.cfg.AuditAfter || m.healed > 0 {
+		statsList = append(statsList, tuiBadge.Foreground(lipgloss.Color("#FFFFFF")).Background(colorPurple).Render(fmt.Sprintf("✨ Healed: %d", m.healed)))
+	}
+	stats := "  " + strings.Join(statsList, " ")
 	b.WriteString(stats + "\n\n")
 
 	// 5. Active Movie Box or Confirmation Card

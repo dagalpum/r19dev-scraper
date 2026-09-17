@@ -134,17 +134,37 @@ func (c *Client) throttle() {
 	c.lastReq = time.Now()
 }
 
-// Scrape fetches metadata for a given JAV ID from R18.dev in preferred language (default English).
+// ScrapeOnline fetches live metadata directly from R18.dev API, including gallery screenshots.
+func (c *Client) ScrapeOnline(ctx context.Context, id string) (*Movie, error) {
+	cands := CandidateCombinedIDs(id)
+	if len(cands) == 0 {
+		return nil, fmt.Errorf("invalid ID: %s", id)
+	}
+
+	var lastErr error
+	for _, cand := range cands {
+		movie, err := c.scrapeOnline(ctx, id, cand)
+		if err == nil && movie != nil {
+			return movie, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+// Scrape fetches metadata for a given JAV ID from cache, offline dump store, or live API.
 func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
-	combinedID := NormalizeToCombinedID(id)
-	if combinedID == "" {
+	cands := CandidateCombinedIDs(id)
+	if len(cands) == 0 {
 		return nil, fmt.Errorf("invalid ID: %s", id)
 	}
 
 	// 1. Check local persistent disk cache first (<1ms)
 	if c.cache != nil {
-		if cached, found := c.cache.GetMovie(combinedID); found && cached != nil {
-			return cached, nil
+		for _, cand := range cands {
+			if cached, found := c.cache.GetMovie(cand); found && cached != nil {
+				return cached, nil
+			}
 		}
 	}
 
@@ -156,8 +176,20 @@ func (c *Client) Scrape(ctx context.Context, id string) (*Movie, error) {
 			}
 			return movie, nil
 		}
+		for _, cand := range cands {
+			if movie, found := c.dumpStore.GetMovie(cand, c.language); found && movie != nil {
+				if c.cache != nil {
+					_ = c.cache.SetMovie(movie)
+				}
+				return movie, nil
+			}
+		}
 	}
 
+	return c.ScrapeOnline(ctx, id)
+}
+
+func (c *Client) scrapeOnline(ctx context.Context, id, combinedID string) (*Movie, error) {
 	apiURL := fmt.Sprintf(R18DevAPIBase, combinedID)
 	var resp *http.Response
 	var err error

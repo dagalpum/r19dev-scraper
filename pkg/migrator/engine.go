@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dagalp/r19dev-scraper/pkg/audit"
 	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/dagalp/r19dev-scraper/pkg/jellyfin"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
@@ -687,6 +688,22 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 			continue
 		}
 
+		// Lightweight Verification Check (Ensure target file exists & size matches)
+		if fiDst, sErr := os.Stat(item.TargetVideo); sErr != nil || fiDst.Size() == 0 {
+			summary.ErrorCount++
+			errMsg := fmt.Sprintf("verification failed: target video %s is 0 bytes or missing", item.TargetVideo)
+			summary.Errors = append(summary.Errors, errMsg)
+			emit(ProgressEvent{
+				Type:    EventMoveError,
+				Current: currentNum,
+				Total:   totalPlans,
+				MovieID: item.MovieID,
+				Message: errMsg,
+				Err:     sErr,
+			})
+			continue
+		}
+
 		// 2. Move existing image assets
 		mergeFolderAssets(item.SourceDir, item.TargetDir)
 
@@ -791,7 +808,100 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 		summary.UpdatedHTMLNum = UpgradeHTMLFiles(ctx, cfg.DestRoot, appDB, dumpDB, emit)
 	}
 
-	// 5. Clean empty source tree
+	// 5. Post-migration Quality Audit & Auto-Heal (if requested via --audit / --heal)
+	if !cfg.DryRun && cfg.AuditAfter {
+		emit(ProgressEvent{
+			Type:    EventAuditStart,
+			Message: "Starting Deep Quality Audit & Asset Auto-Healing...",
+		})
+
+		auditor, aErr := audit.New(nil)
+		if aErr == nil {
+			uniqueFolders := make(map[string]*PlannedItem)
+			for _, item := range plannedItems {
+				if !item.IsDuplicate && item.TargetDir != "" {
+					uniqueFolders[item.TargetDir] = item
+				}
+			}
+
+			totalAudit := len(uniqueFolders)
+			auditIdx := 0
+			for folder, item := range uniqueFolders {
+				auditIdx++
+				select {
+				case <-ctx.Done():
+					return summary, ctx.Err()
+				default:
+				}
+
+				auditItem, err := auditor.InspectFolder(ctx, folder, cfg.DestRoot)
+				if err != nil || auditItem == nil {
+					continue
+				}
+
+				summary.AuditedCount++
+				if auditItem.Status == audit.StatusComplete {
+					summary.AuditCompleteCount++
+					emit(ProgressEvent{
+						Type:    EventAuditProgress,
+						Current: auditIdx,
+						Total:   totalAudit,
+						MovieID: item.MovieID,
+						Actress: item.ActressDir,
+						Message: fmt.Sprintf("[%d/%d] ✅ %s verified 100%% complete", auditIdx, totalAudit, item.MovieID),
+					})
+				} else {
+					summary.AuditIncompleteCount++
+					if cfg.AutoHeal {
+						emit(ProgressEvent{
+							Type:    EventAuditProgress,
+							Current: auditIdx,
+							Total:   totalAudit,
+							MovieID: item.MovieID,
+							Actress: item.ActressDir,
+							Message: fmt.Sprintf("[%d/%d] 🔄 Auto-healing %s (%s)...", auditIdx, totalAudit, item.MovieID, strings.Join(auditItem.MissingItems, ", ")),
+						})
+
+						healErr := auditor.FixMovie(ctx, auditItem, func(step string, msg string) {
+							emit(ProgressEvent{
+								Type:    EventAuditProgress,
+								Current: auditIdx,
+								Total:   totalAudit,
+								MovieID: item.MovieID,
+								Actress: item.ActressDir,
+								Message: fmt.Sprintf("[%d/%d] 📥 %s: %s", auditIdx, totalAudit, item.MovieID, msg),
+							})
+						})
+
+						if healErr == nil {
+							reAudit, _ := auditor.InspectFolder(ctx, folder, cfg.DestRoot)
+							if reAudit != nil && reAudit.Status == audit.StatusComplete {
+								summary.HealedCount++
+								summary.AuditCompleteCount++
+								summary.AuditIncompleteCount--
+								emit(ProgressEvent{
+									Type:    EventAuditHealed,
+									Current: auditIdx,
+									Total:   totalAudit,
+									MovieID: item.MovieID,
+									Actress: item.ActressDir,
+									Message: fmt.Sprintf("[%d/%d] ✨ %s healed successfully! All assets restored.", auditIdx, totalAudit, item.MovieID),
+								})
+							}
+						}
+					}
+				}
+			}
+			emit(ProgressEvent{
+				Type:    EventAuditDone,
+				Current: totalAudit,
+				Total:   totalAudit,
+				Message: fmt.Sprintf("Quality Audit & Healing complete: %d verified, %d healed, %d incomplete", summary.AuditedCount, summary.HealedCount, summary.AuditIncompleteCount),
+			})
+		}
+	}
+
+	// 6. Clean empty source tree
 	if !cfg.DryRun {
 		emit(ProgressEvent{
 			Type:    EventCleanArchive,

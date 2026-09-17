@@ -227,18 +227,25 @@ graph LR
 ### 🚚 Journey 5: ย้ายคลังหนังขนาดใหญ่แบบ Batch Migration (`r19dev migrate`)
 **เป้าหมาย**: ย้ายไฟล์หนังจำนวนมากจากโฟลเดอร์เก่าเข้าสู่คลัง NAS พร้อมสร้าง Metadata แบบความเร็วสูง
 
-1. **รันคำสั่ง Interactive TUI Migration**:
+1. **รันคำสั่ง Interactive TUI Migration (พร้อมระบบตรวจเช็คไฟล์)**:
    ```bash
+   # ย้ายไฟล์ความเร็วสูง + ตรวจสอบความถูกต้องของไฟล์ปลายทาง (Sanity Check)
    ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized
+
+   # ย้ายไฟล์ + รัน Deep Quality Audit และดาวน์โหลดภาพปก/Screenshots ที่ขาดให้ครบ 100% อัตโนมัติ:
+   ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized --audit
+   # หรือใช้ตัวย่อ -a:
+   ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized -a
    ```
 2. **ตรวจสอบหน้าสรุป Pre-flight**:
    - ระบบจะตรวจเช็ครหัสหนังกับ `r18_dump.db` ออฟไลน์ (<1ms ต่อเรื่อง) และคำนวณปลายทางให้ล่วงหน้า
    - กด `Enter` เพื่อยืนยันการย้ายไฟล์ หรือกด `q` เพื่อยกเลิก
 3. **ติดตามสถานะสด (Live Progress Bar & Speed Tracker)**:
    - แสดง Progress Bar แบบเปอร์เซ็นต์, ความเร็วในการย้าย (เช่น `1.2 movies/s`), และ Log การย้ายแบบเรียลไทม์
+   - หากเปิดใช้งาน `--audit` ระบบจะแสดงตัวนับ `✨ Healed: X` สำหรับภาพที่ถูกดาวน์โหลดมาเติมเต็มให้สมบูรณ์
 4. **โหมดคำสั่งสำหรับรันสคริปต์อัตโนมัติ (Headless / Non-Interactive)**:
    ```bash
-   ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized --yes --no-tui
+   ./bin/r19dev migrate /Volumes/home/BT/OldMovies /Volumes/home/BT/organized --yes --no-tui --audit
    ```
 
 ---
@@ -262,6 +269,48 @@ graph LR
    ./bin/r19dev backup /Volumes/home/BT/organized
    ```
 2. ไฟล์สำรองจะถูกบันทึกเป็น `.r19dev_backup.db` บน NAS อัตโนมัติ (และสามารถกดปุ่ม `[💾 Backup DB]` ผ่าน Web UI History Modal ได้เช่นกัน)
+
+---
+
+### 🔍 Journey 8: ตรวจสอบความครบถ้วนสมบูรณ์ของคลังหนังและการซ่อมแซม (`r19dev audit`)
+**เป้าหมาย**: สแกนคลังหนังใน NAS เพื่อตรวจเช็คว่าทุกเรื่องมีไฟล์ครบตามมาตรฐาน (วิดีโอ, `.nfo`, `movie.html`, `poster.jpg`, `fanart.jpg`, `extrafanart/`) พร้อมปุ่มซ่อมแซมทันที
+
+1. **เปิด TUI Auditor**:
+   ```bash
+   ./bin/r19dev audit /Volumes/home/BT/organized
+   # หรือระบุ path อื่นๆ:
+   ./bin/r19dev audit /Volumes/homes/plagad/BT/organized
+   ```
+2. **การใช้งานและคีย์ลัด**:
+   - `↑` / `↓` หรือ `j` / `k`: เลื่อนดูรายการภาพยนตร์
+   - `Tab`: สลับโหมด Filter ระหว่าง **All Movies** $\rightarrow$ **Incomplete Only (เฉพาะเรื่องที่ไฟล์ไม่ครบ)** $\rightarrow$ **No Video**
+   - `/`: ค้นหารหัส JAV หรือชื่อดารา
+   - `f` หรือ `Enter`: **Interactive Quick Fix** ดาวน์โหลดภาพและสร้าง NFO/HTML สำหรับเรื่องที่เลือกทันที
+   - `F`: **Batch Fix All** ซ่อมแซมและดาวน์โหลด Asset ที่ขาดของทุกเรื่องที่ยังไม่สมบูรณ์แบบอัตโนมัติ
+   - `o`: เปิดโฟลเดอร์ของเรื่องนั้นใน macOS Finder
+   - `r`: สแกนไดเรกทอรีใหม่ (Rescan)
+   - `q`: ออกจากโปรแกรม
+
+---
+
+### 👥 Journey 9: การย้ายไฟล์ข้ามบัญชีผู้ใช้บน NAS (Cross-User Migration on Synology/SMB)
+**เป้าหมาย**: จัดการไฟล์ต้นทางที่เป็นของ User หนึ่ง (เช่น User D) ไปยังโฟลเดอร์ปลายทางของอีก User หนึ่ง (เช่น User P) บน NAS
+
+1. **วิธีที่ 1: เมานต์แชร์โฟลเดอร์ `homes` (แนะนำ)**
+   - บน Mac กด `Cmd + K` ใน Finder แล้วเชื่อมต่อ `smb://<IP_NAS>/homes` ด้วยสิทธิ์ Admin
+   - สั่ง Migrate ข้ามโฟลเดอร์ของผู้ใช้แต่ละคนได้โดยตรง:
+     ```bash
+     ./bin/r19dev migrate "/Volumes/homes/User_D/BT/2026" "/Volumes/homes/User_P/BT/organized" -a
+     ```
+2. **วิธีที่ 2: ตั้งสิทธิ์การเข้าถึง (Permission ACL) บน NAS**
+   - เปิด Synology DSM File Station $\rightarrow$ คลิกขวาโฟลเดอร์ปลายทาง $\rightarrow$ Properties $\rightarrow$ Permission
+   - เพิ่มสิทธิ์ Read/Write ให้กับ User ต้นทาง
+3. **วิธีที่ 3: ใช้ Shared Folder ส่วนกลางสำหรับ Media Library (Best Practice)**
+   - สร้างแชร์กลาง เช่น `/Volumes/video/organized` เพื่อให้ทั้งผู้ใช้และ Jellyfin เข้าถึงไฟล์ร่วมกันได้อย่างปลอดภัย
+     ```bash
+     ./bin/r19dev migrate "/Volumes/home/BT/2026" "/Volumes/video/organized" -a
+     ```
+   *(หมายเหตุ: ตัวโปรแกรม `r19dev` มีระบบ **Cross-Device Stream Fallback** ในตัว ซึ่งจะคัดลอกไฟล์ข้าม Storage อย่างปลอดภัยและตรวจสอบขนาดก่อนลบต้นทางอัตโนมัติ)*
 
 ---
 

@@ -50,3 +50,29 @@ func TestNormalizeToCanonicalID(t *testing.T) {
 	}
 }
 
+func TestCandidateCombinedIDs(t *testing.T) {
+	candsABP := CandidateCombinedIDs("ABP-966")
+	found118 := false
+	for _, c := range candsABP {
+		if c == "118abp00966" {
+			found118 = true
+			break
+		}
+	}
+	if !found118 {
+		t.Errorf("expected 118abp00966 in candidates for ABP-966, got %v", candsABP)
+	}
+
+	candsDLDSS := CandidateCombinedIDs("DLDSS-559")
+	found1 := false
+	for _, c := range candsDLDSS {
+		if c == "1dldss00559" {
+			found1 = true
+			break
+		}
+	}
+	if !found1 {
+		t.Errorf("expected 1dldss00559 in candidates for DLDSS-559, got %v", candsDLDSS)
+	}
+}
+

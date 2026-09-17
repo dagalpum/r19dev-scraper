@@ -69,6 +69,16 @@ func RunCLI(ctx context.Context, cfg Config) (*Summary, error) {
 			} else {
 				fmt.Printf("[%s] 🔄 %s\n", timeStr, e.Message)
 			}
+		case EventAuditStart:
+			fmt.Printf("[%s] 🩺 %s\n", timeStr, e.Message)
+		case EventAuditProgress:
+			if e.Current <= 5 || e.Current%25 == 0 || e.Current == e.Total || strings.Contains(e.Message, "Auto-healing") {
+				fmt.Printf("[%s] %s\n", timeStr, e.Message)
+			}
+		case EventAuditHealed:
+			fmt.Printf("[%s] %s\n", timeStr, e.Message)
+		case EventAuditDone:
+			fmt.Printf("[%s] 🏁 %s\n", timeStr, e.Message)
 		case EventCleanArchive:
 			fmt.Printf("[%s] 🧹 %s\n", timeStr, e.Message)
 		case EventDone:

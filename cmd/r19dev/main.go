@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagalp/r19dev-scraper/pkg/actress"
+	"github.com/dagalp/r19dev-scraper/pkg/audit"
 	"github.com/dagalp/r19dev-scraper/pkg/cache"
 	"github.com/dagalp/r19dev-scraper/pkg/db"
 	"github.com/dagalp/r19dev-scraper/pkg/matcher"
@@ -106,6 +107,9 @@ func main() {
 
 	case "migrate":
 		runMigrate(args[1:])
+
+	case "audit", "doctor", "inspect":
+		runAudit(args[1:])
 
 	case "upgrade-html":
 		runUpgradeHTML(args[1:])
@@ -458,7 +462,7 @@ func runOrganize(args []string) {
 
 func runMigrate(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html]")
+		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html] [--audit | -a]")
 		os.Exit(1)
 	}
 
@@ -468,6 +472,8 @@ func runMigrate(args []string) {
 	autoConfirm := false
 	noTUI := false
 	updateExisting := false
+	auditAfter := false
+	autoHeal := true
 
 	for i := 1; i < len(args); i++ {
 		a := args[i]
@@ -481,6 +487,11 @@ func runMigrate(args []string) {
 			updateExisting = true
 		} else if a == "--no-update-html" {
 			updateExisting = false
+		} else if a == "--audit" || a == "-a" || a == "--heal" {
+			auditAfter = true
+			autoHeal = true
+		} else if a == "--no-audit" {
+			auditAfter = false
 		} else if !strings.HasPrefix(a, "-") && destRoot == "/Volumes/home/BT/organized" && i == 1 {
 			destRoot = a
 		}
@@ -503,6 +514,8 @@ func runMigrate(args []string) {
 		DryRun:         dryRun,
 		AutoConfirm:    autoConfirm,
 		UpdateExisting: updateExisting,
+		AuditAfter:     auditAfter,
+		AutoHeal:       autoHeal,
 		NoTUI:          noTUI,
 	}
 
@@ -528,6 +541,11 @@ func runMigrate(args []string) {
 			fmt.Println("🏁 MIGRATION COMPLETE SUMMARY:")
 			fmt.Printf("   ✅ Successfully Organized: %d movies\n", summary.OrganizedCount)
 			fmt.Printf("   🔄 Updated Existing HTML: %d files\n", summary.UpdatedHTMLNum)
+			if summary.AuditedCount > 0 {
+				fmt.Printf("   🩺 Quality Audited: %d folders\n", summary.AuditedCount)
+				fmt.Printf("   ✨ Auto-Healed Assets: %d movies\n", summary.HealedCount)
+				fmt.Printf("   💯 Verified Complete: %d/%d movies\n", summary.AuditCompleteCount, summary.AuditedCount)
+			}
 		}
 		fmt.Printf("   ℹ️  Duplicates Handled: %d\n", summary.DuplicateCount)
 		fmt.Printf("   ⚠️  Skipped Files: %d\n", summary.SkippedCount)
@@ -616,6 +634,40 @@ func runBackup(args []string) {
 	fmt.Printf("✨ Backup successful! Saved to %s (%.2f MB) in %s\n", absDest, sizeMB, time.Since(t0).Round(time.Millisecond))
 }
 
+func runAudit(args []string) {
+	targetDir := "/Volumes/home/BT/organized"
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		targetDir = args[0]
+	}
+
+	absTarget, err := filepath.Abs(targetDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error resolving target path: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Smart bidirectional fallback: Auto-resolve between /Volumes/home and /Volumes/homes/plagad
+	if _, err := os.Stat(absTarget); err != nil {
+		if strings.HasPrefix(absTarget, "/Volumes/homes/plagad/") {
+			alt := strings.Replace(absTarget, "/Volumes/homes/plagad/", "/Volumes/home/", 1)
+			if _, aErr := os.Stat(alt); aErr == nil {
+				absTarget = alt
+			}
+		} else if strings.HasPrefix(absTarget, "/Volumes/home/") {
+			alt := strings.Replace(absTarget, "/Volumes/home/", "/Volumes/homes/plagad/", 1)
+			if _, aErr := os.Stat(alt); aErr == nil {
+				absTarget = alt
+			}
+		}
+	}
+
+	d, _ := db.Default()
+	if err := audit.RunAuditTUI(absTarget, d); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Audit error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runFilters(args []string) {
 	subCmd := "show"
 	if len(args) > 0 {
@@ -701,11 +753,12 @@ Usage:
                               - Downloads High-Res poster.jpg & fanart.jpg
                               - Downloads Sample screenshots into extrafanart/
 
-  r19dev migrate <src> [dest] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html]
+  r19dev migrate <src> [dest] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html] [--audit | -a]
                               Fast batch migration & reorganization using local dump DB
                               - Interactive TUI progress bar with live stats & activity log
                               - Reuses local assets (poster, fanart, extrafanart/) instantly
                               - Generates Jellyfin NFO and Cinematic movie.html for new items
+                              - Use --audit (or -a) to run deep quality audit & auto-heal missing assets
                               - Use --upgrade-all-html to also upgrade existing library items
 
   r19dev filters [cmd]        Manage promotional & omnibus exclusion rules:
@@ -714,6 +767,12 @@ Usage:
                                 path                    Print path to filters.json
                                 purge                   Purge unowned titles matching filter rules
                                 reset                   Reset filters.json to factory defaults
+
+  r19dev audit [path]         Interactive TUI Auditor & Doctor to inspect movie folder completeness
+                              (Checklist: Video, .nfo, movie.html, poster.jpg, fanart.jpg, screenshots)
+                              - Interactive quick fix: press [f] to repair & download missing assets
+                              - Batch fix: press [F] to repair all incomplete movies
+                              - Aliases: 'doctor', 'inspect'
 
   r19dev upgrade-html [path]  Concurrently upgrade all movie.html to Cinematic template
   r19dev backup [path]        Create crash-consistent SQLite backup snapshot (default: NAS)

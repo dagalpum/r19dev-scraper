@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
@@ -19,6 +21,17 @@ var (
 	dmmSampleRegex = regexp.MustCompile(`([a-z0-9]+)-([0-9]+)\.jpg$`)
 	// Regex matching DMM cover thumbnails like /cawb00006ps.jpg
 	dmmCoverRegex = regexp.MustCompile(`([a-z0-9]+)ps\.jpg$`)
+
+	// Shared HTTP client with connection reuse & pooling for fast asset downloads
+	defaultAssetHTTPClient = &http.Client{
+		Timeout: 20 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 30,
+			IdleConnTimeout:     90 * time.Second,
+			DisableCompression: false,
+		},
+	}
 )
 
 // UpgradeDMMImageURL converts low-res DMM thumbnail URLs to their Full HD counterparts.
@@ -70,15 +83,14 @@ func DownloadAsset(ctx context.Context, imageURL, destPath string) error {
 	req.Header.Set("User-Agent", scraper.DefaultUA)
 	req.Header.Set("Referer", "https://r18.dev/")
 
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := defaultAssetHTTPClient.Do(req)
 	if err != nil {
 		// Fallback to original URL if upgraded URL failed
 		if upgradedURL != imageURL {
 			reqOrig, oErr := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 			if oErr == nil {
 				reqOrig.Header.Set("User-Agent", scraper.DefaultUA)
-				resp, err = client.Do(reqOrig)
+				resp, err = defaultAssetHTTPClient.Do(reqOrig)
 			}
 		}
 		if err != nil {
@@ -137,18 +149,34 @@ func DownloadAllAssetsWithProgress(ctx context.Context, movie *scraper.Movie, mo
 		_ = DownloadAsset(ctx, posterURL, fanartPath)
 	}
 
-	// 2. Download Sample Screenshots into extrafanart/
+	// 2. Download Sample Screenshots concurrently into extrafanart/
 	totalScreenshots := len(movie.SampleScreenshots)
 	if totalScreenshots > 0 {
 		extraDir := filepath.Join(movieDir, "extrafanart")
 		if err := os.MkdirAll(extraDir, 0o755); err == nil {
+			sem := make(chan struct{}, 5)
+			var wg sync.WaitGroup
+			var downloadedCount int32
+
 			for i, rawURL := range movie.SampleScreenshots {
-				if reporter != nil {
-					reporter("download_screenshot", i+1, totalScreenshots, fmt.Sprintf("กำลังดาวน์โหลดภาพตัวอย่าง Screenshot (%d/%d)...", i+1, totalScreenshots))
-				}
-				sampleFile := filepath.Join(extraDir, fmt.Sprintf("fanart%d.jpg", i+1))
-				_ = DownloadAsset(ctx, rawURL, sampleFile)
+				idx := i + 1
+				url := rawURL
+				sampleFile := filepath.Join(extraDir, fmt.Sprintf("fanart%d.jpg", idx))
+
+				wg.Add(1)
+				go func(idx int, u, dest string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+
+					_ = DownloadAsset(ctx, u, dest)
+					done := atomic.AddInt32(&downloadedCount, 1)
+					if reporter != nil {
+						reporter("download_screenshot", int(done), totalScreenshots, fmt.Sprintf("กำลังดาวน์โหลดภาพตัวอย่าง Screenshot (%d/%d)...", int(done), totalScreenshots))
+					}
+				}(idx, url, sampleFile)
 			}
+			wg.Wait()
 		}
 	}
 

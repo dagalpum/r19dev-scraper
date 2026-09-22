@@ -169,6 +169,9 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/torrents/download", s.handleTorrentDownload)
 	mux.HandleFunc("/api/torrents/queue", s.handleDownloadQueue)
 	mux.HandleFunc("/api/torrents/queue/delete", s.handleDownloadQueueDelete)
+	mux.HandleFunc("/api/torrents/queue/organize", s.handleTorrentOrganizeItem)
+	mux.HandleFunc("/api/webhook/download-complete", s.handleDownloadWebhook)
+	mux.HandleFunc("/api/torrents/webhook", s.handleDownloadWebhook)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/settings/test-transmission", s.handleTestTransmission)
 
@@ -179,13 +182,19 @@ func (s *Server) Handler() (http.Handler, error) {
 		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#a855f7"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>`))
 	})
 
-	// Static Files from Embedded FS
-	subFS, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load embedded static filesystem: %w", err)
+	// Static Files: Live local static directory in development, embedded FS in production
+	var staticFiles http.FileSystem
+	if info, err := os.Stat("pkg/web/static/index.html"); err == nil && !info.IsDir() {
+		staticFiles = http.Dir("pkg/web/static")
+	} else {
+		subFS, err := fs.Sub(staticFS, "static")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load embedded static filesystem: %w", err)
+		}
+		staticFiles = http.FS(subFS)
 	}
 
-	fileServer := http.FileServer(http.FS(subFS))
+	fileServer := http.FileServer(staticFiles)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		if strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css") || p == "/" || strings.HasSuffix(p, ".html") {
@@ -2064,6 +2073,21 @@ func (s *Server) handleFiltersPurge(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// normalizeTransmissionDir translates macOS volume paths (/Volumes/homes/... or /Volumes/home/...)
+// to native Synology NAS paths (/volume1/homes/... or /volume1/home/...) and cleans slashes.
+func normalizeTransmissionDir(dir string) string {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return ""
+	}
+	dir = strings.ReplaceAll(dir, "\\", "/")
+	if strings.HasPrefix(dir, "/Volumes/") {
+		trimmed := strings.TrimPrefix(dir, "/Volumes/")
+		return "/volume1/" + trimmed
+	}
+	return dir
+}
+
 // --- Torrent & Transmission Handlers ---
 
 func (s *Server) getTransmissionClient() *torrent.TransmissionClient {
@@ -2081,7 +2105,7 @@ func (s *Server) reloadTorrentClients() {
 	transURL := s.db.GetSetting("transmission_url", "http://192.168.1.189:9091")
 	transUser := s.db.GetSetting("transmission_username", "")
 	transPass := s.db.GetSetting("transmission_password", "")
-	transDir := s.db.GetSetting("transmission_download_dir", "")
+	transDir := normalizeTransmissionDir(s.db.GetSetting("transmission_download_dir", ""))
 	sukebeiURL := s.db.GetSetting("sukebei_url", torrent.DefaultSukebeiBaseURL)
 
 	s.sukebeiClient = torrent.NewSukebeiClient(sukebeiURL)
@@ -2111,12 +2135,9 @@ func (s *Server) handleTorrentSearch(w http.ResponseWriter, r *http.Request) {
 	searchRes, err := sClient.Search(ctx, query)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"query":   query,
-			"total":   0,
-			"items":   []torrent.TorrentItem{},
-			"error":   err.Error(),
+			"error": fmt.Sprintf("sukebei search failed: %v", err),
 		})
 		return
 	}
@@ -2137,6 +2158,8 @@ type torrentDownloadReq struct {
 	MagnetURL     string `json:"magnet_url"`
 	FileSizeBytes int64  `json:"file_size_bytes"`
 	QualityTag    string `json:"quality_tag"`
+	DownloadDir   string `json:"download_dir"`
+	Force         bool   `json:"force"`
 }
 
 func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
@@ -2160,6 +2183,43 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Deduplication check: prevent accidental duplicate downloads
+	if s.db != nil && !req.Force {
+		existingItems, qErr := s.db.GetDownloadQueue()
+		if qErr == nil {
+			for _, it := range existingItems {
+				// Exact hash duplicate
+				if req.TorrentHash != "" && strings.EqualFold(it.TorrentHash, req.TorrentHash) {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"error":    "already_downloading",
+						"code":     "duplicate_hash",
+						"queue_id": it.ID,
+						"movie_id": it.MovieID,
+						"status":   it.Status,
+						"message":  fmt.Sprintf("This torrent is already in queue (%s: %.1f%%)", it.Status, it.ProgressPct),
+					})
+					return
+				}
+				// Movie ID active duplicate
+				if req.MovieID != "" && strings.EqualFold(it.MovieID, req.MovieID) && (it.Status == "downloading" || it.Status == "queued" || it.Status == "staging") {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"error":    "already_downloading",
+						"code":     "duplicate_movie",
+						"queue_id": it.ID,
+						"movie_id": it.MovieID,
+						"status":   it.Status,
+						"message":  fmt.Sprintf("Movie %s is already in queue with status '%s' (%.1f%%)", it.MovieID, it.Status, it.ProgressPct),
+					})
+					return
+				}
+			}
+		}
+	}
+
 	tClient := s.getTransmissionClient()
 	if tClient == nil {
 		http.Error(w, `{"error": "transmission client not configured"}`, http.StatusInternalServerError)
@@ -2169,7 +2229,8 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	tID, hash, _, err := tClient.AddTorrent(ctx, link, "")
+	customDir := normalizeTransmissionDir(req.DownloadDir)
+	tID, hash, _, err := tClient.AddTorrent(ctx, link, customDir)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
@@ -2232,7 +2293,7 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 
 	// Try to query Transmission for real-time progress update
 	tClient := s.getTransmissionClient()
-	if tClient != nil && len(items) > 0 {
+	if tClient != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
 
@@ -2267,6 +2328,15 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 						// Torrent download completed on NAS -> Staging for migration/organization
 						if status == "downloading" || status == "queued" {
 							status = "staging"
+							if s.db != nil && s.db.GetSetting("auto_organize_completed", "false") == "true" {
+								itemCopy := *item
+								matchedCopy := *matched
+								go func() {
+									bgCtx, bgCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+									defer bgCancel()
+									_, _ = s.organizeQueueItem(bgCtx, &itemCopy, &matchedCopy)
+								}()
+							}
 						}
 					} else if matched.Status == 4 { // downloading
 						status = "downloading"
@@ -2287,6 +2357,46 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 						_ = s.db.UpdateDownloadQueueTransmission(item.ID, matched.ID, matched.HashString)
 					}
 					_ = s.db.UpdateDownloadQueueStatus(item.ID, status, progPct, speed, eta, errMsg)
+				}
+			}
+
+			// Auto-discover active torrents in Transmission that are not yet tracked in SQLite queue
+			if s.matcher != nil {
+				for _, t := range torrents {
+					alreadyTracked := false
+					for _, it := range items {
+						if it.TransmissionID == t.ID || (it.TorrentHash != "" && strings.EqualFold(it.TorrentHash, t.HashString)) {
+							alreadyTracked = true
+							break
+						}
+					}
+					if alreadyTracked {
+						continue
+					}
+
+					matches := s.matcher.Match([]scanner.FileInfo{{Name: t.Name}})
+					if len(matches) > 0 && matches[0].ID != "" {
+						discoveredStatus := "downloading"
+						if t.PercentDone >= 1.0 || t.IsFinished || t.Status == 6 {
+							discoveredStatus = "staging"
+						}
+						discoveredItem := db.DownloadQueueRecord{
+							ID:             -t.ID,
+							MovieID:        matches[0].ID,
+							TorrentTitle:   t.Name,
+							TorrentHash:    t.HashString,
+							TransmissionID: t.ID,
+							ProgressPct:    t.PercentDone * 100.0,
+							DownloadSpeed:  t.RateDownload,
+							ETASeconds:     t.ETA,
+							FileSizeBytes:  t.TotalSize,
+							Status:         discoveredStatus,
+							ErrorMessage:   t.ErrorString,
+							CreatedAt:      time.Now(),
+							UpdatedAt:      time.Now(),
+						}
+						items = append(items, discoveredItem)
+					}
 				}
 			}
 		}
@@ -2344,6 +2454,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"transmission_password":     "",
 			"transmission_download_dir": "",
 			"sukebei_url":               torrent.DefaultSukebeiBaseURL,
+			"auto_organize_completed":   "false",
 		}
 
 		if s.db != nil {
@@ -2369,6 +2480,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 		if s.db != nil {
 			for k, v := range req {
+				if k == "transmission_download_dir" {
+					v = normalizeTransmissionDir(v)
+				}
 				_ = s.db.SetSetting(k, v)
 			}
 		}
@@ -2434,6 +2548,368 @@ func (s *Server) handleTestTransmission(w http.ResponseWriter, r *http.Request) 
 		"success":      true,
 		"version":      version,
 		"download_dir": downloadDir,
+	})
+}
+
+// organizeQueueItem processes and moves a downloaded movie from Transmission/Staging into the organized library.
+func (s *Server) organizeQueueItem(ctx context.Context, item *db.DownloadQueueRecord, t *torrent.TransmissionTorrent) (*organizer.OrganizeResult, error) {
+	if item == nil {
+		return nil, fmt.Errorf("queue item is nil")
+	}
+
+	movieID := strings.ToUpper(strings.TrimSpace(item.MovieID))
+	if movieID == "" {
+		return nil, fmt.Errorf("movie_id is empty")
+	}
+
+	// 1. Determine candidate source file/dir
+	var candidatePaths []string
+	if t != nil && t.DownloadDir != "" {
+		candidatePaths = append(candidatePaths, filepath.Join(t.DownloadDir, t.Name))
+	}
+	if item.DownloadPath != "" {
+		candidatePaths = append(candidatePaths, item.DownloadPath)
+	}
+
+	var transDownDir string
+	if s.db != nil {
+		transDownDir = s.db.GetSetting("transmission_download_dir", "")
+	}
+	if transDownDir != "" {
+		if item.TorrentTitle != "" {
+			candidatePaths = append(candidatePaths, filepath.Join(transDownDir, item.TorrentTitle))
+		}
+		candidatePaths = append(candidatePaths, filepath.Join(transDownDir, movieID))
+	}
+	if s.targetDir != "" {
+		if item.TorrentTitle != "" {
+			candidatePaths = append(candidatePaths, filepath.Join(s.targetDir, item.TorrentTitle))
+		}
+		candidatePaths = append(candidatePaths, filepath.Join(s.targetDir, movieID))
+	}
+
+	var foundPath string
+	for _, p := range candidatePaths {
+		if p == "" {
+			continue
+		}
+		resolved := resolvePathToExisting(p, s.targetDir)
+		if _, err := os.Stat(resolved); err == nil {
+			foundPath = resolved
+			break
+		}
+	}
+
+	if foundPath == "" {
+		return nil, fmt.Errorf("could not find downloaded file on disk for %s (checked: %v)", movieID, candidatePaths)
+	}
+
+	// 2. Discover video file(s)
+	fi, err := os.Stat(foundPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat error for %s: %w", foundPath, err)
+	}
+
+	var match matcher.MatchResult
+	if !fi.IsDir() {
+		fInfo := scanner.FileInfo{
+			Path: foundPath,
+			Name: filepath.Base(foundPath),
+			Size: fi.Size(),
+		}
+		matches := s.matcher.Match([]scanner.FileInfo{fInfo})
+		if len(matches) > 0 && matches[0].ID != "" {
+			match = matches[0]
+		} else {
+			match = matcher.MatchResult{
+				ID:   movieID,
+				File: fInfo,
+			}
+		}
+	} else {
+		scanRes, sErr := s.scanner.Scan(foundPath)
+		if sErr != nil {
+			return nil, fmt.Errorf("scanner error for %s: %w", foundPath, sErr)
+		}
+		matches := s.matcher.Match(scanRes.Files)
+		var matchedForID *matcher.MatchResult
+		for i := range matches {
+			if strings.EqualFold(matches[i].ID, movieID) {
+				matchedForID = &matches[i]
+				break
+			}
+		}
+		if matchedForID != nil {
+			match = *matchedForID
+		} else if len(matches) > 0 {
+			match = matches[0]
+		} else if len(scanRes.Files) > 0 {
+			match = matcher.MatchResult{
+				ID:   movieID,
+				File: scanRes.Files[0],
+			}
+		} else {
+			return nil, fmt.Errorf("no video files found in directory %s", foundPath)
+		}
+	}
+
+	// 3. Scrape metadata
+	movie, scErr := s.scraperClient.Scrape(ctx, match.ID)
+	if scErr != nil || movie == nil {
+		return nil, fmt.Errorf("failed to scrape metadata for %s: %v", match.ID, scErr)
+	}
+
+	var uState *db.UserState
+	if s.db != nil {
+		uState, _ = s.db.GetUserState(match.ID)
+	}
+
+	destDir := defaultOrganizedDir(s.targetDir)
+	res, orgErr := organizer.OrganizeMatch(ctx, &match, movie, uState, destDir, false)
+	if orgErr != nil {
+		return nil, fmt.Errorf("organize error: %w", orgErr)
+	}
+	if res == nil || !res.Success {
+		errMsg := "unknown organize error"
+		if res != nil && res.Error != "" {
+			errMsg = res.Error
+		}
+		return nil, fmt.Errorf("organize failed: %s", errMsg)
+	}
+
+	// 4. Update database
+	if s.db != nil {
+		_ = s.db.SetOrganized(match.ID, res.TargetFolder, res.TargetVideo)
+		_ = s.db.UpdateDownloadQueueStatus(item.ID, "organized", 100.0, 0, 0, "")
+		_ = s.db.BackupTo(filepath.Join(destDir, ".r19dev_backup.db"))
+	}
+
+	return res, nil
+}
+
+func (s *Server) handleTorrentOrganizeItem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID int `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "invalid json: %v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	if s.db == nil {
+		http.Error(w, `{"error": "database not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	items, err := s.db.GetDownloadQueue()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "failed to read queue: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	var targetItem *db.DownloadQueueRecord
+	for i := range items {
+		if items[i].ID == req.ID {
+			targetItem = &items[i]
+			break
+		}
+	}
+	if targetItem == nil {
+		http.Error(w, `{"error": "queue item not found"}`, http.StatusNotFound)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	var matchedTorrent *torrent.TransmissionTorrent
+	tClient := s.getTransmissionClient()
+	if tClient != nil && targetItem.TransmissionID > 0 {
+		torrents, _ := tClient.GetTorrents(ctx)
+		for _, t := range torrents {
+			if t.ID == targetItem.TransmissionID || (targetItem.TorrentHash != "" && strings.EqualFold(t.HashString, targetItem.TorrentHash)) {
+				matchedTorrent = &t
+				break
+			}
+		}
+	}
+
+	res, orgErr := s.organizeQueueItem(ctx, targetItem, matchedTorrent)
+	if orgErr != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": orgErr.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"message": "Movie organized successfully",
+		"result":  res,
+	})
+}
+
+func (s *Server) handleDownloadWebhook(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var (
+		torrentID    int
+		torrentHash  string
+		torrentName  string
+		downloadDir  string
+		autoOrganize bool
+	)
+
+	if r.Method == http.MethodPost && strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var req struct {
+			TorrentID    int    `json:"torrent_id"`
+			ID           int    `json:"id"`
+			TorrentHash  string `json:"torrent_hash"`
+			Hash         string `json:"hash"`
+			TorrentName  string `json:"torrent_name"`
+			Name         string `json:"name"`
+			DownloadDir  string `json:"download_dir"`
+			Dir          string `json:"dir"`
+			AutoOrganize bool   `json:"auto_organize"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if req.TorrentID > 0 {
+				torrentID = req.TorrentID
+			} else {
+				torrentID = req.ID
+			}
+			if req.TorrentHash != "" {
+				torrentHash = req.TorrentHash
+			} else {
+				torrentHash = req.Hash
+			}
+			if req.TorrentName != "" {
+				torrentName = req.TorrentName
+			} else {
+				torrentName = req.Name
+			}
+			if req.DownloadDir != "" {
+				downloadDir = req.DownloadDir
+			} else {
+				downloadDir = req.Dir
+			}
+			autoOrganize = req.AutoOrganize
+		}
+	} else {
+		_ = r.ParseForm()
+		if idStr := r.FormValue("id"); idStr != "" {
+			torrentID, _ = strconv.Atoi(idStr)
+		} else if idStr := r.FormValue("torrent_id"); idStr != "" {
+			torrentID, _ = strconv.Atoi(idStr)
+		}
+		if h := r.FormValue("hash"); h != "" {
+			torrentHash = h
+		} else if h := r.FormValue("torrent_hash"); h != "" {
+			torrentHash = h
+		}
+		if n := r.FormValue("name"); n != "" {
+			torrentName = n
+		} else if n := r.FormValue("torrent_name"); n != "" {
+			torrentName = n
+		}
+		if d := r.FormValue("dir"); d != "" {
+			downloadDir = d
+		} else if d := r.FormValue("download_dir"); d != "" {
+			downloadDir = d
+		}
+		if ao := r.FormValue("auto_organize"); ao == "1" || ao == "true" {
+			autoOrganize = true
+		}
+	}
+
+	if s.db == nil {
+		http.Error(w, `{"error": "database not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	items, _ := s.db.GetDownloadQueue()
+	var matchedItem *db.DownloadQueueRecord
+	for i := range items {
+		it := &items[i]
+		if torrentID > 0 && it.TransmissionID == torrentID {
+			matchedItem = it
+			break
+		}
+		if torrentHash != "" && strings.EqualFold(it.TorrentHash, torrentHash) {
+			matchedItem = it
+			break
+		}
+		if torrentName != "" && strings.EqualFold(it.TorrentTitle, torrentName) {
+			matchedItem = it
+			break
+		}
+	}
+
+	if matchedItem == nil && torrentName != "" {
+		mc, _ := matcher.New(matcher.DefaultConfig())
+		fileInfo := scanner.FileInfo{Path: torrentName, Name: torrentName}
+		matches := mc.Match([]scanner.FileInfo{fileInfo})
+		if len(matches) > 0 && matches[0].ID != "" {
+			for i := range items {
+				if strings.EqualFold(items[i].MovieID, matches[0].ID) {
+					matchedItem = &items[i]
+					break
+				}
+			}
+		}
+	}
+
+	if matchedItem != nil {
+		_ = s.db.UpdateDownloadQueueStatus(matchedItem.ID, "staging", 100.0, 0, 0, "")
+		if downloadDir != "" && matchedItem.DownloadPath == "" {
+			matchedItem.DownloadPath = filepath.Join(downloadDir, torrentName)
+		}
+	}
+
+	shouldAuto := autoOrganize || (s.db.GetSetting("auto_organize_completed", "false") == "true")
+	var organizedResult *organizer.OrganizeResult
+	var orgError string
+
+	if shouldAuto && matchedItem != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		var mt *torrent.TransmissionTorrent
+		if downloadDir != "" {
+			mt = &torrent.TransmissionTorrent{
+				ID:          matchedItem.TransmissionID,
+				Name:        torrentName,
+				DownloadDir: downloadDir,
+			}
+		}
+		res, err := s.organizeQueueItem(ctx, matchedItem, mt)
+		if err != nil {
+			orgError = err.Error()
+		} else {
+			organizedResult = res
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success":         true,
+		"message":         "Webhook processed",
+		"matched":         matchedItem != nil,
+		"status":          "staging",
+		"auto_organize":   shouldAuto,
+		"organized":       organizedResult != nil,
+		"organize_error":  orgError,
+		"organize_result": organizedResult,
 	})
 }
 

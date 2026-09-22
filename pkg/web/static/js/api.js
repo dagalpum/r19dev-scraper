@@ -657,3 +657,128 @@ export async function playMovie(id, filePath = '', e) {
   }
 }
 
+// =========================================================================
+// Torrent & Transmission Integration APIs
+// =========================================================================
+
+export async function searchTorrents(query) {
+  if (!query) return { items: [], total: 0 };
+  try {
+    const res = await fetch(`/api/torrents/search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    return await res.json();
+  } catch (err) {
+    console.error('Torrent search error:', err);
+    throw err;
+  }
+}
+
+export async function downloadTorrent(payload) {
+  try {
+    const res = await fetch('/api/torrents/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    showToast('⬇️ Added torrent to Transmission download queue!', 'success');
+    return data;
+  } catch (err) {
+    showToast(`Download failed: ${err.message}`, 'danger');
+    throw err;
+  }
+}
+
+export async function fetchDownloadQueue() {
+  try {
+    const res = await fetch('/api/torrents/queue');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('Fetch queue error:', err);
+    return [];
+  }
+}
+
+export async function deleteQueueItem(id, deleteFromTransmission = false) {
+  try {
+    const res = await fetch('/api/torrents/queue/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, delete_from_transmission: deleteFromTransmission })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    showToast('Removed from download queue', 'info');
+    return data;
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`, 'danger');
+    throw err;
+  }
+}
+
+export async function organizeQueueItem(id) {
+  try {
+    showToast('⚡ Organizing downloaded movie into library...', 'info');
+    const res = await fetch('/api/torrents/queue/organize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    showToast(`✅ Organized into library: ${data.result?.target_folder || 'Library'}`, 'success');
+    return data;
+  } catch (err) {
+    showToast(`Organize failed: ${err.message}`, 'danger');
+    throw err;
+  }
+}
+
+export async function fetchSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error('Fetch settings error:', err);
+    return {};
+  }
+}
+
+export async function saveSettings(settingsMap) {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settingsMap)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    showToast('Studio settings saved successfully!', 'success');
+    return data;
+  } catch (err) {
+    showToast(`Save settings failed: ${err.message}`, 'danger');
+    throw err;
+  }
+}
+
+export async function testTransmissionConnection(config = {}) {
+  try {
+    const res = await fetch('/api/settings/test-transmission', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+

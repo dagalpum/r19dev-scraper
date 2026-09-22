@@ -687,6 +687,9 @@ export function renderMoviesGrid() {
     return 0;
   });
 
+  // Track currently active list of Movie IDs for Next/Back modal navigation
+  state.currentMovieNavigationList = list.map(m => m.id).filter(Boolean);
+
   elements.moviesGrid.innerHTML = '';
   elements.libraryEmpty.classList.toggle('hidden', list.length > 0);
 

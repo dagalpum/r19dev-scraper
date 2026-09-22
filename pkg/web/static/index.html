@@ -68,6 +68,14 @@
           <span class="material-symbols-outlined dir-icon" aria-hidden="true">folder</span>
           <span class="dir-name" id="label-active-dir">/</span>
         </div>
+        <button id="btn-nav-downloads" class="btn btn-secondary btn-icon" title="View Downloads &amp; Staging Queue" aria-label="View Downloads Queue" onclick="window.app.openDownloadsDrawer()">
+          <span class="material-symbols-outlined icon" aria-hidden="true">download</span>
+          <span>Downloads</span>
+          <span class="badge-count" id="count-downloads" aria-label="Active downloads count">0</span>
+        </button>
+        <button id="btn-nav-settings" class="btn btn-secondary btn-icon btn-icon-only" title="Settings &amp; Transmission Config" aria-label="Settings" onclick="window.app.openSettingsModal()">
+          <span class="material-symbols-outlined icon" aria-hidden="true">settings</span>
+        </button>
         <button id="btn-nav-organize" class="btn btn-secondary btn-icon" title="Open NAS Organizer Drawer" aria-label="Open NAS Organizer Drawer" onclick="window.app.openOrganizerDrawer()">
           <span class="material-symbols-outlined icon" aria-hidden="true">folder_managed</span> Organize
         </button>
@@ -409,6 +417,50 @@
       </div>
     </aside>
 
+    <!-- DOWNLOADS & STAGING QUEUE DRAWER -->
+    <div id="drawer-downloads-backdrop" class="drawer-backdrop hidden" onclick="window.app.closeDownloadsDrawer()"></div>
+    <aside id="drawer-downloads" class="drawer drawer-downloads hidden" role="region" aria-label="Downloads &amp; Staging Queue">
+      <div class="drawer-header">
+        <div class="drawer-header-title">
+          <span class="material-symbols-outlined icon" style="font-size: 1.5rem; color: var(--accent);">download</span>
+          <div>
+            <h2 class="drawer-title">Downloads &amp; Staging</h2>
+            <span class="drawer-subtitle">Transmission BitTorrent &amp; Library Ingestion</span>
+          </div>
+        </div>
+        <div class="drawer-actions">
+          <!-- View Mode Toggle: List vs Kanban -->
+          <div class="downloads-view-toggle" role="group" aria-label="Downloads View Mode">
+            <button id="btn-downloads-view-kanban" class="btn-toggle active" title="Kanban Pipeline Board" onclick="window.app.setDownloadsViewMode('kanban')">
+              <span class="material-symbols-outlined icon">view_kanban</span>
+            </button>
+            <button id="btn-downloads-view-list" class="btn-toggle" title="List View" onclick="window.app.setDownloadsViewMode('list')">
+              <span class="material-symbols-outlined icon">view_list</span>
+            </button>
+          </div>
+          <button id="btn-expand-downloads" class="btn-drawer-expand" title="Expand / Collapse Drawer (Wide screen toggle)" onclick="window.app.toggleDownloadsExpand()">
+            <span id="icon-expand-downloads" class="material-symbols-outlined icon">open_in_full</span>
+          </button>
+          <button id="btn-sync-downloads" class="btn btn-sm btn-secondary" title="Sync with Transmission" onclick="window.app.refreshDownloadsQueue()">
+            <span class="material-symbols-outlined icon">sync</span>
+          </button>
+          <button id="btn-open-settings-from-downloads" class="btn btn-sm btn-secondary btn-icon-only" title="Transmission Settings" onclick="window.app.openSettingsModal()">
+            <span class="material-symbols-outlined icon">settings</span>
+          </button>
+          <button id="btn-close-downloads" class="btn-drawer-close" title="Close Drawer (Esc)" onclick="window.app.closeDownloadsDrawer()">
+            <span class="material-symbols-outlined icon">close</span>
+          </button>
+        </div>
+      </div>
+      <div class="drawer-body" id="downloads-queue-body">
+        <div class="downloads-empty" id="downloads-empty">
+          <span class="material-symbols-outlined icon" style="font-size: 2.5rem; color: var(--text-muted);">cloud_download</span>
+          <p style="margin: 0.5rem 0 0.2rem; font-weight: 600; color: #fff;">No active downloads in queue</p>
+          <span class="empty-hint" style="font-size: 0.82rem; color: var(--text-muted);">Search for torrents from any movie details to download via Transmission.</span>
+        </div>
+      </div>
+    </aside>
+
     <!-- SLIDE-OVER PROFILE DRAWER -->
     <div id="drawer-profile-backdrop" class="drawer-backdrop hidden" onclick="window.app.closeActressProfileDrawer()"></div>
     <aside id="drawer-actress-profile" class="drawer-profile hidden" aria-label="Actress Profile & Statistics">
@@ -423,6 +475,14 @@
 
     <!-- MOVIE DETAIL MODAL / INSPECTOR (Full-Width Hero Cover) -->
     <div id="modal-movie" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-movie-title">
+      <!-- Modal Navigation Arrows (Floating on left/right edges) -->
+      <button id="btn-modal-prev" class="modal-nav-arrow modal-nav-prev" onclick="window.app.navigateModalMovie(-1)" title="Previous movie (←)" aria-label="Previous movie">
+        <span class="material-symbols-outlined icon">chevron_left</span>
+      </button>
+      <button id="btn-modal-next" class="modal-nav-arrow modal-nav-next" onclick="window.app.navigateModalMovie(1)" title="Next movie (→)" aria-label="Next movie">
+        <span class="material-symbols-outlined icon">chevron_right</span>
+      </button>
+
       <div class="modal-card">
         <button id="btn-close-modal" class="btn-modal-close" title="Close (Esc)" aria-label="Close dialog" onclick="window.app.closeModal()"><span class="material-symbols-outlined icon">close</span></button>
 
@@ -469,6 +529,85 @@
             </div>
             <pre class="console-log history-console-log" id="history-log-view">Select an operation from the left to view its complete audit log.</pre>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDIO SETTINGS MODAL -->
+    <div id="modal-settings" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="modal-settings-title">
+      <div class="modal-card modal-card-settings">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon"><span class="material-symbols-outlined icon" style="font-size: 1.6rem; color: #38bdf8;">settings</span></span>
+            <div>
+              <h2 id="modal-settings-title" class="modal-title">Studio Settings</h2>
+              <span class="modal-subtitle">Transmission RPC, Sukebei Scraper &amp; Auto-Organize Pipeline</span>
+            </div>
+          </div>
+          <button id="btn-close-settings" class="btn-modal-close" title="Close (Esc)" onclick="window.app.closeSettingsModal()"><span class="material-symbols-outlined icon">close</span></button>
+        </div>
+        <div class="modal-body modal-body-settings">
+          <form id="form-settings" onsubmit="event.preventDefault(); window.app.saveSettingsFromForm();">
+            <!-- Transmission Section -->
+            <div class="settings-section">
+              <h3 class="settings-section-title"><span class="material-symbols-outlined icon">download</span> Transmission BitTorrent Client</h3>
+              <div class="form-grid">
+                <div class="form-group full-width">
+                  <label for="setting-transmission-url">RPC Endpoint URL</label>
+                  <input type="text" id="setting-transmission-url" class="form-input" placeholder="http://192.168.1.189:9091" spellcheck="false" />
+                  <span class="form-hint">URL of your Transmission daemon (include port, e.g. 9091)</span>
+                </div>
+                <div class="form-group">
+                  <label for="setting-transmission-username">Username (Optional)</label>
+                  <input type="text" id="setting-transmission-username" class="form-input" placeholder="transmission" autocomplete="off" />
+                </div>
+                <div class="form-group">
+                  <label for="setting-transmission-password">Password (Optional)</label>
+                  <input type="password" id="setting-transmission-password" class="form-input" placeholder="••••••••" autocomplete="new-password" />
+                </div>
+                <div class="form-group full-width">
+                  <label for="setting-transmission-download-dir">Default Download Directory (Optional)</label>
+                  <input type="text" id="setting-transmission-download-dir" class="form-input" placeholder="/Volumes/home/BT/2026" spellcheck="false" />
+                </div>
+              </div>
+              <div class="settings-test-row">
+                <button type="button" id="btn-test-transmission" class="btn btn-secondary btn-sm" onclick="window.app.testTransmissionConnection()">
+                  <span class="material-symbols-outlined icon">network_check</span> Test Connection
+                </button>
+                <span id="transmission-test-status" class="test-status-pill hidden"></span>
+              </div>
+            </div>
+
+            <!-- Scraper & Torrent Section -->
+            <div class="settings-section">
+              <h3 class="settings-section-title"><span class="material-symbols-outlined icon">search</span> Sukebei / Nyaa Torrent Index</h3>
+              <div class="form-group full-width">
+                <label for="setting-sukebei-url">Sukebei Base URL</label>
+                <input type="text" id="setting-sukebei-url" class="form-input" placeholder="https://sukebei.nyaa.si" spellcheck="false" />
+                <span class="form-hint">Mirror or alternative URL for Sukebei Nyaa RSS queries</span>
+              </div>
+            </div>
+
+            <!-- Auto-Organize Pipeline Section -->
+            <div class="settings-section">
+              <h3 class="settings-section-title"><span class="material-symbols-outlined icon">auto_fix_high</span> Auto-Organize Pipeline</h3>
+              <div class="toggle-setting-item">
+                <div class="toggle-setting-info">
+                  <label for="setting-auto-organize" class="toggle-label">Auto-Organize Completed Downloads</label>
+                  <p class="toggle-desc">Automatically move, rename, scrape metadata, and create NFO/HTML into the organized NAS library immediately when a torrent reaches 100% completion.</p>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="setting-auto-organize" />
+                  <span class="slider round"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-footer">
+              <button type="button" class="btn btn-secondary" onclick="window.app.closeSettingsModal()">Cancel</button>
+              <button type="submit" id="btn-save-settings" class="btn btn-primary"><span class="material-symbols-outlined icon">save</span> Save Settings</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

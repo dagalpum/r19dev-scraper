@@ -71,6 +71,30 @@
   - เพิ่มปุ่ม `▶ Play` ใน Modal ข้อมูลภาพยนตร์บน Web UI สามารถสตรีมดูวิดีโอผ่านเบราว์เซอร์ได้ทันที
   - ดีไซน์สวยงามระดับพรีเมียม เข้ากับธีม Dark Glassmorphism ของ R19DEV Studio
 
+### 9. ระบบค้นหา Torrent และจัดการดาวน์โหลด Transmission บน Web UI
+- [x] **Torrent Discovery & 1-Click Download ใน Movie Detail Modal:**
+  - เพิ่มระบบค้นหา Torrent จาก Sukebei Nyaa แบบอัจฉริยะ (Smart Scoring) แสดง Badge คุณภาพชัดเจน (4K UHD, 1080p, 🔓 Uncensored, 💬 Subtitles, ⭐ Best Match, Seeders/Leechers)
+  - รองรับการค้นหาอัตโนมัติเมื่อเปิดดูข้อมูลหนังที่ขาด (Missing Status) พร้อมปุ่มค้นหาด้วย JAV ID หรือ Title
+  - ปุ่ม 1-Click ส่ง Magnet/Torrent Link เข้าคิว Transmission Daemon ได้ทันที
+- [x] **Downloads & Staging Queue Drawer:**
+  - เพิ่มปุ่ม Downloads พร้อมตัวเลขสถานะงาน (Badge Count) ที่แถบเมนูหลักด้านบน (Navbar)
+  - แผง Drawer แสดงรายการดาวน์โหลดแบบเรียลไทม์: รหัสหนัง, ปก, ชื่อ Torrent, Progress Bar (%), ความเร็วการดาวน์โหลด (Speed), และเวลาที่เหลือ (ETA)
+  - ปุ่มคำสั่งต่อรายการ: จัดระเบียบเข้าคลังทันที (`⚡ Organize Now`), เปิดโฟลเดอร์ใน Finder, และลบออกจากคิว
+  - ระบบ Auto-polling อัปเดตสถานะอัตโนมัติเมื่อมีงานกำลังดาวน์โหลด
+- [x] **Settings Modal:**
+  - ปุ่มตั้งค่า (ไอคอนฟันเฟือง) บน Navbar สำหรับกำหนดค่า Transmission RPC URL, Username, Password, Download Directory และ Sukebei URL
+  - ปุ่ม `🔌 Test Connection` ทดสอบการเชื่อมต่อกับ Transmission พร้อมแสดงผลและเวอร์ชันทันที
+  - สวิตช์เปิด/ปิด `Auto-Organize Completed Downloads`
+
+### 10. ระบบ Auto-Organize Pipeline (Staging ➔ Organized NAS)
+- [x] **On-Demand & Background Staging Organizer (`/api/torrents/queue/organize`):**
+  - ตรวจหาไฟล์วิดีโอที่ดาวน์โหลดเสร็จแล้วใน Staging/Transmission Directory
+  - ดึงข้อมูลอภิพันธุ์ (Metadata) จาก Tier-1 Offline DumpStore และจัดระเบียบไฟล์เข้าโครงสร้าง Jellyfin บน NAS อัตโนมัติ พร้อมสร้าง NFO, ภาพปก, ภาพฉาก และ `movie.html`
+  - บันทึกสถานะเข้า SQLite `download_queue` และ `organized_movies`
+- [x] **Transmission Webhook Receiver (`/api/webhook/download-complete` & `/api/torrents/webhook`):**
+  - รองรับการเรียกจากสคริปต์เมื่อทอร์เรนต์ดาวน์โหลดเสร็จ (`script-torrent-done-filename`) ของ Transmission
+  - ปรับสถานะเป็น `staging` และสั่งจัดระเบียบเข้าคลังโดยอัตโนมัติหากเปิดการตั้งค่า Auto-Organize
+
 ---
 
 ## 📊 สถานะคลังภาพยนตร์ปัจจุบัน (Library Status)

@@ -625,16 +625,28 @@ export function createPosterCardHtml(rel) {
        <div class="poster-fallback-id">${escapeHtml(id)}</div>
      </div>`;
 
-  const statusClass = loc.type === 'library' ? 'in-library' : (loc.type === 'external' ? 'in-external' : (loc.type === 'staging' ? 'in-staging' : 'is-missing'));
+  const isDownloading = loc.type === 'downloading';
+  const isStaging = loc.type === 'staging';
+  const statusClass = loc.type === 'library' ? 'in-library' : (loc.type === 'external' ? 'in-external' : (isStaging ? 'in-staging' : (isDownloading ? 'in-downloading' : 'is-missing')));
 
   return `
     <div class="collection-poster-card ${statusClass}" onclick="window.app.openMovieById('${escapeHtml(id)}')">
       ${imgHtml}
+      ${isDownloading ? `
+        <div class="poster-download-progress-bar" title="Downloading: ${Math.round(loc.progress || 0)}%">
+          <div class="poster-download-progress-fill" style="width: ${Math.max(5, Math.min(100, Math.round(loc.progress || 0)))}%;"></div>
+        </div>
+      ` : ''}
       <div class="poster-info-overlay">
         <div class="poster-badges-row">
           <span class="poster-id-badge ${loc.badgeClass}" title="${escapeHtml(loc.titleText)}">
             <span class="material-symbols-outlined icon" style="font-size: 0.72rem; vertical-align: -1px; margin-right: 2px;">${loc.icon}</span>${escapeHtml(id)}
           </span>
+          ${isDownloading ? `
+            <span class="poster-badge-downloading" title="${escapeHtml(loc.titleText)}">
+              <span class="material-symbols-outlined icon spin-pulse" style="font-size: 0.72rem; vertical-align: -1px; margin-right: 2px;">sync</span>${Math.round(loc.progress || 0)}%
+            </span>
+          ` : ''}
           ${rel.skip_reason ? `<span class="poster-badge-skip-reason">${escapeHtml(rel.skip_reason)}</span>` : ''}
         </div>
         <h4 class="poster-title" title="${escapeHtml(title)}">${escapeHtml(title)}</h4>
@@ -644,9 +656,19 @@ export function createPosterCardHtml(rel) {
         </div>
       </div>
       <div class="poster-hover-actions">
-        <button class="poster-btn-action poster-btn-primary" onclick="event.stopPropagation(); window.app.openMovieById('${escapeHtml(id)}')">
-          <span class="material-symbols-outlined icon">play_arrow</span> Details
-        </button>
+        ${isDownloading ? `
+          <button class="poster-btn-action poster-btn-downloading" onclick="event.stopPropagation(); window.app.openDownloadsDrawer();" title="View active download in queue">
+            <span class="material-symbols-outlined icon">downloading</span> ${Math.round(loc.progress || 0)}%
+          </button>
+        ` : (isStaging ? `
+          <button class="poster-btn-action poster-btn-staging" onclick="event.stopPropagation(); window.app.openDownloadsDrawer();" title="Downloaded to Staging - Click to Organize">
+            <span class="material-symbols-outlined icon">auto_fix_high</span> Staging
+          </button>
+        ` : `
+          <button class="poster-btn-action poster-btn-primary" onclick="event.stopPropagation(); window.app.openMovieById('${escapeHtml(id)}')">
+            <span class="material-symbols-outlined icon">play_arrow</span> Details
+          </button>
+        `)}
         <button class="poster-btn-action poster-btn-secondary" onclick="event.stopPropagation(); window.app.copyMovieId('${escapeHtml(id)}', event)">
           <span class="material-symbols-outlined icon">content_copy</span> Copy ID
         </button>
@@ -1320,13 +1342,16 @@ export function renderActressCollection() {
       ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
       : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
 
-    // Group into In Library vs Missing
+    // Group into In Library vs Downloading vs Missing
     const inLibraryReleases = [];
+    const downloadingReleases = [];
     const missingReleases = [];
     const skippedReleases = activeEntry.skipped_releases || [];
     releases.forEach(rel => {
       const loc = getMovieLocationInfo(rel.movie_id);
-      if (loc.type === 'library' || loc.type === 'external' || loc.type === 'staging' || rel.is_downloaded || Boolean(state.organizedStatus[rel.movie_id])) {
+      if (loc.type === 'downloading' || loc.type === 'staging') {
+        downloadingReleases.push(rel);
+      } else if (loc.type === 'library' || loc.type === 'external' || rel.is_downloaded || Boolean(state.organizedStatus[rel.movie_id])) {
         inLibraryReleases.push(rel);
       } else {
         missingReleases.push(rel);
@@ -1338,6 +1363,8 @@ export function renderActressCollection() {
     let filtered = releases;
     if (subFilter === 'in_library') {
       filtered = inLibraryReleases;
+    } else if (subFilter === 'downloading') {
+      filtered = downloadingReleases;
     } else if (subFilter === 'missing') {
       filtered = missingReleases;
     } else if (subFilter === 'skipped') {
@@ -1376,6 +1403,7 @@ export function renderActressCollection() {
       return 0;
     });
 
+    state.currentMovieNavigationList = filtered.map(m => m.movie_id || m.id).filter(Boolean);
     const cardsHtml = filtered.map(createPosterCardHtml);
 
     const contentHtml = `
@@ -1518,6 +1546,12 @@ export function renderActressCollection() {
                   <button class="stage-pill ${subFilter === 'in_library' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('in_library')">
                     In Library <span class="pill-badge">${dl}</span>
                   </button>
+                  ${downloadingReleases.length > 0 ? `
+                  <button class="stage-pill ${subFilter === 'downloading' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('downloading')">
+                    <span class="material-symbols-outlined icon spin-pulse" style="font-size: 0.85rem; vertical-align: -2px; color: #38bdf8;">downloading</span>
+                    In Queue <span class="pill-badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8;">${downloadingReleases.length}</span>
+                  </button>
+                  ` : ''}
                   <button class="stage-pill ${subFilter === 'missing' ? 'active' : ''}" onclick="window.app.setCollectionSubFilter('missing')">
                     Missing <span class="pill-badge">${missing}</span>
                   </button>
@@ -1677,6 +1711,7 @@ export function renderActiveActressChat(entry) {
 
   const a = entry.actress;
   const releases = [...(entry.releases || [])];
+  state.currentMovieNavigationList = releases.map(r => r.movie_id).filter(Boolean);
   const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
   elements.chatHeaderAvatar.src = avatar;
@@ -1877,11 +1912,24 @@ export function renderAllMoviesCatalogHtml() {
   // Filter list
   let filtered = allMovies;
 
+  const downloadingCount = allMovies.filter(m => {
+    const loc = getMovieLocationInfo(m.id || m.movie_id);
+    return loc.type === 'downloading' || loc.type === 'staging';
+  }).length;
+
   // 1. Status Filter
   if (state.allMoviesFilterStatus === 'library') {
-    filtered = filtered.filter(m => m.organized_folder || m.library_path || m.is_downloaded || state.organizedStatus[m.movie_id]);
+    filtered = filtered.filter(m => m.is_downloaded || (state.organizedFolders && state.organizedFolders[m.movie_id]) || (state.organizedStatus && state.organizedStatus[m.movie_id]));
+  } else if (state.allMoviesFilterStatus === 'downloading') {
+    filtered = filtered.filter(m => {
+      const loc = getMovieLocationInfo(m.id || m.movie_id);
+      return loc.type === 'downloading' || loc.type === 'staging';
+    });
   } else if (state.allMoviesFilterStatus === 'missing') {
-    filtered = filtered.filter(m => !(m.organized_folder || m.library_path || m.is_downloaded || state.organizedStatus[m.movie_id]));
+    filtered = filtered.filter(m => {
+      const loc = getMovieLocationInfo(m.id || m.movie_id);
+      return loc.type === 'missing';
+    });
   } else if (state.allMoviesFilterStatus === 'watched') {
     filtered = filtered.filter(m => !!(m.is_watched || state.userStates?.[m.movie_id]?.is_watched));
   } else if (state.allMoviesFilterStatus === 'favorite') {
@@ -1962,6 +2010,7 @@ export function renderAllMoviesCatalogHtml() {
 
   const pageLimit = state.allMoviesPageLimit || 72;
   const sliced = filtered.slice(0, pageLimit);
+  state.currentMovieNavigationList = filtered.map(m => m.movie_id || m.id).filter(Boolean);
   const cardsHtml = sliced.map(createPosterCardHtml);
 
   return `
@@ -1975,6 +2024,9 @@ export function renderAllMoviesCatalogHtml() {
             </button>
             <button class="status-pill-btn ${state.allMoviesFilterStatus === 'library' ? 'active' : ''}" onclick="window.app.setAllMoviesStatus('library')">
               <span class="material-symbols-outlined icon">check_circle</span> In Library <span class="pill-count">${libraryCount}</span>
+            </button>
+            <button class="status-pill-btn ${state.allMoviesFilterStatus === 'downloading' ? 'active' : ''}" onclick="window.app.setAllMoviesStatus('downloading')">
+              <span class="material-symbols-outlined icon">downloading</span> In Queue <span class="pill-count">${downloadingCount}</span>
             </button>
             <button class="status-pill-btn ${state.allMoviesFilterStatus === 'missing' ? 'active' : ''}" onclick="window.app.setAllMoviesStatus('missing')">
               <span class="material-symbols-outlined icon">schedule</span> Missing <span class="pill-count">${missingCount}</span>

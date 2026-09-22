@@ -44,8 +44,30 @@ import {
   openLightbox,
   closeLightbox,
   watchInBrowser,
-  closeVideoPlayer
+  closeVideoPlayer,
+  toggleModalTorrentSection,
+  searchMovieTorrents,
+  searchMovieTorrentsCustom,
+  triggerTorrentDownload,
+  navigateModalMovie
 } from './modal.js';
+
+import {
+  openDownloadsDrawer,
+  closeDownloadsDrawer,
+  refreshDownloadsQueue,
+  handleOrganizeQueueItem,
+  handleDeleteQueueItem,
+  setDownloadsViewMode,
+  toggleDownloadsExpand,
+  organizeAllStaging,
+  openSettingsModal,
+  closeSettingsModal,
+  loadAndRenderSettings,
+  saveSettingsFromForm,
+  handleTestTransmission,
+  startDownloadPolling
+} from './downloads.js';
 
 import {
   setupDensityControl,
@@ -201,6 +223,14 @@ export function init() {
   // Initial Data Fetch
   try { fetchInitialData(); } catch (e) { console.error('fetchInitialData failed:', e); }
 
+  // Initial Queue Check & Polling
+  try {
+    refreshDownloadsQueue();
+    startDownloadPolling(12000);
+  } catch (e) {
+    console.error('refreshDownloadsQueue failed:', e);
+  }
+
   if (window.lucide) {
     try { window.lucide.createIcons(); } catch (e) {}
   }
@@ -224,6 +254,7 @@ window.app = {
   // Modals
   openMovie: openMovieById,
   closeModal,
+  navigateModalMovie,
   openGallery,
   openLightbox,
   closeLightbox,
@@ -311,7 +342,27 @@ window.app = {
   toggleAutoScroll,
   copyOrganizerLog,
   clearOrganizerLog,
-  resumeAutoScroll
+  resumeAutoScroll,
+
+  // Downloads & Transmission Integration
+  openDownloadsDrawer,
+  closeDownloadsDrawer,
+  refreshDownloadsQueue,
+  handleOrganizeQueueItem,
+  handleDeleteQueueItem,
+  setDownloadsViewMode,
+  toggleDownloadsExpand,
+  organizeAllStaging,
+  openSettingsModal,
+  closeSettingsModal,
+  saveSettingsFromForm,
+  testTransmissionConnection: handleTestTransmission,
+
+  // Torrent Search in Movie Modal
+  toggleModalTorrentSection,
+  searchMovieTorrents,
+  searchMovieTorrentsCustom,
+  triggerTorrentDownload
 };
 
 if (document.readyState === 'loading') {

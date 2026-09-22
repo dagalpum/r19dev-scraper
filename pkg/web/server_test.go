@@ -144,4 +144,47 @@ func TestWebServerEndpoints(t *testing.T) {
 	if wPurge.Code != http.StatusOK || !strings.Contains(wPurge.Body.String(), "purged_count") {
 		t.Errorf("POST /api/filters/purge failed: code %d, body: %s", wPurge.Code, wPurge.Body.String())
 	}
+
+	// 7. Test /api/settings (GET and POST)
+	reqSettings := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	wSettings := httptest.NewRecorder()
+	handler.ServeHTTP(wSettings, reqSettings)
+	if wSettings.Code != http.StatusOK || !strings.Contains(wSettings.Body.String(), "auto_organize_completed") {
+		t.Errorf("GET /api/settings failed: code %d, body: %s", wSettings.Code, wSettings.Body.String())
+	}
+
+	postSettingsBody := bytes.NewBufferString(`{"auto_organize_completed":"true","transmission_url":"http://192.168.1.50:9091"}`)
+	reqPostSettings := httptest.NewRequest(http.MethodPost, "/api/settings", postSettingsBody)
+	wPostSettings := httptest.NewRecorder()
+	handler.ServeHTTP(wPostSettings, reqPostSettings)
+	if wPostSettings.Code != http.StatusOK || !strings.Contains(wPostSettings.Body.String(), "success") {
+		t.Errorf("POST /api/settings failed: code %d, body: %s", wPostSettings.Code, wPostSettings.Body.String())
+	}
+
+	// 8. Test /api/torrents/queue
+	reqQueue := httptest.NewRequest(http.MethodGet, "/api/torrents/queue", nil)
+	wQueue := httptest.NewRecorder()
+	handler.ServeHTTP(wQueue, reqQueue)
+	if wQueue.Code != http.StatusOK {
+		t.Errorf("GET /api/torrents/queue failed: code %d", wQueue.Code)
+	}
+
+	// 9. Test /api/webhook/download-complete
+	webhookBody := bytes.NewBufferString(`{"torrent_id":99,"name":"SNOS-038.mp4","dir":"/tmp","auto_organize":false}`)
+	reqWebhook := httptest.NewRequest(http.MethodPost, "/api/webhook/download-complete", webhookBody)
+	reqWebhook.Header.Set("Content-Type", "application/json")
+	wWebhook := httptest.NewRecorder()
+	handler.ServeHTTP(wWebhook, reqWebhook)
+	if wWebhook.Code != http.StatusOK || !strings.Contains(wWebhook.Body.String(), "Webhook processed") {
+		t.Errorf("POST /api/webhook/download-complete failed: code %d, body: %s", wWebhook.Code, wWebhook.Body.String())
+	}
+
+	// 10. Test /api/torrents/queue/organize with invalid ID
+	orgBody := bytes.NewBufferString(`{"id":99999}`)
+	reqOrg := httptest.NewRequest(http.MethodPost, "/api/torrents/queue/organize", orgBody)
+	wOrg := httptest.NewRecorder()
+	handler.ServeHTTP(wOrg, reqOrg)
+	if wOrg.Code != http.StatusNotFound {
+		t.Errorf("POST /api/torrents/queue/organize expected 404 for nonexistent id, got %d", wOrg.Code)
+	}
 }

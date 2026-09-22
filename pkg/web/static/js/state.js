@@ -47,6 +47,13 @@ export const state = {
   allMoviesSearch: '',
   allMoviesViewDensity: 'grid',
   allMoviesPageLimit: 72,
+  downloadQueue: [],
+  activeDownloadsCount: 0,
+  isDownloadsDrawerOpen: false,
+  isDownloadsDrawerExpanded: false,
+  downloadsViewMode: localStorage.getItem('r19dev_downloads_view') || 'kanban',
+  isSettingsModalOpen: false,
+  currentMovieNavigationList: [], // Array of Movie IDs currently visible in the active list/grid
 };
 
 // Cached DOM Selectors
@@ -58,6 +65,19 @@ export const elements = {
   countCatalog: document.getElementById('count-catalog'),
   labelActiveDir: document.getElementById('label-active-dir'),
   btnRescan: document.getElementById('btn-rescan'),
+
+  // Downloads & Settings
+  btnNavDownloads: document.getElementById('btn-nav-downloads'),
+  countDownloads: document.getElementById('count-downloads'),
+  btnNavSettings: document.getElementById('btn-nav-settings'),
+  drawerDownloads: document.getElementById('drawer-downloads'),
+  drawerDownloadsBackdrop: document.getElementById('drawer-downloads-backdrop'),
+  downloadsQueueBody: document.getElementById('downloads-queue-body'),
+  btnExpandDownloads: document.getElementById('btn-expand-downloads'),
+  iconExpandDownloads: document.getElementById('icon-expand-downloads'),
+  btnDownloadsViewList: document.getElementById('btn-downloads-view-list'),
+  btnDownloadsViewKanban: document.getElementById('btn-downloads-view-kanban'),
+  modalSettings: document.getElementById('modal-settings'),
 
   // Universal Search & Sticky Navigation
   navBreadcrumb: document.getElementById('nav-breadcrumb'),
@@ -178,6 +198,8 @@ export const elements = {
   modalMovie: document.getElementById('modal-movie'),
   modalContent: document.getElementById('modal-content'),
   btnCloseModal: document.getElementById('btn-close-modal'),
+  btnModalPrev: document.getElementById('btn-modal-prev'),
+  btnModalNext: document.getElementById('btn-modal-next'),
   modalHistory: document.getElementById('modal-history'),
   btnCloseHistory: document.getElementById('btn-close-history'),
   btnClearHistory: document.getElementById('btn-clear-history'),
@@ -327,6 +349,56 @@ export function getMovieLocationInfo(movieId, explicitFolder = '', isDownloaded 
     };
   }
 
+  // Check if movie is actively tracked in Transmission download queue
+  const qItem = (state.downloadQueue || []).find(it => it.movie_id && it.movie_id.toUpperCase() === movieId.toUpperCase());
+  if (qItem) {
+    const qStatus = qItem.status || 'downloading';
+    if (qStatus === 'downloading' || qStatus === 'queued') {
+      const pct = Math.round(qItem.progress_pct || 0);
+      return {
+        type: 'downloading',
+        label: qStatus === 'queued' ? 'Queued' : `Downloading ${pct}%`,
+        icon: 'downloading',
+        badgeClass: 'badge-downloading',
+        progress: qItem.progress_pct || 0,
+        speed: qItem.download_speed || 0,
+        eta: qItem.eta_seconds || 0,
+        queueItem: qItem,
+        folderPath: '',
+        destRoot: destRoot,
+        isStandard: false,
+        titleText: `Downloading in Transmission (${pct}%)`,
+        subText: qItem.eta_seconds > 0 ? `Speed: ${formatBytes(qItem.download_speed || 0)}/s • ETA: ${formatETA(qItem.eta_seconds)}` : `Status: ${qStatus.toUpperCase()}`
+      };
+    } else if (qStatus === 'staging') {
+      return {
+        type: 'staging',
+        label: 'Downloaded (Staging)',
+        icon: 'inventory_2',
+        badgeClass: 'badge-staging',
+        progress: 100,
+        queueItem: qItem,
+        folderPath: '',
+        destRoot: destRoot,
+        isStandard: false,
+        titleText: 'Downloaded to Staging (Ready to Organize)',
+        subText: 'Download completed in Transmission, waiting for Jellyfin organization'
+      };
+    } else if (qStatus === 'organized') {
+      return {
+        type: 'library',
+        label: 'In Library',
+        icon: 'check_circle',
+        badgeClass: 'badge-library',
+        folderPath: destRoot,
+        destRoot: destRoot,
+        isStandard: true,
+        titleText: 'In Library (Ready for playback)',
+        subText: 'Stored in Jellyfin NAS Library'
+      };
+    }
+  }
+
   // Check if file exists in scanned active staging batch or explicit dl flag
   const hasLocalMatch = state.groupedMovies.some(m => m.id && m.id.toUpperCase() === movieId.toUpperCase());
   const isDl = isDownloaded !== null ? Boolean(isDownloaded) : hasLocalMatch;
@@ -357,6 +429,17 @@ export function getMovieLocationInfo(movieId, explicitFolder = '', isDownloaded 
     titleText: 'Pending Organization',
     subText: state.activeDir ? `Located in incoming folder: ${state.activeDir}` : 'Waiting to organize into Jellyfin'
   };
+}
+
+export function formatETA(seconds) {
+  if (!seconds || seconds < 0) return 'unknown';
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) return `${mins}m ${secs}s`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return `${hours}h ${remMins}m`;
 }
 
 export function showToast(message, type = 'info') {

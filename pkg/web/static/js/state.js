@@ -258,7 +258,13 @@ export function getMovieLocationInfo(movieId, explicitFolder = '', isDownloaded 
 
   if (cleanFolder) {
     // Standard Jellyfin Library location
-    if (cleanFolder.startsWith(cleanDest)) {
+    const isLibraryLocation = cleanFolder.startsWith(cleanDest) ||
+      cleanFolder.includes('/organized/') ||
+      cleanFolder.startsWith('/Volumes/home/BT/organized') ||
+      cleanFolder.startsWith('/Volumes/homes/plagad/BT/organized') ||
+      cleanFolder.startsWith('/Volumes/homes/Inmad/BT/organized');
+
+    if (isLibraryLocation) {
       return {
         type: 'library',
         label: 'In Library',

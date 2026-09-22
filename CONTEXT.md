@@ -286,6 +286,20 @@ r19dev-scraper/
   3. *Shared Media Volume*: Best practice centralization to `/Volumes/video/organized` accessible by all users and media server daemons (Jellyfin/Emby).
 * **Streaming Fallback Resilience**: `moveFile` / `movePath` automatically detects cross-device mount link errors (`EXDEV`) and falls back to atomic stream copy + source deletion after destination byte-size assertion.
 
+### 4.23 DMM Outlet SKU Demotion & Earliest Release Date Invariant
+* **Problem Solved**: DMM/FANZA outlet re-issues and campaign packages (`77...` and `88...` prefixes) frequently carry future placeholder license expiration dates (e.g. `2026-07-31` on `88ssis614`, an original 2023 release). Naive deduplication choosing `max(release_date)` caused classic library titles to jump to the top of performer filmographies as "new releases".
+* **Earliest Date Enforcement**: Deduplication and synchronization strictly enforce the **earliest valid release date** (Digital Premiere or DVD release) as the canonical release date.
+* **Outlet Sanitization (`scripts/fix_outlet_dates.py`)**: Automatically strips `77`/`88` prefixes, demotes outlet SKUs, recovers authentic DMM `content_id` and Full HD covers, and purges phantom duplicate records (e.g., `77SSIS-349`).
+
+### 4.24 Multi-Mount Path Auto-Healing & SMB Network Stalls (`resolvePathToExisting`)
+* **Problem Solved**: Switching macOS network mount points between personal shares (`/Volumes/home/BT/`) and administrative shares (`/Volumes/homes/plagad/BT/`) broke "Show in Finder" buttons when database records referenced old mount paths. Furthermore, recursive `filepath.Glob` across SMB shares caused 30–60s web request hangs.
+* **Auto-Healing Resolver**: `resolvePathToExisting` in `pkg/web/server.go` verifies local disk existence and automatically applies intelligent volume path transformations across known mount roots, falling back to performer directories without SMB traversal latency.
+
+### 4.25 HTTP ETag & Versioned Performer Avatar Invalidation
+* **Problem Solved**: Static 1-year browser caching (`Cache-Control: public, max-age=31536000`) prevented updated or replaced actress portraits from showing up in user browsers.
+* **Conditional Validation**: `/api/actresses/avatar/{name}` computes file MD5 hashes, returns `ETag: "{hash}"`, and specifies `Cache-Control: no-cache, must-revalidate`.
+* **Cache-Busting URLs**: Frontend and API endpoints append `?v={r18_id}` to image URLs, guaranteeing instant browser updates with zero stale placeholders.
+
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions
@@ -308,17 +322,20 @@ make build
 make test
 
 # Launch Web UI Studio
-./bin/r19dev web /Volumes/home/BT/2026
+./bin/r19dev web /Volumes/homes/plagad/BT/2026
 
 # Launch TUI
-./bin/r19dev tui /Volumes/home/BT/2026
+./bin/r19dev tui /Volumes/homes/plagad/BT/2026
 
 # CLI Scan
-./bin/r19dev scan /Volumes/home/BT/2026 --json
+./bin/r19dev scan /Volumes/homes/plagad/BT/2026 --json
+
+# Batch Migrate (auto-detects organized destination)
+./bin/r19dev migrate /Volumes/homes/plagad/BT/incoming
+./bin/r19dev migrate /Volumes/homes/plagad/BT/incoming -d /Volumes/homes/plagad/BT/organized --audit
 
 # Filter Management
 ./bin/r19dev filters show
 ./bin/r19dev filters purge
 ./bin/r19dev filters reset
 ```
-

@@ -186,6 +186,16 @@ make test
     Solves non-standard DMM numerical prefixes for Prestige (`118abp00966`), SOD (`1dldss00077`), and VR (`13kavr00403`), ensuring seamless metadata lookup across all studio brands.
 41. **High-Res Local Image Serving Priority & Stale Thumbnail Purge**:
     Eliminates low-resolution cover display on Web UI modals (`MFYD-123` 147x200px vs 800x538px) by prioritizing local Full HD `poster.jpg` files on disk over RAM/disk cache and enforcing a $>20\text{KB}$ quality threshold.
+42. **DMM Outlet SKU Demotion & Earliest Release Date Invariant**:
+    DMM/FANZA outlet re-issues (`77...` DVD outlets, `88...` Blu-ray/VOD outlets) carry future placeholder license expiration dates (e.g. `2026-07-31` on `88ssis614`, a 2023 release). Naive `max(release_date)` deduplication caused old movies to jump to top of "Newest Releases". Fixed by enforcing earliest valid release date (Digital Premiere or DVD) as canonical, demoting 77/88 SKU dates, and purging phantom duplicate records. Standalone repair script `scripts/fix_outlet_dates.py` cross-references `r18_dump.db` to restore authentic dates, `combined_id`, and cover URLs across all 7,000+ indexed movies (568 corrected, 20 phantom records deleted).
+43. **Multi-Mount Path Auto-Healing (`resolvePathToExisting`)**:
+    Switching macOS network mount points (`/Volumes/home/BT/` ↔ `/Volumes/homes/plagad/BT/`) broke "Show in Finder" buttons when `organized_movies` records referenced stale paths. `resolvePathToExisting` in `pkg/web/server.go` verifies local disk existence and applies intelligent volume substitutions (e.g. `/Volumes/home/` → `/Volumes/homes/plagad/`, `/Volumes/homes/Inmad/` → `/Volumes/homes/plagad/`), falling back to actress directory or library root without SMB network latency.
+44. **HTTP ETag & Versioned Performer Avatar Cache Invalidation**:
+    Replaced 1-year static `Cache-Control: public, max-age=31536000` with MD5-based `ETag` conditional validation and `Cache-Control: no-cache, must-revalidate` on `/api/actresses/avatar/{name}`. Frontend appends `?v={r18_id}` cache-buster to avatar URLs, ensuring instant UI updates when photos are replaced while serving `304 Not Modified` for unchanged files.
+45. **Bento Profile Unfollow Action (`promptUnfollowActress`)**:
+    Implemented `promptUnfollowActress(name)` in `pkg/web/static/js/api.js` with `confirm()` dialog and `/api/actresses/unfollow` API call. Exported to `window.app` in `app.js` to resolve `TypeError: window.app.promptUnfollowActress is not a function` from Bento sidebar Quick Actions button.
+46. **Configurable Migrate Destination (`-d` / `--dest` flag)**:
+    `r19dev migrate` now supports explicit `-d <dest>` / `--dest` / `--destination` / `-o` / `--output` flags for target root. `defaultOrganizedDest()` auto-detects available NAS volume paths (`/Volumes/homes/plagad/BT/organized` or `/Volumes/home/BT/organized`). Migrator engine infers actress directory from `DestRoot` or `SourceDir` basename when metadata resolution is ambiguous, and avoids doubling the actress subdirectory when `DestRoot` already names the performer.
 
 ---
 
@@ -228,6 +238,12 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Post-Migration Verification & Deep Auto-Heal**: Integrated in `r19dev migrate --audit`.
 - ✅ **Multi-Studio Numerical Prefix Generator**: Maps Prestige (`118`), SOD (`1`), VR (`13`), and standard prefixes.
 - ✅ **High-Res Local Image Serving Priority**: Prioritizes local Full HD poster files over cached thumbnails.
+- ✅ **DMM Outlet SKU Demotion & Earliest Release Date Invariant**: Enforces authentic premiere dates, demotes 77/88 outlet SKUs, purges phantom duplicates.
+- ✅ **Multi-Mount Path Auto-Healing (`resolvePathToExisting`)**: Transparent volume path substitution across SMB mount point changes.
+- ✅ **HTTP ETag & Versioned Avatar Cache Invalidation**: MD5-based conditional responses replacing 1-year static caching.
+- ✅ **Bento Profile Unfollow Action**: `promptUnfollowActress` with confirmation dialog and instant collection refresh.
+- ✅ **Configurable Migrate Destination (`-d` / `--dest`)**: Explicit flags and auto-detection of available NAS volumes.
+- ✅ **Architecture Decision Records (`ADR.md`)**: Formal ADR documentation covering Western Order naming, offline-first metadata, outlet SKU demotion, SMB I/O protection, and avatar caching.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

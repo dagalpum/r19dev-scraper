@@ -59,8 +59,10 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
     - **Bento 1 (Identity)**: 140px HD avatar with hover zoom, bold Romaji name, Japanese Kanji name, verified R18 ID badge (`#1089946`), and dynamic **Career Span** (`📅 2021 – 2026`). All 37 followed actresses are 100% matched to authentic DMM IDs.
     - **Bento 2 (Library & Storage)**: Prominent gradient highlight of **Total NAS Storage** occupied (e.g. `20.21 GB`), visual collection progress bar, and average file size (`Avg 5.1 GB / file`).
     - **Bento 3 (Top Genres)**: Interactive tag cloud displaying the actress's top 8 most frequent genres with counts (e.g. `#Slender (14)`, `#VR (6)`). **Clicking any genre instantly filters her filmography on the right stage**.
-    - **Bento 4 (Quick Actions)**: One-click `[📂 Open in Finder]` directly into her NAS directory, `[🌐 R18.dev Profile ↗]` (direct to verified actress page), and `[🔄 Refresh Releases]`.
+    - **Bento 4 (Quick Actions)**: One-click `[📂 Open in Finder]` directly into her NAS directory (with intelligent path auto-healing across mount points), `[🌐 R18.dev Profile ↗]` (direct to verified actress page), `[🔄 Refresh Releases]`, and `[👤 Unfollow]` with modal confirmation and instant collection refresh.
+    - **Dynamic ETag & Versioned Avatar Serving**: Emits `ETag: "{md5}"` and `Cache-Control: no-cache, must-revalidate` along with `?v={r18_id}` versioning, preventing aggressive browser caching of stale photos and ensuring 100% authentic DMM portraits.
   - **Right Filmography Main Stage**:
+    - **Chronological Release Date Accuracy**: Enforces earliest premiere release date invariants across all 7,000+ indexed titles, demoting DMM outlet re-issue SKUs (`77...`, `88...`) and eliminating future placeholder license dates (e.g., `2026-07-31` on `SSIS-614` restored to genuine `2023-02-24`).
     - **Interactive Stage Toolbar**: Real-time in-page search input (filter instantly by ID like `SNOS` or title), sub-filter pills (`All Works`, `In Library`, `Missing`, and **`Skipped`**), active genre filter chip with 1-click removal, and a **Sort Dropdown** (`Release Date (Newest)`, `Release Date (Oldest)`, `File Size (Largest)`, `Movie ID (A-Z)`).
     - **Audit Filtered Works (`Skipped` Tab)**: Dedicated sub-filter displaying all non-solo or duplicate titles excluded by the gatekeeper (with specific skip reason badges like `Omnibus Compilation`, `AI Remaster`, `Variety Talk Show`, etc.) so no titles are mysteriously lost.
     - **Uniform Poster Grid**: Eye-friendly, standardized aspect ratio poster cards with hover actions (`▶ Details`, `📋 Copy ID`, `📂 Finder` / `🌐 R18 ↗`).
@@ -70,7 +72,7 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 ### 📂 3. NAS Directory Organizer & Jellyfin Pipeline
 - Organizes videos into the standardized folder structure:
   ```
-  /Volumes/home/BT/organized/{Actress_English_Name}/{JAV-ID} {English_Title}/
+  /Volumes/homes/plagad/BT/organized/{Actress_English_Name}/{JAV-ID} {English_Title}/
   ```
   - **English Naming Priority**: Folders prioritize English/Romaji names for both Actresses and Titles, seamlessly falling back to Japanese only if English metadata is unavailable.
   - **Multi-Actress Group Work Prioritization**: When organizing group or crossover works (e.g. duo or harem titles), the organizer prioritizes placing the physical directory under **followed/tracked actresses** over untracked co-stars.
@@ -88,7 +90,7 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **⚡ High-Speed SMB Network Scanner**:
   - Optimized directory crawler instantly skips non-video directories (`.actors`, `extrafanart`, `@eaDir`, and hidden directories) without redundant `os.Lstat` calls, reducing network SMB traversal times across thousands of files from timeouts down to seconds.
 - **High-Res Assets & Resilient Serving**: Downloads full-resolution `poster.jpg` (cover jacket), `fanart.jpg` (backdrop), and all sample gallery screenshots into `extrafanart/`. The web server features a multi-tier fallback for `/api/images/{id}` (RAM cache $\rightarrow$ local organized disk poster $\rightarrow$ remote DMM/R18 fetch) ensuring posters are always displayed.
-- **One-Click Reveal in Finder / File Manager**: Click `[📂 Open in Finder]` directly on any card or modal to immediately reveal the organized files in macOS Finder, Windows Explorer, or Linux.
+- **One-Click Reveal in Finder / File Manager**: Click `[📂 Open in Finder]` directly on any card or modal to immediately reveal the organized files in macOS Finder. Features intelligent **path auto-healing** (`resolvePathToExisting`) that transparently adapts to SMB mount point changes (`/Volumes/home/` ↔ `/Volumes/homes/plagad/`).
 - **Safe Dry-Run Mode**: Supports `--dry-run` to preview all target folder moves and asset creations safely before applying changes.
 
 ### 🚚 4. High-Speed Batch Migrator (`r19dev migrate`)

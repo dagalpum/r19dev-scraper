@@ -453,24 +453,26 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 			}
 		}
 
-		if !foundFollowed {
-			rel, _ := filepath.Rel(cfg.SourceDir, fi.Path)
-			parts := strings.Split(rel, string(filepath.Separator))
-			if len(parts) >= 2 {
-				parentAct := parts[0]
-				if parentAct != "@Group" && parentAct != "@Unknown" && strings.TrimSpace(parentAct) != "" {
-					if canonical, ok := followedMap[strings.ToLower(parentAct)]; ok {
-						actressDir = canonical
-						foundFollowed = true
-					} else if len(actList) > 0 && isPureASCII(actList[0].Name) {
-						actressDir = strings.TrimSpace(actList[0].Name)
-					} else {
-						actressDir = parentAct
-					}
+		// If actressDir is not from followed list or metadata, check if SourceDir or DestRoot represents an actress
+		baseDest := filepath.Base(cfg.DestRoot)
+		baseSrc := filepath.Base(cfg.SourceDir)
+		if !foundFollowed || actressDir == "Unknown" || actressDir == "" {
+			if !strings.EqualFold(baseDest, "organized") && baseDest != "." && baseDest != "" && !strings.HasPrefix(baseDest, "SSK") && !strings.HasPrefix(baseDest, "SPFun") {
+				if canonical, ok := followedMap[strings.ToLower(baseDest)]; ok {
+					actressDir = canonical
+				} else if known, ok := knownActressRomajiMap[baseDest]; ok {
+					actressDir = known
+				} else {
+					actressDir = baseDest
 				}
-			}
-			if !foundFollowed && len(actList) > 0 && strings.TrimSpace(actList[0].Name) != "" {
-				actressDir = strings.TrimSpace(actList[0].Name)
+			} else if !strings.EqualFold(baseSrc, "organized") && !strings.EqualFold(baseSrc, "archived") && baseSrc != "." && baseSrc != "" {
+				if canonical, ok := followedMap[strings.ToLower(baseSrc)]; ok {
+					actressDir = canonical
+				} else if known, ok := knownActressRomajiMap[baseSrc]; ok {
+					actressDir = known
+				} else {
+					actressDir = baseSrc
+				}
 			}
 		}
 
@@ -490,7 +492,12 @@ func Run(ctx context.Context, cfg Config, eventCh chan<- ProgressEvent, confirmC
 			movieFolder = jellyfin.SanitizeFilename(fmt.Sprintf("%s %s", mr.ID, cTitle))
 		}
 
-		targetDir := filepath.Join(cfg.DestRoot, actressDir, movieFolder)
+		var targetDir string
+		if strings.EqualFold(filepath.Base(cfg.DestRoot), actressDir) {
+			targetDir = filepath.Join(cfg.DestRoot, movieFolder)
+		} else {
+			targetDir = filepath.Join(cfg.DestRoot, actressDir, movieFolder)
+		}
 		ext := filepath.Ext(fi.Path)
 		lowerName := strings.ToLower(fi.Name)
 		is4K := strings.Contains(lowerName, "-4k") || strings.Contains(lowerName, "_4k")

@@ -3,7 +3,7 @@
  * Native ES Module
  */
 
-import { state, elements, escapeHtml, getMovieLocationInfo, getDefaultOrganizedDestination } from './state.js';
+import { state, elements, escapeHtml, showToast, getMovieLocationInfo, getDefaultOrganizedDestination } from './state.js';
 export { getDefaultOrganizedDestination };
 import {
   loadActressesData,
@@ -399,12 +399,18 @@ export function startScanStream(customPath) {
   }
 
   state.isScanning = true;
-  elements.scanProgressBox.classList.remove('hidden');
-  elements.scanProgressFill.style.width = '10%';
-  elements.scanProgressPct.textContent = 'Scanning...';
-  elements.scanProgressLabel.textContent = state.activeDir
-    ? `Scanning ${state.activeDir}...`
-    : 'Discovering video files...';
+  if (elements.btnRescan) {
+    elements.btnRescan.classList.add('disabled');
+    elements.btnRescan.style.pointerEvents = 'none';
+    elements.btnRescan.innerHTML = `<span class="material-symbols-outlined icon loading-spin" aria-hidden="true">sync</span> <span id="btn-rescan-text">Scanning...</span>`;
+  }
+
+  if (elements.scanProgressBox) {
+    elements.scanProgressBox.classList.remove('hidden');
+    elements.scanProgressFill.style.width = '15%';
+    elements.scanProgressPct.textContent = 'Scanning...';
+    elements.scanProgressLabel.innerHTML = `<span class="material-symbols-outlined icon loading-spin" style="font-size: 1.05rem; vertical-align: middle;">sync</span> Discovering video files in <strong>${escapeHtml(state.activeDir || 'NAS')}</strong>...`;
+  }
 
   if (elements.moviesGrid && (!state.groupedMovies || state.groupedMovies.length === 0)) {
     elements.moviesGrid.innerHTML = renderSkeletonMovieCards(12);
@@ -421,8 +427,18 @@ export function startScanStream(customPath) {
   es.addEventListener('progress', (e) => {
     try {
       const data = JSON.parse(e.data);
-      elements.scanProgressLabel.textContent = `Discovered ${data.discovered} videos (${data.matched} matched)...`;
-      elements.scanProgressFill.style.width = '60%';
+      const textEl = document.getElementById('btn-rescan-text');
+      if (textEl) textEl.textContent = `Scanning (${data.discovered})...`;
+      
+      if (elements.scanProgressLabel) {
+        elements.scanProgressLabel.innerHTML = `<span class="material-symbols-outlined icon loading-spin" style="font-size: 1.05rem; vertical-align: middle;">sync</span> Scanning: Found <strong>${data.discovered}</strong> videos (${data.matched} matched)...`;
+      }
+      if (elements.scanProgressFill) {
+        elements.scanProgressFill.style.width = '65%';
+      }
+      if (elements.scanProgressPct) {
+        elements.scanProgressPct.textContent = `${data.discovered} files`;
+      }
     } catch (err) {}
   });
 
@@ -431,9 +447,9 @@ export function startScanStream(customPath) {
       const data = JSON.parse(e.data);
       state.rawMatches = data.matches || [];
       state.activeDir = data.target_dir || state.activeDir;
-      elements.labelActiveDir.textContent = state.activeDir;
-      elements.orgSrcDir.value = state.activeDir;
-      if (!elements.orgDestRoot.value) {
+      if (elements.labelActiveDir) elements.labelActiveDir.textContent = state.activeDir;
+      if (elements.orgSrcDir) elements.orgSrcDir.value = state.activeDir;
+      if (elements.orgDestRoot && !elements.orgDestRoot.value) {
         elements.orgDestRoot.value = getDefaultOrganizedDestination(state.activeDir);
       }
 
@@ -444,9 +460,11 @@ export function startScanStream(customPath) {
 
       state.groupedMovies = groupMatches(state.rawMatches);
 
-      elements.scanProgressFill.style.width = '100%';
-      elements.scanProgressPct.textContent = '100%';
-      elements.scanProgressLabel.textContent = `Scan complete: ${state.groupedMovies.length} movies (${state.rawMatches.length} files found)`;
+      if (elements.scanProgressFill) elements.scanProgressFill.style.width = '100%';
+      if (elements.scanProgressPct) elements.scanProgressPct.textContent = '100%';
+      if (elements.scanProgressLabel) {
+        elements.scanProgressLabel.innerHTML = `<span class="material-symbols-outlined icon" style="font-size: 1.05rem; vertical-align: middle; color: #22c55e;">check_circle</span> Scan complete: <strong>${state.groupedMovies.length}</strong> movies (${state.rawMatches.length} files found)`;
+      }
 
       updateStats();
       populateFilterDropdowns();
@@ -455,6 +473,9 @@ export function startScanStream(customPath) {
       if (elements.countLibrary) {
         elements.countLibrary.textContent = state.groupedMovies.length;
       }
+
+      // Sync actress catalog to keep actress releases & counts 100% updated
+      loadActressesData();
 
       // Cache scan results to localStorage for 0s instant load next time
       try {
@@ -472,23 +493,36 @@ export function startScanStream(customPath) {
         console.warn('Failed to save scan cache:', err);
       }
 
+      showToast(`Scan complete: ${state.groupedMovies.length} movies updated!`, 'success');
+
       setTimeout(() => {
-        elements.scanProgressBox.classList.add('hidden');
-      }, 1200);
+        if (elements.scanProgressBox) elements.scanProgressBox.classList.add('hidden');
+      }, 2500);
     } catch (err) {
       console.error('Error handling scan done event:', err);
     } finally {
       es.close();
       state.scanEventSource = null;
       state.isScanning = false;
+      if (elements.btnRescan) {
+        elements.btnRescan.classList.remove('disabled');
+        elements.btnRescan.style.pointerEvents = '';
+        elements.btnRescan.innerHTML = `<span class="material-symbols-outlined icon" aria-hidden="true">sync</span> Rescan`;
+      }
     }
   });
 
   es.onerror = () => {
-    elements.scanProgressBox.classList.add('hidden');
+    if (elements.scanProgressBox) elements.scanProgressBox.classList.add('hidden');
     es.close();
     state.scanEventSource = null;
     state.isScanning = false;
+    if (elements.btnRescan) {
+      elements.btnRescan.classList.remove('disabled');
+      elements.btnRescan.style.pointerEvents = '';
+      elements.btnRescan.innerHTML = `<span class="material-symbols-outlined icon" aria-hidden="true">sync</span> Rescan`;
+    }
+    showToast('Scan disconnected or completed', 'info');
   };
 }
 

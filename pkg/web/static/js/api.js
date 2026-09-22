@@ -500,6 +500,17 @@ export async function unfollowActiveActress() {
     await unfollowActress(targetName);
     state.activeActressName = null;
     await loadActressesData();
+    renderActressCollection();
+  }
+}
+
+export async function promptUnfollowActress(name) {
+  const targetName = name || state.collectionFilterActress || state.activeActressName;
+  if (!targetName) return;
+  if (confirm(`Unfollow ${targetName}?`)) {
+    await unfollowActress(targetName);
+    await loadActressesData();
+    renderActressCollection();
   }
 }
 

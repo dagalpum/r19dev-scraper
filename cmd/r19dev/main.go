@@ -460,14 +460,27 @@ func runOrganize(args []string) {
 	fmt.Printf("\n✨ Finished! Successfully organized %d/%d movies into %s\n", successCount, len(matches), absDest)
 }
 
+func defaultOrganizedDest() string {
+	candidates := []string{
+		"/Volumes/homes/plagad/BT/organized",
+		"/Volumes/home/BT/organized",
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && fi.IsDir() {
+			return c
+		}
+	}
+	return "/Volumes/homes/plagad/BT/organized"
+}
+
 func runMigrate(args []string) {
 	if len(args) < 1 {
-		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html] [--audit | -a]")
+		fmt.Println("Usage: r19dev migrate <source_dir> [destination_root] [-d <dest>] [--dry-run] [--yes] [--no-tui] [--upgrade-all-html] [--audit | -a]")
 		os.Exit(1)
 	}
 
 	srcDir := args[0]
-	destRoot := "/Volumes/home/BT/organized"
+	destRoot := defaultOrganizedDest()
 	dryRun := false
 	autoConfirm := false
 	noTUI := false
@@ -492,7 +505,10 @@ func runMigrate(args []string) {
 			autoHeal = true
 		} else if a == "--no-audit" {
 			auditAfter = false
-		} else if !strings.HasPrefix(a, "-") && destRoot == "/Volumes/home/BT/organized" && i == 1 {
+		} else if (a == "-d" || a == "--dest" || a == "--destination" || a == "-o" || a == "--output") && i+1 < len(args) {
+			destRoot = args[i+1]
+			i++
+		} else if !strings.HasPrefix(a, "-") {
 			destRoot = a
 		}
 	}

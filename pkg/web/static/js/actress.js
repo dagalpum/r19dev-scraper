@@ -394,7 +394,7 @@ export function openActressProfileDrawer(entry) {
     ? `https://r18.dev/videos/vod/movies/list/?id=${a.r18_id}&type=actress`
     : `https://r18.dev/videos/vod/movies/list/?search=${encodeURIComponent(a.name)}`;
 
-  const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
+  const avatar = a.image_url || `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
   // Extract unique studios/makers from releases
   const makers = [...new Set(releases.map(r => r.maker).filter(Boolean))];
@@ -1038,7 +1038,7 @@ export function renderActressCollection() {
               const a = entry.actress;
               const stats = getActressLocationStats(entry);
               const isCompleted = stats.isLibraryComplete;
-              const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
+              const avatar = a.image_url || `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
 
               const latestDate = entry.latest_date || (entry.releases && entry.releases[0] ? entry.releases[0].release_date : '');
               const latestID = entry.latest_movie_id || (entry.releases && entry.releases[0] ? entry.releases[0].movie_id : '');
@@ -1112,7 +1112,15 @@ export function renderActressCollection() {
       elements.collectionActressHero.classList.add('hidden');
     }
 
-    let activeEntry = state.actresses.find(e => (e.actress.name || '').toLowerCase() === state.collectionFilterActress.toLowerCase());
+    const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_]+/g, '');
+    const filterNorm = norm(state.collectionFilterActress);
+    let activeEntry = state.actresses.find(e => {
+      const en = norm(e.actress?.name);
+      const ja = (e.actress?.ja_name || '').toLowerCase();
+      const parts = (e.actress?.name || '').trim().split(/\s+/);
+      const rev = parts.length === 2 ? norm(parts[1] + parts[0]) : '';
+      return en === filterNorm || rev === filterNorm || ja === state.collectionFilterActress.toLowerCase();
+    });
 
     if (!activeEntry) {
       // Unfollowed / Discovered in NAS Actress View
@@ -1288,7 +1296,7 @@ export function renderActressCollection() {
     const dl = heroStats.libCount + heroStats.stagingCount;
     const missing = heroStats.missingCount;
     const pct = heroStats.libPct;
-    const avatar = `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
+    const avatar = a.image_url || `/api/actresses/avatar/${encodeURIComponent(a.name)}`;
     const totalBytes = activeEntry.total_size_bytes || 0;
     const avgBytes = dl > 0 && totalBytes > 0 ? Math.round(totalBytes / dl) : 0;
     const topGenres = activeEntry.top_genres || [];

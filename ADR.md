@@ -101,3 +101,45 @@ Actress avatars served at `/api/actresses/avatar/{name}` were previously given `
 ### Consequences
 - Immediate UI updates when actress avatars are updated or refreshed.
 - Zero stale cached images in user browsers.
+
+---
+
+## ADR 006: Transmission JSON-RPC Integration via Dynamic Session ID Handshake
+
+### Status
+Accepted & Implemented
+
+### Context
+Direct integration with Transmission BitTorrent client is required to automate downloads of missing titles from performer filmographies. Transmission protects its JSON-RPC endpoint (`/transmission/rpc`) against Cross-Site Request Forgery (CSRF) by requiring an `X-Transmission-Session-Id` header. Any request without a valid session token receives `HTTP 409 Conflict` containing the token in the response headers.
+
+### Decision
+1. Implement native HTTP JSON-RPC client in `pkg/torrent/transmission.go` with zero external dependencies.
+2. In `doRPC`, automatically intercept `HTTP 409 Conflict`, extract `X-Transmission-Session-Id`, store it thread-safely using `sync.RWMutex`, and re-issue the original request transparently.
+3. Support HTTP Basic Authentication and configurable target download directories.
+4. Provide `session-get` endpoint for instant connection verification from the Web UI settings modal.
+
+### Consequences
+- Zero-configuration connection management with Transmission daemon.
+- Single-click torrent and magnet submission from filmography search cards.
+
+---
+
+## ADR 007: Smart Torrent Ranking & Scoring Algorithm
+
+### Status
+Accepted & Implemented
+
+### Context
+Searching public torrent indexers (like Sukebei Nyaa) for a specific JAV title produces multiple releases varying drastically in resolution (4K vs 480p), edition (uncensored vs censored), subtitles (Chinese/English hardsubs vs raw), and seeder availability. Operators need an automated recommendation engine to pick the best candidate.
+
+### Decision
+1. Parse Sukebei Nyaa RSS feeds (`pkg/torrent/sukebei.go`) and compute a composite score for each candidate:
+   - **Resolution**: 4K/2160p/UHD (`+40 pts`), 1080p/FHD (`+20 pts`), 720p/HD (`+10 pts`).
+   - **Edition**: Uncensored / 無碼 / `[UN]` (`+35 pts`).
+   - **Subtitles**: Chinese / English hardsubs (`+15 pts`).
+   - **Seeder Health**: $\ge 100$ seeds (`+30 pts`), $\ge 50$ seeds (`+25 pts`), $\ge 10$ seeds (`+10 pts`), $0$ seeds (`-50 pts`).
+2. Sort torrent search results by composite score descending.
+3. Automatically flag the top-scoring item with positive seeders as `is_recommended: true`.
+
+### Consequences
+- Operators can queue the highest quality available release in a single click without manually parsing tracker titles.

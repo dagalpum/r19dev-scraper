@@ -98,6 +98,20 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **🛡️ Smart Collision & Quality Protection**:
   - **Zero Destructive Overwrites**: Automatically detects existing titles in target destinations. Instead of overwriting or erroring out, it merges complementary assets safely.
   - **Quality Coexistence**: Safely co-locates 4K editions (`-4k.mp4`), 1080p standard editions (`.mp4`), and uncensored editions (`-uncensored.mp4`) in the same movie folder.
+
+### 🌊 5. Torrent Engine & Transmission Integration (`pkg/torrent`)
+- **🔍 Smart Sukebei Nyaa RSS Search & Ranking Engine**:
+  - Automatically queries Sukebei Nyaa RSS feeds for JAV releases with category filtering (`2_2` Real Life - Videos) and seeder prioritization.
+  - **Smart Release Scoring Algorithm**: Evaluates and ranks torrents with weighted scoring for **4K resolution (+40 pts)**, **1080p (+20 pts)**, **Uncensored tags (+35 pts)**, **Subtitles (+15 pts)**, and **Seeder health (+10 to +30 pts)**, highlighting the recommended release automatically.
+- **⚡ Direct Transmission JSON-RPC Integration (`/transmission/rpc`)**:
+  - Native communication with Transmission daemon without external CLI tools.
+  - Transparent **409 Conflict CSRF token auto-handshake** and HTTP Basic Authentication.
+  - Single-click magnet / torrent submission directly from the Web UI with custom download directory routing.
+- **📥 Real-Time Download Queue & NAS Staging Pipeline**:
+  - Persistent SQLite-backed download queue tracking releases across `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
+  - Dynamic polling for real-time download speed, progress percentage, and ETA seconds.
+- **⚙️ Dynamic Key-Value Settings Storage**:
+  - Configurable Transmission endpoint URL, credentials, custom download directory, and Sukebei mirrors stored in `app_settings` SQLite table and live-reloaded without server restarts.
   - **Multi-Part Integrity**: Preserves and standardizes multi-part CD files (`-cd1.mp4` through `-cd5.mp4`), keeping all discs grouped in the single movie directory.
 - **📋 Pre-Flight Safety Confirmation**: Scans the source tree, maps metadata against `r18_dump.db`, resolves destination paths, and pauses for explicit operator confirmation (`[Enter] PROCEED` / `[q] CANCEL`) before moving a single byte.
 - **⚡ Concurrent Worker Pool & Zero-Lag Discovery**:

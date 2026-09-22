@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dagalp/r19dev-scraper/pkg/actress"
@@ -29,6 +30,7 @@ import (
 	"github.com/dagalp/r19dev-scraper/pkg/organizer"
 	"github.com/dagalp/r19dev-scraper/pkg/scanner"
 	"github.com/dagalp/r19dev-scraper/pkg/scraper"
+	"github.com/dagalp/r19dev-scraper/pkg/torrent"
 )
 
 //go:embed static/*
@@ -36,13 +38,16 @@ var staticFS embed.FS
 
 // Server represents the HTTP web service for R19DEV Studio.
 type Server struct {
-	targetDir      string
-	port           int
-	scanner        *scanner.Scanner
-	matcher        *matcher.Matcher
-	scraperClient  *scraper.Client
-	actressService *actress.Service
-	db             *db.DB
+	targetDir          string
+	port               int
+	scanner            *scanner.Scanner
+	matcher            *matcher.Matcher
+	scraperClient      *scraper.Client
+	actressService     *actress.Service
+	db                 *db.DB
+	sukebeiClient      *torrent.SukebeiClient
+	transmissionClient *torrent.TransmissionClient
+	transMu            sync.RWMutex
 }
 
 // Config holds initialization parameters for the web server.
@@ -99,14 +104,30 @@ func NewServer(cfg Config) (*Server, error) {
 		_, _ = actSvc.CheckAllFollowed(ctx)
 	}()
 
+	transURL := database.GetSetting("transmission_url", "http://192.168.1.189:9091")
+	transUser := database.GetSetting("transmission_username", "")
+	transPass := database.GetSetting("transmission_password", "")
+	transDir := database.GetSetting("transmission_download_dir", "")
+	sukebeiURL := database.GetSetting("sukebei_url", torrent.DefaultSukebeiBaseURL)
+
+	sukebeiCli := torrent.NewSukebeiClient(sukebeiURL)
+	transCli := torrent.NewTransmissionClient(torrent.TransmissionConfig{
+		URL:         transURL,
+		Username:    transUser,
+		Password:    transPass,
+		DownloadDir: transDir,
+	})
+
 	return &Server{
-		targetDir:      absTarget,
-		port:           cfg.Port,
-		scanner:        sc,
-		matcher:        mc,
-		scraperClient:  scClient,
-		actressService: actSvc,
-		db:             database,
+		targetDir:          absTarget,
+		port:               cfg.Port,
+		scanner:            sc,
+		matcher:            mc,
+		scraperClient:      scClient,
+		actressService:     actSvc,
+		db:                 database,
+		sukebeiClient:      sukebeiCli,
+		transmissionClient: transCli,
 	}, nil
 }
 
@@ -142,6 +163,14 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/filters", s.handleFilters)
 	mux.HandleFunc("/api/filters/reset", s.handleFiltersReset)
 	mux.HandleFunc("/api/filters/purge", s.handleFiltersPurge)
+
+	// Torrent & Transmission Integration
+	mux.HandleFunc("/api/torrents/search", s.handleTorrentSearch)
+	mux.HandleFunc("/api/torrents/download", s.handleTorrentDownload)
+	mux.HandleFunc("/api/torrents/queue", s.handleDownloadQueue)
+	mux.HandleFunc("/api/torrents/queue/delete", s.handleDownloadQueueDelete)
+	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.HandleFunc("/api/settings/test-transmission", s.handleTestTransmission)
 
 	// Favicon SVG
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
@@ -2034,5 +2063,379 @@ func (s *Server) handleFiltersPurge(w http.ResponseWriter, r *http.Request) {
 		"purged_count": purged,
 	})
 }
+
+// --- Torrent & Transmission Handlers ---
+
+func (s *Server) getTransmissionClient() *torrent.TransmissionClient {
+	s.transMu.RLock()
+	defer s.transMu.RUnlock()
+	return s.transmissionClient
+}
+
+func (s *Server) reloadTorrentClients() {
+	s.transMu.Lock()
+	defer s.transMu.Unlock()
+	if s.db == nil {
+		return
+	}
+	transURL := s.db.GetSetting("transmission_url", "http://192.168.1.189:9091")
+	transUser := s.db.GetSetting("transmission_username", "")
+	transPass := s.db.GetSetting("transmission_password", "")
+	transDir := s.db.GetSetting("transmission_download_dir", "")
+	sukebeiURL := s.db.GetSetting("sukebei_url", torrent.DefaultSukebeiBaseURL)
+
+	s.sukebeiClient = torrent.NewSukebeiClient(sukebeiURL)
+	s.transmissionClient = torrent.NewTransmissionClient(torrent.TransmissionConfig{
+		URL:         transURL,
+		Username:    transUser,
+		Password:    transPass,
+		DownloadDir: transDir,
+	})
+}
+
+func (s *Server) handleTorrentSearch(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		http.Error(w, `{"error": "query parameter 'q' is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	sClient := s.sukebeiClient
+	if sClient == nil {
+		sClient = torrent.NewSukebeiClient(torrent.DefaultSukebeiBaseURL)
+	}
+
+	searchRes, err := sClient.Search(ctx, query)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query":   query,
+			"total":   0,
+			"items":   []torrent.TorrentItem{},
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(searchRes)
+}
+
+type torrentDownloadReq struct {
+	MovieID       string `json:"movie_id"`
+	CombinedID    string `json:"combined_id"`
+	MovieTitle    string `json:"movie_title"`
+	CoverURL      string `json:"cover_url"`
+	ActressName   string `json:"actress_name"`
+	TorrentHash   string `json:"torrent_hash"`
+	TorrentTitle  string `json:"torrent_title"`
+	TorrentURL    string `json:"torrent_url"`
+	MagnetURL     string `json:"magnet_url"`
+	FileSizeBytes int64  `json:"file_size_bytes"`
+	QualityTag    string `json:"quality_tag"`
+}
+
+func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req torrentDownloadReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "invalid json payload: %v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	link := strings.TrimSpace(req.MagnetURL)
+	if link == "" {
+		link = strings.TrimSpace(req.TorrentURL)
+	}
+	if link == "" {
+		http.Error(w, `{"error": "torrent_url or magnet_url is required"}`, http.StatusBadRequest)
+		return
+	}
+
+	tClient := s.getTransmissionClient()
+	if tClient == nil {
+		http.Error(w, `{"error": "transmission client not configured"}`, http.StatusInternalServerError)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	tID, hash, _, err := tClient.AddTorrent(ctx, link, "")
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": fmt.Sprintf("transmission rpc error: %v", err),
+		})
+		return
+	}
+
+	if hash == "" {
+		hash = req.TorrentHash
+	}
+
+	var qID int
+	if s.db != nil {
+		qRecord := &db.DownloadQueueRecord{
+			MovieID:        req.MovieID,
+			CombinedID:     req.CombinedID,
+			MovieTitle:     req.MovieTitle,
+			CoverURL:       req.CoverURL,
+			ActressName:    req.ActressName,
+			TorrentHash:    hash,
+			TorrentTitle:   req.TorrentTitle,
+			TorrentURL:     req.TorrentURL,
+			MagnetURL:      req.MagnetURL,
+			FileSizeBytes:  req.FileSizeBytes,
+			QualityTag:     req.QualityTag,
+			Status:         "downloading",
+			TransmissionID: tID,
+		}
+		var insertErr error
+		qID, insertErr = s.db.AddToDownloadQueue(qRecord)
+		if insertErr != nil {
+			fmt.Printf("⚠️  [Queue] Failed to save queue record: %v\n", insertErr)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success":         true,
+		"queue_id":        qID,
+		"transmission_id": tID,
+		"hash":            hash,
+		"message":         "Torrent added to Transmission successfully",
+	})
+}
+
+func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
+	if s.db == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]any{})
+		return
+	}
+
+	items, err := s.db.GetDownloadQueue()
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "failed to query queue: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Try to query Transmission for real-time progress update
+	tClient := s.getTransmissionClient()
+	if tClient != nil && len(items) > 0 {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		torrents, tErr := tClient.GetTorrents(ctx)
+		if tErr == nil {
+			torrentsByID := make(map[int]torrent.TransmissionTorrent)
+			torrentsByHash := make(map[string]torrent.TransmissionTorrent)
+			for _, t := range torrents {
+				torrentsByID[t.ID] = t
+				if t.HashString != "" {
+					torrentsByHash[strings.ToLower(t.HashString)] = t
+				}
+			}
+
+			for i := range items {
+				item := &items[i]
+				var matched *torrent.TransmissionTorrent
+				if t, ok := torrentsByID[item.TransmissionID]; ok && item.TransmissionID > 0 {
+					matched = &t
+				} else if t, ok := torrentsByHash[strings.ToLower(item.TorrentHash)]; ok && item.TorrentHash != "" {
+					matched = &t
+				}
+
+				if matched != nil {
+					// Check status
+					progPct := matched.PercentDone * 100.0
+					speed := matched.RateDownload
+					eta := matched.ETA
+					status := item.Status
+
+					if matched.PercentDone >= 1.0 || matched.IsFinished || matched.Status == 6 {
+						// Torrent download completed on NAS -> Staging for migration/organization
+						if status == "downloading" || status == "queued" {
+							status = "staging"
+						}
+					} else if matched.Status == 4 { // downloading
+						status = "downloading"
+					}
+
+					var errMsg string
+					if matched.Error != 0 {
+						errMsg = matched.ErrorString
+					}
+
+					item.ProgressPct = progPct
+					item.DownloadSpeed = speed
+					item.ETASeconds = eta
+					item.Status = status
+					item.ErrorMessage = errMsg
+					if item.TransmissionID == 0 {
+						item.TransmissionID = matched.ID
+						_ = s.db.UpdateDownloadQueueTransmission(item.ID, matched.ID, matched.HashString)
+					}
+					_ = s.db.UpdateDownloadQueueStatus(item.ID, status, progPct, speed, eta, errMsg)
+				}
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if items == nil {
+		items = []db.DownloadQueueRecord{}
+	}
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+func (s *Server) handleDownloadQueueDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID                     int  `json:"id"`
+		DeleteFromTransmission bool `json:"delete_from_transmission"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "invalid json: %v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	if s.db != nil && req.ID > 0 {
+		if req.DeleteFromTransmission {
+			items, _ := s.db.GetDownloadQueue()
+			for _, it := range items {
+				if it.ID == req.ID && it.TransmissionID > 0 {
+					tClient := s.getTransmissionClient()
+					if tClient != nil {
+						ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+						_ = tClient.RemoveTorrent(ctx, it.TransmissionID, false)
+						cancel()
+					}
+					break
+				}
+			}
+		}
+		_ = s.db.RemoveFromDownloadQueue(req.ID)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		settings := map[string]string{
+			"transmission_url":          "http://192.168.1.189:9091",
+			"transmission_username":     "",
+			"transmission_password":     "",
+			"transmission_download_dir": "",
+			"sukebei_url":               torrent.DefaultSukebeiBaseURL,
+		}
+
+		if s.db != nil {
+			dbSettings, err := s.db.GetAllSettings()
+			if err == nil {
+				for k, v := range dbSettings {
+					settings[k] = v
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(settings)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "invalid json: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+
+		if s.db != nil {
+			for k, v := range req {
+				_ = s.db.SetSetting(k, v)
+			}
+		}
+
+		s.reloadTorrentClients()
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"message": "Settings updated successfully",
+		})
+		return
+	}
+
+	http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+}
+
+func (s *Server) handleTestTransmission(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		URL      string `json:"url"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	var tClient *torrent.TransmissionClient
+	if req.URL != "" {
+		tClient = torrent.NewTransmissionClient(torrent.TransmissionConfig{
+			URL:      req.URL,
+			Username: req.Username,
+			Password: req.Password,
+		})
+	} else {
+		tClient = s.getTransmissionClient()
+	}
+
+	if tClient == nil {
+		http.Error(w, `{"error": "no transmission client available"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer cancel()
+
+	version, downloadDir, err := tClient.TestConnection(ctx)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success":      true,
+		"version":      version,
+		"download_dir": downloadDir,
+	})
+}
+
 
 

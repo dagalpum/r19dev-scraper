@@ -79,6 +79,12 @@ r19dev-scraper/
 │   │   ├── tui.go            # Interactive Charm Bubble Tea TUI with real-time progress bar & log pane
 │   │   ├── cli.go            # Headless non-interactive CLI runner for scripts and servers
 │   │   └── types.go          # Event definitions, config, and migration summary types
+│   ├── torrent/              # Module 14: Sukebei Nyaa RSS & Transmission JSON-RPC Client
+│   │   ├── types.go          # TorrentItem, TorrentSearchResult, TransmissionConfig, DownloadQueueItem
+│   │   ├── sukebei.go        # Sukebei RSS query parser, smart scoring ranking algorithm
+│   │   ├── sukebei_test.go   # Sukebei RSS parsing & ranking unit tests
+│   │   ├── transmission.go   # Transmission RPC client, 409 CSRF handshake, torrent management
+│   │   └── transmission_test.go # Transmission RPC test suite
 │   ├── audit/                # Module 13: Quality Auditor & Doctor
 │   │   ├── auditor.go        # Fast image header decoder, aspect ratio validation, multi-part checker, and auto-healer
 │   │   ├── auditor_test.go   # Unit tests for inspection rules and asset repair
@@ -286,19 +292,42 @@ r19dev-scraper/
   3. *Shared Media Volume*: Best practice centralization to `/Volumes/video/organized` accessible by all users and media server daemons (Jellyfin/Emby).
 * **Streaming Fallback Resilience**: `moveFile` / `movePath` automatically detects cross-device mount link errors (`EXDEV`) and falls back to atomic stream copy + source deletion after destination byte-size assertion.
 
-### 4.23 DMM Outlet SKU Demotion & Earliest Release Date Invariant
+### 4.27 DMM Outlet SKU Demotion & Earliest Release Date Invariant
 * **Problem Solved**: DMM/FANZA outlet re-issues and campaign packages (`77...` and `88...` prefixes) frequently carry future placeholder license expiration dates (e.g. `2026-07-31` on `88ssis614`, an original 2023 release). Naive deduplication choosing `max(release_date)` caused classic library titles to jump to the top of performer filmographies as "new releases".
 * **Earliest Date Enforcement**: Deduplication and synchronization strictly enforce the **earliest valid release date** (Digital Premiere or DVD release) as the canonical release date.
 * **Outlet Sanitization (`scripts/fix_outlet_dates.py`)**: Automatically strips `77`/`88` prefixes, demotes outlet SKUs, recovers authentic DMM `content_id` and Full HD covers, and purges phantom duplicate records (e.g., `77SSIS-349`).
 
-### 4.24 Multi-Mount Path Auto-Healing & SMB Network Stalls (`resolvePathToExisting`)
+### 4.28 Multi-Mount Path Auto-Healing & SMB Network Stalls (`resolvePathToExisting`)
 * **Problem Solved**: Switching macOS network mount points between personal shares (`/Volumes/home/BT/`) and administrative shares (`/Volumes/homes/plagad/BT/`) broke "Show in Finder" buttons when database records referenced old mount paths. Furthermore, recursive `filepath.Glob` across SMB shares caused 30–60s web request hangs.
 * **Auto-Healing Resolver**: `resolvePathToExisting` in `pkg/web/server.go` verifies local disk existence and automatically applies intelligent volume path transformations across known mount roots, falling back to performer directories without SMB traversal latency.
 
-### 4.25 HTTP ETag & Versioned Performer Avatar Invalidation
+### 4.29 HTTP ETag & Versioned Performer Avatar Invalidation
 * **Problem Solved**: Static 1-year browser caching (`Cache-Control: public, max-age=31536000`) prevented updated or replaced actress portraits from showing up in user browsers.
 * **Conditional Validation**: `/api/actresses/avatar/{name}` computes file MD5 hashes, returns `ETag: "{hash}"`, and specifies `Cache-Control: no-cache, must-revalidate`.
 * **Cache-Busting URLs**: Frontend and API endpoints append `?v={r18_id}` to image URLs, guaranteeing instant browser updates with zero stale placeholders.
+
+### 4.30 Sukebei Nyaa RSS & Smart Torrent Scoring Engine (`pkg/torrent/sukebei.go`)
+* **Problem Solved**: Manually searching torrent indexes for missing movies results in choosing low-quality rips, fake releases, or dead seeds.
+* **Smart Scoring Algorithm**:
+  - `4K` / `2160p` / `UHD` $\rightarrow$ `+40 pts`
+  - `1080p` / `FHD` $\rightarrow$ `+20 pts`
+  - `Uncensored` / `無碼` / `[UN]` $\rightarrow$ `+35 pts`
+  - Chinese / English Subtitles (`[C]`, `[ch]`, `中文字幕`) $\rightarrow$ `+15 pts`
+  - Seeder health bonus: $\ge 10$ seeders $\rightarrow$ `+10 pts`, $\ge 50$ seeders $\rightarrow$ `+25 pts`, $\ge 100$ seeders $\rightarrow$ `+30 pts`
+  - Zero seeders penalty: `-50 pts`
+* **Recommendation**: Automatically flags highest-scoring healthy torrent as `is_recommended: true`.
+
+### 4.31 Transmission JSON-RPC Client & Auto 409 CSRF Handshake (`pkg/torrent/transmission.go`)
+* **Problem Solved**: Communicating directly with Transmission daemon over HTTP requires handling Transmission's strict `409 Conflict` `X-Transmission-Session-Id` CSRF mitigation mechanism.
+* **Session Lifecycle**: `doRPC` intercepts HTTP 409, extracts the new `X-Transmission-Session-Id` header, caches it thread-safely via `sync.RWMutex`, and replays the original request transparently without user intervention.
+* **Endpoints**: Supports `session-get` (version check & test connection), `torrent-add` (magnet/URL submission), `torrent-get` (queue status polling), and `torrent-remove`.
+
+### 4.32 Persistent Download Queue & NAS Staging Pipeline (`pkg/db/db.go`)
+* **Problem Solved**: Tracking torrent downloads across client refreshes and linking completed torrents to the R19DEV NAS organize workflow.
+* **State Lifecycle**: `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
+* **Database Tables**:
+  - `download_queue`: Stores movie ID, combined ID, torrent hash, title, progress %, download speed, ETA seconds, and transmission ID.
+  - `app_settings`: Key-value storage for `transmission_url`, credentials, and download directory paths.
 
 ---
 

@@ -542,6 +542,38 @@ func (d *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_ma_actress_id ON movie_actresses(actress_id);
 	CREATE INDEX IF NOT EXISTS idx_ma_movie_id ON movie_actresses(movie_id);
 	CREATE INDEX IF NOT EXISTS idx_ma_actress_name ON movie_actresses(actress_name COLLATE NOCASE);
+
+	CREATE TABLE IF NOT EXISTS app_settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS download_queue (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		movie_id TEXT NOT NULL,
+		combined_id TEXT DEFAULT '',
+		movie_title TEXT DEFAULT '',
+		cover_url TEXT DEFAULT '',
+		actress_name TEXT DEFAULT '',
+		torrent_hash TEXT DEFAULT '',
+		torrent_title TEXT DEFAULT '',
+		torrent_url TEXT DEFAULT '',
+		magnet_url TEXT DEFAULT '',
+		file_size_bytes INTEGER DEFAULT 0,
+		quality_tag TEXT DEFAULT '',
+		status TEXT DEFAULT 'queued',
+		progress_pct REAL DEFAULT 0.0,
+		download_speed INTEGER DEFAULT 0,
+		eta_seconds INTEGER DEFAULT 0,
+		transmission_id INTEGER DEFAULT 0,
+		download_path TEXT DEFAULT '',
+		error_message TEXT DEFAULT '',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE INDEX IF NOT EXISTS idx_dq_movie_id ON download_queue(movie_id);
+	CREATE INDEX IF NOT EXISTS idx_dq_status ON download_queue(status);
 	`
 	_, err := d.conn.Exec(schema)
 	if err != nil {
@@ -1692,4 +1724,212 @@ func (d *DB) BackfillMovieActresses(dumpDBPath string) (int, error) {
 
 	return count, nil
 }
+
+// DownloadQueueRecord represents an active or completed download item in SQLite.
+type DownloadQueueRecord struct {
+	ID             int       `json:"id"`
+	MovieID        string    `json:"movie_id"`
+	CombinedID     string    `json:"combined_id"`
+	MovieTitle     string    `json:"movie_title"`
+	CoverURL       string    `json:"cover_url"`
+	ActressName    string    `json:"actress_name"`
+	TorrentHash    string    `json:"torrent_hash"`
+	TorrentTitle   string    `json:"torrent_title"`
+	TorrentURL     string    `json:"torrent_url"`
+	MagnetURL      string    `json:"magnet_url"`
+	FileSizeBytes  int64     `json:"file_size_bytes"`
+	QualityTag     string    `json:"quality_tag"`
+	Status         string    `json:"status"` // queued, downloading, staging, organized, error
+	ProgressPct    float64   `json:"progress_pct"`
+	DownloadSpeed  int64     `json:"download_speed"`
+	ETASeconds     int64     `json:"eta_seconds"`
+	TransmissionID int       `json:"transmission_id"`
+	DownloadPath   string    `json:"download_path"`
+	ErrorMessage   string    `json:"error_message"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// GetSetting retrieves a setting value by key or returns defaultVal if missing.
+func (d *DB) GetSetting(key string, defaultVal string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var val string
+	err := d.conn.QueryRow("SELECT value FROM app_settings WHERE key = ?", key).Scan(&val)
+	if err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+// SetSetting stores or updates a setting key-value pair.
+func (d *DB) SetSetting(key string, val string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.conn.Exec(`
+		INSERT INTO app_settings (key, value, updated_at) 
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+	`, key, val)
+	return err
+}
+
+// GetAllSettings returns all configured settings as a map.
+func (d *DB) GetAllSettings() (map[string]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.conn.Query("SELECT key, value FROM app_settings")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	settings := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err == nil {
+			settings[k] = v
+		}
+	}
+	return settings, nil
+}
+
+// AddToDownloadQueue inserts a new movie/torrent into the download queue.
+func (d *DB) AddToDownloadQueue(item *DownloadQueueRecord) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	res, err := d.conn.Exec(`
+		INSERT INTO download_queue (
+			movie_id, combined_id, movie_title, cover_url, actress_name,
+			torrent_hash, torrent_title, torrent_url, magnet_url,
+			file_size_bytes, quality_tag, status, progress_pct,
+			download_speed, eta_seconds, transmission_id, download_path,
+			error_message, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, item.MovieID, item.CombinedID, item.MovieTitle, item.CoverURL, item.ActressName,
+		item.TorrentHash, item.TorrentTitle, item.TorrentURL, item.MagnetURL,
+		item.FileSizeBytes, item.QualityTag, item.Status, item.ProgressPct,
+		item.DownloadSpeed, item.ETASeconds, item.TransmissionID, item.DownloadPath,
+		item.ErrorMessage,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return int(id), nil
+}
+
+// GetDownloadQueue returns all items in the download queue ordered by updated_at DESC.
+func (d *DB) GetDownloadQueue() ([]DownloadQueueRecord, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.conn.Query(`
+		SELECT id, movie_id, combined_id, movie_title, cover_url, actress_name,
+		       torrent_hash, torrent_title, torrent_url, magnet_url,
+		       file_size_bytes, quality_tag, status, progress_pct,
+		       download_speed, eta_seconds, transmission_id, download_path,
+		       error_message, created_at, updated_at
+		FROM download_queue
+		ORDER BY updated_at DESC, id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []DownloadQueueRecord
+	for rows.Next() {
+		var it DownloadQueueRecord
+		var cAt, uAt string
+		if err := rows.Scan(
+			&it.ID, &it.MovieID, &it.CombinedID, &it.MovieTitle, &it.CoverURL, &it.ActressName,
+			&it.TorrentHash, &it.TorrentTitle, &it.TorrentURL, &it.MagnetURL,
+			&it.FileSizeBytes, &it.QualityTag, &it.Status, &it.ProgressPct,
+			&it.DownloadSpeed, &it.ETASeconds, &it.TransmissionID, &it.DownloadPath,
+			&it.ErrorMessage, &cAt, &uAt,
+		); err != nil {
+			continue
+		}
+		it.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", cAt)
+		it.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", uAt)
+		items = append(items, it)
+	}
+	return items, nil
+}
+
+// GetDownloadQueueByMovieID retrieves active or most recent queue record for a movie ID.
+func (d *DB) GetDownloadQueueByMovieID(movieID string) (*DownloadQueueRecord, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var it DownloadQueueRecord
+	var cAt, uAt string
+	err := d.conn.QueryRow(`
+		SELECT id, movie_id, combined_id, movie_title, cover_url, actress_name,
+		       torrent_hash, torrent_title, torrent_url, magnet_url,
+		       file_size_bytes, quality_tag, status, progress_pct,
+		       download_speed, eta_seconds, transmission_id, download_path,
+		       error_message, created_at, updated_at
+		FROM download_queue
+		WHERE movie_id = ?
+		ORDER BY id DESC LIMIT 1
+	`, movieID).Scan(
+		&it.ID, &it.MovieID, &it.CombinedID, &it.MovieTitle, &it.CoverURL, &it.ActressName,
+		&it.TorrentHash, &it.TorrentTitle, &it.TorrentURL, &it.MagnetURL,
+		&it.FileSizeBytes, &it.QualityTag, &it.Status, &it.ProgressPct,
+		&it.DownloadSpeed, &it.ETASeconds, &it.TransmissionID, &it.DownloadPath,
+		&it.ErrorMessage, &cAt, &uAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	it.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", cAt)
+	it.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", uAt)
+	return &it, nil
+}
+
+// UpdateDownloadQueueStatus updates status and progress for a download queue item.
+func (d *DB) UpdateDownloadQueueStatus(id int, status string, progressPct float64, speed int64, eta int64, errorMsg string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.conn.Exec(`
+		UPDATE download_queue
+		SET status = ?, progress_pct = ?, download_speed = ?, eta_seconds = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, status, progressPct, speed, eta, errorMsg, id)
+	return err
+}
+
+// UpdateDownloadQueueTransmission updates transmission ID and hash for a queue item.
+func (d *DB) UpdateDownloadQueueTransmission(id int, transmissionID int, hash string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.conn.Exec(`
+		UPDATE download_queue
+		SET transmission_id = ?, torrent_hash = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, transmissionID, hash, id)
+	return err
+}
+
+// RemoveFromDownloadQueue deletes an entry from the download queue.
+func (d *DB) RemoveFromDownloadQueue(id int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.conn.Exec("DELETE FROM download_queue WHERE id = ?", id)
+	return err
+}
+
 

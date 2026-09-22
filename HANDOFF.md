@@ -196,6 +196,12 @@ make test
     Implemented `promptUnfollowActress(name)` in `pkg/web/static/js/api.js` with `confirm()` dialog and `/api/actresses/unfollow` API call. Exported to `window.app` in `app.js` to resolve `TypeError: window.app.promptUnfollowActress is not a function` from Bento sidebar Quick Actions button.
 46. **Configurable Migrate Destination (`-d` / `--dest` flag)**:
     `r19dev migrate` now supports explicit `-d <dest>` / `--dest` / `--destination` / `-o` / `--output` flags for target root. `defaultOrganizedDest()` auto-detects available NAS volume paths (`/Volumes/homes/plagad/BT/organized` or `/Volumes/home/BT/organized`). Migrator engine infers actress directory from `DestRoot` or `SourceDir` basename when metadata resolution is ambiguous, and avoids doubling the actress subdirectory when `DestRoot` already names the performer.
+47. **Sukebei Nyaa RSS & Smart Torrent Scoring (`pkg/torrent/sukebei.go`)**:
+    Automated torrent discovery from Sukebei Nyaa RSS feeds (`c=2_2`). Multi-attribute weighted ranking engine awards bonus points for 4K/UHD (+40), Uncensored (+35), 1080p (+20), and Chinese/English Subtitles (+15), scaling by seeder health and penalizing dead torrents (-50). Top-ranking healthy torrent is flagged with `is_recommended: true`.
+48. **Transmission JSON-RPC Client & Auto 409 CSRF Handshake (`pkg/torrent/transmission.go`)**:
+    Native Transmission BitTorrent client integration. Implements thread-safe `X-Transmission-Session-Id` handshake catching `409 Conflict` and re-executing RPC calls transparently. Supports `session-get` connection tests, `torrent-add` for magnets and `.torrent` URLs, queue inspection, and torrent removal.
+49. **Download Queue & Staging Pipeline (`pkg/db/db.go`, `pkg/web/server.go`)**:
+    Persistent SQLite tracking table `download_queue` and key-value `app_settings`. Manages the full state machine from queued → downloading → staging → organized NAS library.
 
 ---
 
@@ -243,7 +249,10 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **HTTP ETag & Versioned Avatar Cache Invalidation**: MD5-based conditional responses replacing 1-year static caching.
 - ✅ **Bento Profile Unfollow Action**: `promptUnfollowActress` with confirmation dialog and instant collection refresh.
 - ✅ **Configurable Migrate Destination (`-d` / `--dest`)**: Explicit flags and auto-detection of available NAS volumes.
-- ✅ **Architecture Decision Records (`ADR.md`)**: Formal ADR documentation covering Western Order naming, offline-first metadata, outlet SKU demotion, SMB I/O protection, and avatar caching.
+- ✅ **Architecture Decision Records (`ADR.md`)**: Formal ADR documentation covering Western Order naming, offline-first metadata, outlet SKU demotion, SMB I/O protection, avatar caching, and Transmission integration.
+- ✅ **Sukebei Nyaa Torrent Discovery & Smart Scorer**: Quality scoring (4K, 1080p, Uncensored, Chinese subs, seed health).
+- ✅ **Transmission JSON-RPC Direct Integration**: Thread-safe CSRF handshake, queue status, magnet/torrent submission.
+- ✅ **Persistent Download Queue & NAS Staging**: SQLite download queue state machine with REST APIs.
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:

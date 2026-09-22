@@ -293,6 +293,22 @@ The migrator automates the reorganization of multi-terabyte unorganized or legac
   - `PurgePromotionalVariants` executes fast SQL matching alongside a comprehensive sweep through unowned movies using `scraper.IsPromotionalOrOmnibusVariantWithDetails(mid, mtitle, morig, mlabel, mseries, mcover, genres)`.
   - Movies with local media files on disk (`library_files`, `organized_movies`) or marked as watched/favorite in `user_state` are strictly protected and never purged.
 
+### 3.13 Torrent Engine & Transmission Integration (`pkg/torrent`)
+
+The torrent engine automates the discovery, quality scoring, and queuing of missing filmography titles directly to Transmission daemons.
+
+* **Sukebei Nyaa RSS Parser & Smart Scorer (`sukebei.go`)**:
+  - Encodes search queries for Sukebei Nyaa RSS feeds (`c=2_2` for real-life videos).
+  - Parses XML items extracting title, magnet link, torrent URL, file size, seeders, leechers, and downloads.
+  - Implements multi-attribute weighted scoring (4K/UHD, 1080p, Uncensored, Chinese Subtitles, Seeder thresholds) and marks highest-ranking healthy item as `is_recommended: true`.
+* **Transmission JSON-RPC Client (`transmission.go`)**:
+  - Implements native JSON-RPC communication (`/transmission/rpc`).
+  - Thread-safe CSRF token lifecycle: automatically catches `409 Conflict`, extracts `X-Transmission-Session-Id`, and replays requests transparently.
+  - Supports basic auth, `torrent-add`, `torrent-get`, `torrent-remove`, and `session-get`.
+* **Download Queue & Staging Pipeline (`pkg/db/db.go`, `pkg/web/server.go`)**:
+  - Tracks download status: `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
+  - Persists settings in `app_settings` key-value table.
+
 ---
 
 ## 4. Operational Runbook & Edge Cases
@@ -334,4 +350,6 @@ The migrator automates the reorganization of multi-terabyte unorganized or legac
 | **Stale Browser Avatar Cache** | Browser memory cache keeps old or placeholder headshot due to 1-year `max-age` | `/api/actresses/avatar/{name}` responds with `ETag` + `Cache-Control: no-cache, must-revalidate` and `?v={r18_id}` cache-buster. |
 | **Mount Point Shift on "Show in Finder"** | User switches macOS mount from `/Volumes/home/` to `/Volumes/homes/plagad/` | `resolvePathToExisting` tests known path substitutions and falls back gracefully to parent actress directories. |
 | **Bento Profile Unfollow Action** | Clicking Unfollow on actress profile triggers `TypeError: promptUnfollowActress is not a function` | Implemented `promptUnfollowActress` in `api.js` and exported to `window.app` in `app.js` with confirmation dialog. |
+| **Transmission 409 CSRF Token Handshake** | First request to Transmission RPC fails with 409 Conflict | `doRPC` automatically catches 409, caches `X-Transmission-Session-Id` header, and retries request seamlessly. |
+| **Sukebei RSS XML Parsing Noise** | CDATA or non-standard enclosure URLs in Sukebei RSS | XML parser uses standard XML structs with fallback to item link or magnet extractors. |
 

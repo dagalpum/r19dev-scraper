@@ -66,6 +66,8 @@ import {
   loadAndRenderSettings,
   saveSettingsFromForm,
   handleTestTransmission,
+  handleTestTorrentClient,
+  onTorrentClientTypeChange,
   startDownloadPolling
 } from './downloads.js';
 
@@ -356,6 +358,8 @@ window.app = {
   openSettingsModal,
   closeSettingsModal,
   saveSettingsFromForm,
+  onTorrentClientTypeChange,
+  testTorrentClientConnection: handleTestTorrentClient,
   testTransmissionConnection: handleTestTransmission,
 
   // Torrent Search in Movie Modal

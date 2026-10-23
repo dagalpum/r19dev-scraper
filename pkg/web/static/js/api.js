@@ -768,9 +768,9 @@ export async function saveSettings(settingsMap) {
   }
 }
 
-export async function testTransmissionConnection(config = {}) {
+export async function testTorrentClientConnection(config = {}) {
   try {
-    const res = await fetch('/api/settings/test-transmission', {
+    const res = await fetch('/api/settings/test-client', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config)
@@ -781,4 +781,6 @@ export async function testTransmissionConnection(config = {}) {
     return { success: false, error: err.message };
   }
 }
+
+export const testTransmissionConnection = testTorrentClientConnection;
 

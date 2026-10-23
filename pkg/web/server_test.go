@@ -187,4 +187,13 @@ func TestWebServerEndpoints(t *testing.T) {
 	if wOrg.Code != http.StatusNotFound {
 		t.Errorf("POST /api/torrents/queue/organize expected 404 for nonexistent id, got %d", wOrg.Code)
 	}
+
+	// 11. Test /api/settings/test-client
+	testClientBody := bytes.NewBufferString(`{"client_type":"qbittorrent","url":"http://127.0.0.1:9999"}`)
+	reqTestClient := httptest.NewRequest(http.MethodPost, "/api/settings/test-client", testClientBody)
+	wTestClient := httptest.NewRecorder()
+	handler.ServeHTTP(wTestClient, reqTestClient)
+	if wTestClient.Code != http.StatusOK || !strings.Contains(wTestClient.Body.String(), "client_type") {
+		t.Errorf("POST /api/settings/test-client failed: code %d, body: %s", wTestClient.Code, wTestClient.Body.String())
+	}
 }

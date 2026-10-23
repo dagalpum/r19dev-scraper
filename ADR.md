@@ -143,3 +143,53 @@ Searching public torrent indexers (like Sukebei Nyaa) for a specific JAV title p
 
 ### Consequences
 - Operators can queue the highest quality available release in a single click without manually parsing tracker titles.
+
+---
+
+## ADR 008: Unified BitTorrent Downloader Architecture (`TorrentDownloader` Interface) & qBittorrent Web API v2 Engine
+
+### Status
+Accepted & Implemented
+
+### Context
+Users utilize diverse BitTorrent download engines across Synology, QNAP, Unraid, and Docker setups. While Transmission was originally supported via JSON-RPC, modern homelab environments increasingly standardize on qBittorrent for enhanced multi-tracker swarm handling, sequential downloading, and robust queuing. Hardcoding a single client type hindered adoption and flexibility.
+
+### Decision
+1. Define a unified `TorrentDownloader` interface in `pkg/torrent/types.go`:
+   - `AddTorrent(req AddTorrentRequest) (*AddTorrentResponse, error)`
+   - `GetTorrents(hashes ...string) ([]TorrentInfo, error)`
+   - `RemoveTorrent(hash string, deleteFiles bool) error`
+   - `TestConnection() (*ClientTestResult, error)`
+2. Implement `QBittorrentClient` in `pkg/torrent/qbittorrent.go`:
+   - Uses native Web API v2 (`/api/v2/auth/login`, `/api/v2/torrents/add`, `/api/v2/torrents/info`, `/api/v2/torrents/delete`, `/api/v2/app/version`).
+   - Maintains an in-memory session cookie jar (`SID`).
+   - Automatically intercepts `HTTP 403 Forbidden` on expired sessions and transparently re-authenticates.
+   - Standardizes disparate qBittorrent states (`downloading`, `stalledDL`, `uploading`, `pausedDL`, `error`) into canonical `TorrentInfo` models.
+3. Keep `TransmissionClient` compliant with the identical `TorrentDownloader` interface.
+4. Support dynamic engine selection (`torrent_client_type`: `qbittorrent` vs `transmission`) in `app_settings` with live reloading and UI connection testing (`/api/settings/test-client`).
+
+### Consequences
+- Operators can seamlessly toggle between qBittorrent and Transmission with zero server restarts.
+- Future client additions (Deluge, Aria2) only require implementing the standard `TorrentDownloader` interface.
+
+---
+
+## ADR 009: Cross-Environment SMB/NAS Path Auto-Normalization (`/Volumes/homes/...` <-> `/volume1/homes/...`)
+
+### Status
+Accepted & Implemented
+
+### Context
+When running `r19dev` locally on macOS while the torrent downloader (qBittorrent or Transmission) runs inside a Synology NAS or Docker container:
+1. macOS mounts the download folder via SMB (e.g. `/Volumes/homes/plagad/BT/JD/` or `/Volumes/home/BT/JD/`).
+2. The NAS downloader engine reports save paths using internal Linux filesystem paths (e.g. `/volume1/homes/plagad/BT/JD/`).
+3. Auto-organizing and file-staging checks failed because the server could not find `/volume1/...` on the macOS host.
+
+### Decision
+1. Implement bidirectional path translation in `pkg/web/server.go`:
+   - Detects `/volume1/homes/...` or `/volume1/home/...` paths reported by the downloader and translates them to the local macOS mount equivalent (`/Volumes/homes/plagad/...` or `/Volumes/home/...`).
+   - Translates local macOS paths to NAS internal Linux paths when submitting new download jobs with custom save directories.
+2. In the organize pipeline, candidate staging folders are verified against the host filesystem before proceeding.
+
+### Consequences
+- Flawless staging detection and auto-organization between macOS workstations and Synology/Linux NAS torrent daemons.

@@ -79,10 +79,12 @@ r19dev-scraper/
 │   │   ├── tui.go            # Interactive Charm Bubble Tea TUI with real-time progress bar & log pane
 │   │   ├── cli.go            # Headless non-interactive CLI runner for scripts and servers
 │   │   └── types.go          # Event definitions, config, and migration summary types
-│   ├── torrent/              # Module 14: Sukebei Nyaa RSS & Transmission JSON-RPC Client
-│   │   ├── types.go          # TorrentItem, TorrentSearchResult, TransmissionConfig, DownloadQueueItem
+│   ├── torrent/              # Module 14: Sukebei Nyaa RSS & Multi-Engine Torrent Downloader
+│   │   ├── types.go          # TorrentDownloader interface, TorrentItem, DownloadQueueRecord, client configs
 │   │   ├── sukebei.go        # Sukebei RSS query parser, smart scoring ranking algorithm
 │   │   ├── sukebei_test.go   # Sukebei RSS parsing & ranking unit tests
+│   │   ├── qbittorrent.go    # qBittorrent Web API v2 client, cookie jar auth & state mapping
+│   │   ├── qbittorrent_test.go # qBittorrent client unit tests
 │   │   ├── transmission.go   # Transmission RPC client, 409 CSRF handshake, torrent management
 │   │   └── transmission_test.go # Transmission RPC test suite
 │   ├── audit/                # Module 13: Quality Auditor & Doctor
@@ -327,7 +329,23 @@ r19dev-scraper/
 * **State Lifecycle**: `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
 * **Database Tables**:
   - `download_queue`: Stores movie ID, combined ID, torrent hash, title, progress %, download speed, ETA seconds, and transmission ID.
-  - `app_settings`: Key-value storage for `transmission_url`, credentials, and download directory paths.
+  - `app_settings`: Key-value storage for `transmission_url`, `qbittorrent_url`, credentials, `torrent_client_type`, and download directory paths.
+
+### 4.33 Unified Downloader Interface & qBittorrent Web API v2 Engine (`pkg/torrent/qbittorrent.go`)
+* **Problem Solved**: Decoupling downloader integration from a specific daemon so operators can freely choose between qBittorrent and Transmission.
+* **Architecture**: The `TorrentDownloader` interface (`types.go`) standardizes methods (`AddTorrent`, `GetTorrents`, `RemoveTorrent`, `TestConnection`).
+* **qBittorrent Web API v2**:
+  - Built-in cookie jar managing authentication sessions (`SID`).
+  - Automatic `HTTP 403 Forbidden` interception and transparent re-login.
+  - State mapping translates diverse qBittorrent status strings (`downloading`, `stalledDL`, `uploading`, `pausedDL`, `error`) into canonical `TorrentInfo` states.
+  - Real-time connection testing (`POST /api/settings/test-client`) and dynamic client selection without server restarts.
+
+### 4.34 Bidirectional Cross-Environment SMB/NAS Path Translation (`pkg/web/server.go`)
+* **Problem Solved**: Host workstation running on macOS mounts network shares as `/Volumes/homes/...` or `/Volumes/home/...`, while NAS-hosted download engines report local Linux paths (`/volume1/homes/...`).
+* **Bidirectional Normalization**:
+  - Server translates reported NAS paths to matching macOS mount points before checking staging status.
+  - Translates local macOS paths to NAS internal paths when submitting download tasks.
+  - Guarantees zero `Permission Denied` or file not found errors in the organize pipeline.
 
 ---
 

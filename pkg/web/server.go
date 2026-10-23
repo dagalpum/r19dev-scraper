@@ -45,9 +45,9 @@ type Server struct {
 	scraperClient      *scraper.Client
 	actressService     *actress.Service
 	db                 *db.DB
-	sukebeiClient      *torrent.SukebeiClient
-	transmissionClient *torrent.TransmissionClient
-	transMu            sync.RWMutex
+	sukebeiClient  *torrent.SukebeiClient
+	torrentClient  torrent.TorrentDownloader
+	torrentMu      sync.RWMutex
 }
 
 // Config holds initialization parameters for the web server.
@@ -104,6 +104,12 @@ func NewServer(cfg Config) (*Server, error) {
 		_, _ = actSvc.CheckAllFollowed(ctx)
 	}()
 
+	clientType := database.GetSetting("torrent_client_type", "qbittorrent")
+	qbURL := database.GetSetting("qbittorrent_url", "http://192.168.1.189:8080")
+	qbUser := database.GetSetting("qbittorrent_username", "")
+	qbPass := database.GetSetting("qbittorrent_password", "")
+	qbDir := database.GetSetting("qbittorrent_download_dir", "")
+
 	transURL := database.GetSetting("transmission_url", "http://192.168.1.189:9091")
 	transUser := database.GetSetting("transmission_username", "")
 	transPass := database.GetSetting("transmission_password", "")
@@ -111,23 +117,33 @@ func NewServer(cfg Config) (*Server, error) {
 	sukebeiURL := database.GetSetting("sukebei_url", torrent.DefaultSukebeiBaseURL)
 
 	sukebeiCli := torrent.NewSukebeiClient(sukebeiURL)
-	transCli := torrent.NewTransmissionClient(torrent.TransmissionConfig{
-		URL:         transURL,
-		Username:    transUser,
-		Password:    transPass,
-		DownloadDir: transDir,
-	})
+	var tCli torrent.TorrentDownloader
+	if clientType == "transmission" {
+		tCli = torrent.NewTransmissionClient(torrent.TransmissionConfig{
+			URL:         transURL,
+			Username:    transUser,
+			Password:    transPass,
+			DownloadDir: transDir,
+		})
+	} else {
+		tCli = torrent.NewQBittorrentClient(torrent.QBittorrentConfig{
+			URL:         qbURL,
+			Username:    qbUser,
+			Password:    qbPass,
+			DownloadDir: qbDir,
+		})
+	}
 
 	return &Server{
-		targetDir:          absTarget,
-		port:               cfg.Port,
-		scanner:            sc,
-		matcher:            mc,
-		scraperClient:      scClient,
-		actressService:     actSvc,
-		db:                 database,
-		sukebeiClient:      sukebeiCli,
-		transmissionClient: transCli,
+		targetDir:      absTarget,
+		port:           cfg.Port,
+		scanner:        sc,
+		matcher:        mc,
+		scraperClient:  scClient,
+		actressService: actSvc,
+		db:             database,
+		sukebeiClient:  sukebeiCli,
+		torrentClient:  tCli,
 	}, nil
 }
 
@@ -173,7 +189,8 @@ func (s *Server) Handler() (http.Handler, error) {
 	mux.HandleFunc("/api/webhook/download-complete", s.handleDownloadWebhook)
 	mux.HandleFunc("/api/torrents/webhook", s.handleDownloadWebhook)
 	mux.HandleFunc("/api/settings", s.handleSettings)
-	mux.HandleFunc("/api/settings/test-transmission", s.handleTestTransmission)
+	mux.HandleFunc("/api/settings/test-client", s.handleTestTorrentClient)
+	mux.HandleFunc("/api/settings/test-transmission", s.handleTestTorrentClient)
 
 	// Favicon SVG
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
@@ -2088,20 +2105,31 @@ func normalizeTransmissionDir(dir string) string {
 	return dir
 }
 
-// --- Torrent & Transmission Handlers ---
+// --- Torrent & Client Handlers (qBittorrent & Transmission) ---
 
-func (s *Server) getTransmissionClient() *torrent.TransmissionClient {
-	s.transMu.RLock()
-	defer s.transMu.RUnlock()
-	return s.transmissionClient
+func (s *Server) getTorrentClient() torrent.TorrentDownloader {
+	s.torrentMu.RLock()
+	defer s.torrentMu.RUnlock()
+	return s.torrentClient
+}
+
+func (s *Server) getTransmissionClient() torrent.TorrentDownloader {
+	return s.getTorrentClient()
 }
 
 func (s *Server) reloadTorrentClients() {
-	s.transMu.Lock()
-	defer s.transMu.Unlock()
+	s.torrentMu.Lock()
+	defer s.torrentMu.Unlock()
 	if s.db == nil {
 		return
 	}
+	clientType := s.db.GetSetting("torrent_client_type", "qbittorrent")
+
+	qbURL := s.db.GetSetting("qbittorrent_url", "http://192.168.1.189:8080")
+	qbUser := s.db.GetSetting("qbittorrent_username", "")
+	qbPass := s.db.GetSetting("qbittorrent_password", "")
+	qbDir := normalizeTransmissionDir(s.db.GetSetting("qbittorrent_download_dir", ""))
+
 	transURL := s.db.GetSetting("transmission_url", "http://192.168.1.189:9091")
 	transUser := s.db.GetSetting("transmission_username", "")
 	transPass := s.db.GetSetting("transmission_password", "")
@@ -2109,12 +2137,21 @@ func (s *Server) reloadTorrentClients() {
 	sukebeiURL := s.db.GetSetting("sukebei_url", torrent.DefaultSukebeiBaseURL)
 
 	s.sukebeiClient = torrent.NewSukebeiClient(sukebeiURL)
-	s.transmissionClient = torrent.NewTransmissionClient(torrent.TransmissionConfig{
-		URL:         transURL,
-		Username:    transUser,
-		Password:    transPass,
-		DownloadDir: transDir,
-	})
+	if clientType == "transmission" {
+		s.torrentClient = torrent.NewTransmissionClient(torrent.TransmissionConfig{
+			URL:         transURL,
+			Username:    transUser,
+			Password:    transPass,
+			DownloadDir: transDir,
+		})
+	} else {
+		s.torrentClient = torrent.NewQBittorrentClient(torrent.QBittorrentConfig{
+			URL:         qbURL,
+			Username:    qbUser,
+			Password:    qbPass,
+			DownloadDir: qbDir,
+		})
+	}
 }
 
 func (s *Server) handleTorrentSearch(w http.ResponseWriter, r *http.Request) {
@@ -2220,9 +2257,9 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tClient := s.getTransmissionClient()
+	tClient := s.getTorrentClient()
 	if tClient == nil {
-		http.Error(w, `{"error": "transmission client not configured"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error": "torrent client not configured"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -2235,7 +2272,7 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadGateway)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": fmt.Sprintf("transmission rpc error: %v", err),
+			"error": fmt.Sprintf("%s error: %v", tClient.ClientType(), err),
 		})
 		return
 	}
@@ -2268,13 +2305,19 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	clientName := "qBittorrent"
+	if tClient.ClientType() == "transmission" {
+		clientName = "Transmission"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success":         true,
 		"queue_id":        qID,
 		"transmission_id": tID,
 		"hash":            hash,
-		"message":         "Torrent added to Transmission successfully",
+		"client_type":     tClient.ClientType(),
+		"message":         fmt.Sprintf("Torrent added to %s successfully", clientName),
 	})
 }
 
@@ -2291,8 +2334,8 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try to query Transmission for real-time progress update
-	tClient := s.getTransmissionClient()
+	// Try to query Torrent Client for real-time progress update
+	tClient := s.getTorrentClient()
 	if tClient != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 		defer cancel()
@@ -2302,7 +2345,9 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 			torrentsByID := make(map[int]torrent.TransmissionTorrent)
 			torrentsByHash := make(map[string]torrent.TransmissionTorrent)
 			for _, t := range torrents {
-				torrentsByID[t.ID] = t
+				if t.ID > 0 {
+					torrentsByID[t.ID] = t
+				}
 				if t.HashString != "" {
 					torrentsByHash[strings.ToLower(t.HashString)] = t
 				}
@@ -2352,7 +2397,7 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 					item.ETASeconds = eta
 					item.Status = status
 					item.ErrorMessage = errMsg
-					if item.TransmissionID == 0 {
+					if item.TransmissionID == 0 && matched.ID > 0 {
 						item.TransmissionID = matched.ID
 						_ = s.db.UpdateDownloadQueueTransmission(item.ID, matched.ID, matched.HashString)
 					}
@@ -2360,12 +2405,12 @@ func (s *Server) handleDownloadQueue(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Auto-discover active torrents in Transmission that are not yet tracked in SQLite queue
+			// Auto-discover active torrents in client that are not yet tracked in SQLite queue
 			if s.matcher != nil {
 				for _, t := range torrents {
 					alreadyTracked := false
 					for _, it := range items {
-						if it.TransmissionID == t.ID || (it.TorrentHash != "" && strings.EqualFold(it.TorrentHash, t.HashString)) {
+						if (t.ID > 0 && it.TransmissionID == t.ID) || (it.TorrentHash != "" && strings.EqualFold(it.TorrentHash, t.HashString)) {
 							alreadyTracked = true
 							break
 						}
@@ -2428,11 +2473,11 @@ func (s *Server) handleDownloadQueueDelete(w http.ResponseWriter, r *http.Reques
 		if req.DeleteFromTransmission {
 			items, _ := s.db.GetDownloadQueue()
 			for _, it := range items {
-				if it.ID == req.ID && it.TransmissionID > 0 {
-					tClient := s.getTransmissionClient()
+				if it.ID == req.ID {
+					tClient := s.getTorrentClient()
 					if tClient != nil {
 						ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-						_ = tClient.RemoveTorrent(ctx, it.TransmissionID, false)
+						_ = tClient.RemoveTorrent(ctx, it.TransmissionID, it.TorrentHash, false)
 						cancel()
 					}
 					break
@@ -2449,6 +2494,11 @@ func (s *Server) handleDownloadQueueDelete(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		settings := map[string]string{
+			"torrent_client_type":       "qbittorrent",
+			"qbittorrent_url":           "http://192.168.1.189:8080",
+			"qbittorrent_username":      "",
+			"qbittorrent_password":      "",
+			"qbittorrent_download_dir":  "",
 			"transmission_url":          "http://192.168.1.189:9091",
 			"transmission_username":     "",
 			"transmission_password":     "",
@@ -2480,7 +2530,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 		if s.db != nil {
 			for k, v := range req {
-				if k == "transmission_download_dir" {
+				if k == "transmission_download_dir" || k == "qbittorrent_download_dir" {
 					v = normalizeTransmissionDir(v)
 				}
 				_ = s.db.SetSetting(k, v)
@@ -2500,45 +2550,64 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
 }
 
-func (s *Server) handleTestTransmission(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTestTorrentClient(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req struct {
-		URL      string `json:"url"`
-		Username string `json:"username"`
-		Password string `json:"password"`
+		ClientType string `json:"client_type"` // "qbittorrent" or "transmission"
+		URL        string `json:"url"`
+		Username   string `json:"username"`
+		Password   string `json:"password"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
-	var tClient *torrent.TransmissionClient
-	if req.URL != "" {
-		tClient = torrent.NewTransmissionClient(torrent.TransmissionConfig{
-			URL:      req.URL,
-			Username: req.Username,
-			Password: req.Password,
-		})
-	} else {
-		tClient = s.getTransmissionClient()
+	cType := req.ClientType
+	if cType == "" {
+		if s.db != nil {
+			cType = s.db.GetSetting("torrent_client_type", "qbittorrent")
+		} else {
+			cType = "qbittorrent"
+		}
 	}
 
-	if tClient == nil {
-		http.Error(w, `{"error": "no transmission client available"}`, http.StatusBadRequest)
+	var testClient torrent.TorrentDownloader
+	if req.URL != "" {
+		if cType == "transmission" {
+			testClient = torrent.NewTransmissionClient(torrent.TransmissionConfig{
+				URL:      req.URL,
+				Username: req.Username,
+				Password: req.Password,
+			})
+		} else {
+			testClient = torrent.NewQBittorrentClient(torrent.QBittorrentConfig{
+				URL:      req.URL,
+				Username: req.Username,
+				Password: req.Password,
+			})
+		}
+	} else {
+		testClient = s.getTorrentClient()
+	}
+
+	if testClient == nil {
+		http.Error(w, `{"error": "no torrent client available"}`, http.StatusBadRequest)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 
-	version, downloadDir, err := tClient.TestConnection(ctx)
+	version, downloadDir, err := testClient.TestConnection(ctx)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"success": false,
-			"error":   err.Error(),
+			"success":     false,
+			"client_type": testClient.ClientType(),
+			"error":       err.Error(),
 		})
 		return
 	}
@@ -2546,12 +2615,13 @@ func (s *Server) handleTestTransmission(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success":      true,
+		"client_type":  testClient.ClientType(),
 		"version":      version,
 		"download_dir": downloadDir,
 	})
 }
 
-// organizeQueueItem processes and moves a downloaded movie from Transmission/Staging into the organized library.
+// organizeQueueItem processes and moves a downloaded movie from Transmission/qBittorrent Staging into the organized library.
 func (s *Server) organizeQueueItem(ctx context.Context, item *db.DownloadQueueRecord, t *torrent.TransmissionTorrent) (*organizer.OrganizeResult, error) {
 	if item == nil {
 		return nil, fmt.Errorf("queue item is nil")
@@ -2571,15 +2641,20 @@ func (s *Server) organizeQueueItem(ctx context.Context, item *db.DownloadQueueRe
 		candidatePaths = append(candidatePaths, item.DownloadPath)
 	}
 
-	var transDownDir string
+	var clientDownDir string
 	if s.db != nil {
-		transDownDir = s.db.GetSetting("transmission_download_dir", "")
-	}
-	if transDownDir != "" {
-		if item.TorrentTitle != "" {
-			candidatePaths = append(candidatePaths, filepath.Join(transDownDir, item.TorrentTitle))
+		cType := s.db.GetSetting("torrent_client_type", "qbittorrent")
+		if cType == "qbittorrent" {
+			clientDownDir = s.db.GetSetting("qbittorrent_download_dir", "")
+		} else {
+			clientDownDir = s.db.GetSetting("transmission_download_dir", "")
 		}
-		candidatePaths = append(candidatePaths, filepath.Join(transDownDir, movieID))
+	}
+	if clientDownDir != "" {
+		if item.TorrentTitle != "" {
+			candidatePaths = append(candidatePaths, filepath.Join(clientDownDir, item.TorrentTitle))
+		}
+		candidatePaths = append(candidatePaths, filepath.Join(clientDownDir, movieID))
 	}
 	if s.targetDir != "" {
 		if item.TorrentTitle != "" {

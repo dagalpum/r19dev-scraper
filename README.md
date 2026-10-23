@@ -98,20 +98,6 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
 - **🛡️ Smart Collision & Quality Protection**:
   - **Zero Destructive Overwrites**: Automatically detects existing titles in target destinations. Instead of overwriting or erroring out, it merges complementary assets safely.
   - **Quality Coexistence**: Safely co-locates 4K editions (`-4k.mp4`), 1080p standard editions (`.mp4`), and uncensored editions (`-uncensored.mp4`) in the same movie folder.
-
-### 🌊 5. Torrent Engine & Transmission Integration (`pkg/torrent`)
-- **🔍 Smart Sukebei Nyaa RSS Search & Ranking Engine**:
-  - Automatically queries Sukebei Nyaa RSS feeds for JAV releases with category filtering (`2_2` Real Life - Videos) and seeder prioritization.
-  - **Smart Release Scoring Algorithm**: Evaluates and ranks torrents with weighted scoring for **4K resolution (+40 pts)**, **1080p (+20 pts)**, **Uncensored tags (+35 pts)**, **Subtitles (+15 pts)**, and **Seeder health (+10 to +30 pts)**, highlighting the recommended release automatically.
-- **⚡ Direct Transmission JSON-RPC Integration (`/transmission/rpc`)**:
-  - Native communication with Transmission daemon without external CLI tools.
-  - Transparent **409 Conflict CSRF token auto-handshake** and HTTP Basic Authentication.
-  - Single-click magnet / torrent submission directly from the Web UI with custom download directory routing.
-- **📥 Real-Time Download Queue & NAS Staging Pipeline**:
-  - Persistent SQLite-backed download queue tracking releases across `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
-  - Dynamic polling for real-time download speed, progress percentage, and ETA seconds.
-- **⚙️ Dynamic Key-Value Settings Storage**:
-  - Configurable Transmission endpoint URL, credentials, custom download directory, and Sukebei mirrors stored in `app_settings` SQLite table and live-reloaded without server restarts.
   - **Multi-Part Integrity**: Preserves and standardizes multi-part CD files (`-cd1.mp4` through `-cd5.mp4`), keeping all discs grouped in the single movie directory.
 - **📋 Pre-Flight Safety Confirmation**: Scans the source tree, maps metadata against `r18_dump.db`, resolves destination paths, and pauses for explicit operator confirmation (`[Enter] PROCEED` / `[q] CANCEL`) before moving a single byte.
 - **⚡ Concurrent Worker Pool & Zero-Lag Discovery**:
@@ -119,14 +105,30 @@ A modern, high-performance JAV video library scanner, pattern matcher, R18.dev m
   - Upgrades library `movie.html` files with a **16-worker concurrent pool**, reducing re-render times from minutes to seconds.
 - **🧹 Safe Source Directory Tree Cleanup**: Post-order traversal safely removes only empty parent folders in the source directory after files are migrated, while preserving non-empty folders containing skipped or foreign media.
 
-### 📜 5. Console Log & SQLite Operation History (Audit Trail)
+### 🌊 5. Torrent Engine & Multi-Client Downloader (`pkg/torrent`)
+- **🔍 Smart Sukebei Nyaa RSS Search & Ranking Engine**:
+  - Automatically queries Sukebei Nyaa RSS feeds for JAV releases with category filtering (`2_2` Real Life - Videos) and seeder prioritization.
+  - **Smart Release Scoring Algorithm**: Evaluates and ranks torrents with weighted scoring for **4K resolution (+40 pts)**, **1080p (+20 pts)**, **Uncensored tags (+35 pts)**, **Subtitles (+15 pts)**, and **Seeder health (+10 to +30 pts)**, highlighting the recommended release automatically.
+- **⚡ Dual-Engine BitTorrent Downloader Architecture (`TorrentDownloader` Interface)**:
+  - **qBittorrent Web API v2 (Recommended)**: Built-in cookie jar session management, automatic `HTTP 403 Forbidden` interception and transparent re-authentication, full state mapping (`downloading`, `stalledDL`, `uploading`/`seeding`, `error`).
+  - **Transmission JSON-RPC (`/transmission/rpc`)**: Transparent **409 Conflict CSRF token auto-handshake** and HTTP Basic Authentication.
+  - **Dynamic Engine Switching**: Switch between qBittorrent and Transmission directly from the Web Studio Settings modal with zero server restarts.
+  - **Live Connection Testing**: Instant client health check button (`Test Connection`) validating credentials, daemon reachability, and client version before saving.
+- **📥 Real-Time Download Queue & Kanban Pipeline Board**:
+  - Persistent SQLite-backed download queue tracking releases across `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
+  - **3-Column Interactive Kanban Board**: Dedicated board layout featuring **Downloading**, **Ready to Organize (Staging)**, and **In Library** columns with expandable cards, progress bars, speed gauges, and ETA.
+  - **Deduplication Warning Badges**: Highlights already-owned titles or duplicate queued releases to prevent redundant disk usage.
+- **🌉 Cross-Environment SMB/NAS Path Auto-Normalization**:
+  - Automatically translates between local macOS SMB mount paths (`/Volumes/homes/plagad/...`, `/Volumes/home/...`) and internal Synology/Linux NAS filesystem paths (`/volume1/homes/...`), ensuring seamless staging discovery.
+
+### 📜 6. Console Log & SQLite Operation History (Audit Trail)
 - **Smart Auto-Scroll**: Console Log automatically pauses auto-scrolling when the user scrolls up to inspect previous lines (`Auto-Scroll: PAUSED`), displaying a floating `⬇️ New logs below (Click to resume)` button.
 - **One-Click Log Copy**: Instant `📋 Copy` button to copy complete console logs to the clipboard.
 - **SQLite Operation History (`operation_history`)**: All batch and single Organize/Scrape operations are automatically recorded into SQLite with complete timestamps, counts (success/fail), parameters, and full audit logs.
 - **Zero Clutter & Auto-Retention**: Auto-prunes entries older than 30 days and maintains a maximum of 100 entries, ensuring a tiny database footprint with zero disk clutter.
 - **History Viewer Modal**: Accessible via `📜 History` on the console header with full detail inspection and log copying.
 
-### 🖥️ 5. Interactive Terminal TUI (`r19dev tui`)
+### 🖥️ 7. Interactive Terminal TUI (`r19dev tui`)
 - Built with Charm's **Bubble Tea** and **Lip Gloss**.
 - **Kitty GPU Graphics Protocol**: Native pixel-perfect bitmap rendering on Kitty, Ghostty, and WezTerm.
 - **iTerm2 Inline Images Protocol**: Native bitmap rendering on iTerm2, WezTerm, Warp, and VS Code.

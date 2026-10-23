@@ -16,14 +16,15 @@ The codebase is clean, thoroughly tested (100% test pass rate across all package
 | Area | Status | Notes |
 |---|---|---|
 | **Compilation** | ✅ Passing | Single-binary compilation via `go build -o bin/r19dev ./cmd/r19dev` |
-| **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/migrator`, `pkg/actress`, `pkg/cache`, `pkg/db`, and `pkg/web` |
+| **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/migrator`, `pkg/actress`, `pkg/cache`, `pkg/db`, `pkg/torrent`, and `pkg/web` |
+| **Torrent Downloader** | ✅ Dual Engine | Unified `TorrentDownloader` interface supporting **qBittorrent Web API v2** & **Transmission JSON-RPC** with dynamic switching |
 | **Migrator & Reorganizer**| ✅ Passing | 5-phase pipeline, Charm Bubble Tea TUI, smart collision co-location (4K/uncensored/multi-part), 16-worker HTML upgrader |
 | **Library Milestone** | ✅ 6.5 TB | **868 movies / 966 video files (~6.5 TB)** organized on NAS across 3 migration phases (Sorted, Root loose, Misc) |
 | **Frontend** | ✅ Modular | Native ES Modules in `pkg/web/static/js/`, zero Node.js/npm dependencies, 100% offline-ready |
 | **Offline Scraper** | ✅ Sub-ms | Tier-1 `r18_dump.db` (1.9M+ movies, 101k+ actresses, 540k+ translations) resolving in `< 1ms` |
 | **Dependencies** | ✅ Stable | Using standard library + `modernc.org/sqlite` (pure Go, zero CGO) + Charm packages (`bubbletea`, `lipgloss`) |
 | **Performance** | ✅ Fast | Zero UI lag; asynchronous IO for disk traversal, HTTP connection pooling, and live SSE streaming |
-| **Documentation** | ✅ Complete | Updated `README.md`, `OKF.md`, `CONTEXT.md`, and `HANDOFF.md` |
+| **Documentation** | ✅ Complete | Updated `README.md`, `OKF.md`, `CONTEXT.md`, `ADR.md`, and `HANDOFF.md` |
 
 ---
 
@@ -41,10 +42,11 @@ pkg/
 ├── actress/              -> Actress tracking service, filmography tracker, and local release comparator
 ├── audit/                -> Movie completeness auditor & doctor engine, Bubble Tea split-pane TUI, interactive quick-fix
 ├── cache/                -> Persistent disk cache for API payloads and images (~/.cache or ~/Library/Caches)
+├── torrent/              -> Unified TorrentDownloader interface, Sukebei Nyaa RSS smart ranker, qBittorrent & Transmission clients
 ├── web/                  -> Single-binary Web UI Studio server, SSE streaming, REST API, embedded SPA frontend, self-healing avatar cache
 │   └── static/           -> Static web assets (embedded via embed.FS)
 │       ├── fonts/        -> Local offline fonts (Inter, JetBrains Mono, Material Symbols)
-│       ├── js/           -> Native ES modules (state, api, modal, scanner, organizer, history, actress, graph, app)
+│       ├── js/           -> Native ES modules (state, api, modal, scanner, organizer, history, actress, graph, downloads, app)
 │       ├── vendor/       -> Offline vendor bundles (Lucide, PhotoSwipe 5)
 │       ├── index.html    -> Semantic dark-mode HTML shell (zero CDN links)
 │       └── style.css     -> CSS Design system with local @font-face rules

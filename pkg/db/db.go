@@ -1794,7 +1794,7 @@ func (d *DB) GetAllSettings() (map[string]string, error) {
 			settings[k] = v
 		}
 	}
-	return settings, nil
+	return settings, rows.Err()
 }
 
 // AddToDownloadQueue inserts a new movie/torrent into the download queue.
@@ -1863,7 +1863,7 @@ func (d *DB) GetDownloadQueue() ([]DownloadQueueRecord, error) {
 		it.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", uAt)
 		items = append(items, it)
 	}
-	return items, nil
+	return items, rows.Err()
 }
 
 // GetDownloadQueueByMovieID retrieves active or most recent queue record for a movie ID.

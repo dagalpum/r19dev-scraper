@@ -40,6 +40,11 @@ func NewTransmissionClient(cfg TransmissionConfig) *TransmissionClient {
 	}
 }
 
+// ClientType returns "transmission".
+func (c *TransmissionClient) ClientType() string {
+	return "transmission"
+}
+
 type rpcRequest struct {
 	Method    string                 `json:"method"`
 	Arguments map[string]interface{} `json:"arguments,omitempty"`
@@ -288,11 +293,19 @@ func (c *TransmissionClient) GetTorrents(ctx context.Context) ([]TransmissionTor
 	return results, nil
 }
 
-// RemoveTorrent deletes a torrent from Transmission by ID.
-func (c *TransmissionClient) RemoveTorrent(ctx context.Context, id int, deleteLocalData bool) error {
-	_, err := c.doRPC(ctx, "torrent-remove", map[string]interface{}{
-		"ids":               []int{id},
+// RemoveTorrent deletes a torrent from Transmission by ID or Hash.
+func (c *TransmissionClient) RemoveTorrent(ctx context.Context, id int, hash string, deleteLocalData bool) error {
+	args := map[string]interface{}{
 		"delete-local-data": deleteLocalData,
-	})
+	}
+	if id > 0 {
+		args["ids"] = []int{id}
+	} else if hash != "" {
+		args["ids"] = []string{hash}
+	} else {
+		return fmt.Errorf("cannot remove torrent: id or hash is required")
+	}
+
+	_, err := c.doRPC(ctx, "torrent-remove", args)
 	return err
 }

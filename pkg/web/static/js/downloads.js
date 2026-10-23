@@ -10,7 +10,7 @@ import {
   organizeQueueItem,
   fetchSettings,
   saveSettings,
-  testTransmissionConnection
+  testTorrentClientConnection
 } from './api.js';
 
 let pollTimer = null;
@@ -427,21 +427,54 @@ export function closeSettingsModal() {
   }
 }
 
+let cachedSettings = {};
+
+export function onTorrentClientTypeChange() {
+  const typeSelect = document.getElementById('setting-torrent-client-type');
+  const urlInput = document.getElementById('setting-torrent-url');
+  const userInput = document.getElementById('setting-torrent-username');
+  const passInput = document.getElementById('setting-torrent-password');
+  const dirInput = document.getElementById('setting-torrent-download-dir');
+  const hintEl = document.getElementById('hint-setting-torrent-url');
+
+  const clientType = typeSelect?.value || 'qbittorrent';
+
+  if (clientType === 'transmission') {
+    if (urlInput) {
+      urlInput.value = cachedSettings.transmission_url || 'http://192.168.1.189:9091';
+      urlInput.placeholder = 'http://192.168.1.189:9091';
+    }
+    if (userInput) userInput.value = cachedSettings.transmission_username || '';
+    if (passInput) passInput.value = cachedSettings.transmission_password || '';
+    if (dirInput) dirInput.value = cachedSettings.transmission_download_dir || '';
+    if (hintEl) hintEl.textContent = 'URL of your Transmission daemon (e.g. http://192.168.1.189:9091)';
+  } else {
+    if (urlInput) {
+      urlInput.value = cachedSettings.qbittorrent_url || 'http://192.168.1.189:8080';
+      urlInput.placeholder = 'http://192.168.1.189:8080';
+    }
+    if (userInput) userInput.value = cachedSettings.qbittorrent_username || '';
+    if (passInput) passInput.value = cachedSettings.qbittorrent_password || '';
+    if (dirInput) dirInput.value = cachedSettings.qbittorrent_download_dir || '';
+    if (hintEl) hintEl.textContent = 'URL of your qBittorrent WebUI (e.g. http://192.168.1.189:8080)';
+  }
+}
+
 export async function loadAndRenderSettings() {
   try {
     const settings = await fetchSettings();
-    const urlInput = document.getElementById('setting-transmission-url');
-    const userInput = document.getElementById('setting-transmission-username');
-    const passInput = document.getElementById('setting-transmission-password');
-    const dirInput = document.getElementById('setting-transmission-download-dir');
+    cachedSettings = settings || {};
+
+    const typeSelect = document.getElementById('setting-torrent-client-type');
     const sukebeiInput = document.getElementById('setting-sukebei-url');
     const autoOrgInput = document.getElementById('setting-auto-organize');
     const testStatus = document.getElementById('transmission-test-status');
 
-    if (urlInput) urlInput.value = settings.transmission_url || 'http://192.168.1.189:9091';
-    if (userInput) userInput.value = settings.transmission_username || '';
-    if (passInput) passInput.value = settings.transmission_password || '';
-    if (dirInput) dirInput.value = settings.transmission_download_dir || '';
+    if (typeSelect) {
+      typeSelect.value = settings.torrent_client_type || 'qbittorrent';
+    }
+    onTorrentClientTypeChange();
+
     if (sukebeiInput) sukebeiInput.value = settings.sukebei_url || 'https://sukebei.nyaa.si';
     if (autoOrgInput) autoOrgInput.checked = (settings.auto_organize_completed === 'true');
     if (testStatus) {
@@ -454,13 +487,15 @@ export async function loadAndRenderSettings() {
 }
 
 export async function saveSettingsFromForm() {
-  const urlInput = document.getElementById('setting-transmission-url');
-  const userInput = document.getElementById('setting-transmission-username');
-  const passInput = document.getElementById('setting-transmission-password');
-  const dirInput = document.getElementById('setting-transmission-download-dir');
+  const typeSelect = document.getElementById('setting-torrent-client-type');
+  const urlInput = document.getElementById('setting-torrent-url');
+  const userInput = document.getElementById('setting-torrent-username');
+  const passInput = document.getElementById('setting-torrent-password');
+  const dirInput = document.getElementById('setting-torrent-download-dir');
   const sukebeiInput = document.getElementById('setting-sukebei-url');
   const autoOrgInput = document.getElementById('setting-auto-organize');
 
+  const clientType = typeSelect?.value || 'qbittorrent';
   let rawDir = dirInput?.value.trim() || '';
   if (rawDir.startsWith('/Volumes/')) {
     rawDir = '/volume1/' + rawDir.replace(/^\/Volumes\//, '');
@@ -469,16 +504,26 @@ export async function saveSettingsFromForm() {
   }
 
   const settingsPayload = {
-    transmission_url: urlInput?.value.trim() || '',
-    transmission_username: userInput?.value.trim() || '',
-    transmission_password: passInput?.value || '',
-    transmission_download_dir: rawDir,
+    torrent_client_type: clientType,
     sukebei_url: sukebeiInput?.value.trim() || 'https://sukebei.nyaa.si',
     auto_organize_completed: autoOrgInput?.checked ? 'true' : 'false'
   };
 
+  if (clientType === 'transmission') {
+    settingsPayload.transmission_url = urlInput?.value.trim() || '';
+    settingsPayload.transmission_username = userInput?.value.trim() || '';
+    settingsPayload.transmission_password = passInput?.value || '';
+    settingsPayload.transmission_download_dir = rawDir;
+  } else {
+    settingsPayload.qbittorrent_url = urlInput?.value.trim() || '';
+    settingsPayload.qbittorrent_username = userInput?.value.trim() || '';
+    settingsPayload.qbittorrent_password = passInput?.value || '';
+    settingsPayload.qbittorrent_download_dir = rawDir;
+  }
+
   try {
     await saveSettings(settingsPayload);
+    cachedSettings = { ...cachedSettings, ...settingsPayload };
     closeSettingsModal();
     showToast('Settings saved successfully', 'success');
   } catch (err) {
@@ -486,10 +531,11 @@ export async function saveSettingsFromForm() {
   }
 }
 
-export async function handleTestTransmission() {
-  const urlInput = document.getElementById('setting-transmission-url');
-  const userInput = document.getElementById('setting-transmission-username');
-  const passInput = document.getElementById('setting-transmission-password');
+export async function handleTestTorrentClient() {
+  const typeSelect = document.getElementById('setting-torrent-client-type');
+  const urlInput = document.getElementById('setting-torrent-url');
+  const userInput = document.getElementById('setting-torrent-username');
+  const passInput = document.getElementById('setting-torrent-password');
   const testStatus = document.getElementById('transmission-test-status');
 
   if (!testStatus) return;
@@ -497,23 +543,28 @@ export async function handleTestTransmission() {
   testStatus.classList.remove('hidden');
   testStatus.textContent = 'Connecting...';
 
+  const clientType = typeSelect?.value || 'qbittorrent';
   const config = {
+    client_type: clientType,
     url: urlInput?.value.trim() || '',
     username: userInput?.value.trim() || '',
     password: passInput?.value || ''
   };
 
-  const res = await testTransmissionConnection(config);
+  const clientLabel = clientType === 'transmission' ? 'Transmission' : 'qBittorrent';
+  const res = await testTorrentClientConnection(config);
   if (res.success) {
     testStatus.classList.add('success');
     testStatus.textContent = `Connected! (v${res.version || 'unknown'})`;
-    showToast(`Transmission connected! Download dir: ${res.download_dir || 'Default'}`, 'success');
+    showToast(`${clientLabel} connected! Download dir: ${res.download_dir || 'Default'}`, 'success');
   } else {
     testStatus.classList.add('error');
     testStatus.textContent = `Failed: ${res.error || 'Connection error'}`;
-    showToast(`Transmission connection failed: ${res.error}`, 'danger');
+    showToast(`${clientLabel} connection failed: ${res.error}`, 'danger');
   }
 }
+
+export const handleTestTransmission = handleTestTorrentClient;
 
 // =========================================================================
 // Helpers

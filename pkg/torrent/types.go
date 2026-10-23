@@ -1,6 +1,7 @@
 package torrent
 
 import (
+	"context"
 	"time"
 )
 
@@ -35,6 +36,24 @@ type TorrentSearchResult struct {
 	Total       int           `json:"total"`
 	Recommended *TorrentItem  `json:"recommended,omitempty"`
 	Items       []TorrentItem `json:"items"`
+}
+
+// TorrentDownloader defines the unified interface for torrent download clients (qBittorrent & Transmission).
+type TorrentDownloader interface {
+	ClientType() string
+	TestConnection(ctx context.Context) (version string, downloadDir string, err error)
+	AddTorrent(ctx context.Context, torrentURLOrMagnet string, customDownloadDir string) (id int, hash string, name string, err error)
+	GetTorrents(ctx context.Context) ([]TransmissionTorrent, error)
+	RemoveTorrent(ctx context.Context, id int, hash string, deleteLocalData bool) error
+}
+
+// QBittorrentConfig holds credentials and endpoint configuration for qBittorrent Web API v2.
+type QBittorrentConfig struct {
+	URL         string `json:"url"`          // e.g. "http://192.168.1.189:8080"
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	DownloadDir string `json:"download_dir"` // Optional custom download directory / savepath
+	Category    string `json:"category"`     // Default: "r19dev"
 }
 
 // TransmissionConfig holds credentials and endpoint configuration for Transmission.

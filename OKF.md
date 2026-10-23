@@ -297,17 +297,22 @@ The migrator automates the reorganization of multi-terabyte unorganized or legac
 
 The torrent engine automates the discovery, quality scoring, and queuing of missing filmography titles directly to Transmission daemons.
 
-* **Sukebei Nyaa RSS Parser & Smart Scorer (`sukebei.go`)**:
-  - Encodes search queries for Sukebei Nyaa RSS feeds (`c=2_2` for real-life videos).
-  - Parses XML items extracting title, magnet link, torrent URL, file size, seeders, leechers, and downloads.
-  - Implements multi-attribute weighted scoring (4K/UHD, 1080p, Uncensored, Chinese Subtitles, Seeder thresholds) and marks highest-ranking healthy item as `is_recommended: true`.
-* **Transmission JSON-RPC Client (`transmission.go`)**:
-  - Implements native JSON-RPC communication (`/transmission/rpc`).
-  - Thread-safe CSRF token lifecycle: automatically catches `409 Conflict`, extracts `X-Transmission-Session-Id`, and replays requests transparently.
-  - Supports basic auth, `torrent-add`, `torrent-get`, `torrent-remove`, and `session-get`.
-* **Download Queue & Staging Pipeline (`pkg/db/db.go`, `pkg/web/server.go`)**:
-  - Tracks download status: `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
-  - Persists settings in `app_settings` key-value table.
+* **Torrent Engine & Unified Downloader (`pkg/torrent`)**:
+  - **Unified `TorrentDownloader` Interface (`types.go`)**: Abstract contract defining `AddTorrent`, `GetTorrents`, `RemoveTorrent`, and `TestConnection`.
+  - **Sukebei Nyaa RSS Parser & Smart Scorer (`sukebei.go`)**:
+    - Encodes search queries for Sukebei Nyaa RSS feeds (`c=2_2` for real-life videos).
+    - Parses XML items extracting title, magnet link, torrent URL, file size, seeders, leechers, and downloads.
+    - Implements multi-attribute weighted scoring (4K/UHD, 1080p, Uncensored, Chinese Subtitles, Seeder thresholds) and marks highest-ranking healthy item as `is_recommended: true`.
+  - **qBittorrent Web API v2 Client (`qbittorrent.go`)**:
+    - Implements native Web API v2 client with automatic session cookie jar management (`SID`).
+    - Catches `403 Forbidden` on expired sessions and transparently re-authenticates.
+    - Standardizes qBittorrent states (`downloading`, `stalledDL`, `uploading`, `pausedDL`, `error`) into canonical `TorrentInfo`.
+  - **Transmission JSON-RPC Client (`transmission.go`)**:
+    - Implements native JSON-RPC communication (`/transmission/rpc`).
+    - Thread-safe CSRF token lifecycle: automatically catches `409 Conflict`, extracts `X-Transmission-Session-Id`, and replays requests transparently.
+  - **Download Queue & Staging Pipeline (`pkg/db/db.go`, `pkg/web/server.go`)**:
+    - Tracks download status: `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
+    - Persists settings in `app_settings` key-value table (`torrent_client_type`, endpoints, credentials, download paths).
 
 ---
 
@@ -351,5 +356,8 @@ The torrent engine automates the discovery, quality scoring, and queuing of miss
 | **Mount Point Shift on "Show in Finder"** | User switches macOS mount from `/Volumes/home/` to `/Volumes/homes/plagad/` | `resolvePathToExisting` tests known path substitutions and falls back gracefully to parent actress directories. |
 | **Bento Profile Unfollow Action** | Clicking Unfollow on actress profile triggers `TypeError: promptUnfollowActress is not a function` | Implemented `promptUnfollowActress` in `api.js` and exported to `window.app` in `app.js` with confirmation dialog. |
 | **Transmission 409 CSRF Token Handshake** | First request to Transmission RPC fails with 409 Conflict | `doRPC` automatically catches 409, caches `X-Transmission-Session-Id` header, and retries request seamlessly. |
+| **qBittorrent 403 Forbidden Re-Auth Handshake** | qBittorrent WebUI session cookie expires during background polling | `doRequest` catches 403, triggers `Login()` using stored credentials, refreshes `SID` cookie, and re-executes original API call. |
+| **Downloader Engine Live Switching** | User toggles between qBittorrent and Transmission in settings | `initTorrentClient()` detects `torrent_client_type` on each request, dynamically instantiating the appropriate client without restarting server. |
+| **Synology NAS SMB Path Mismatch on Staging** | Downloader reports save path as `/volume1/homes/plagad/BT/JD/` which does not exist on macOS host | `resolveStagingDir` maps `/volume1/homes/` and `/volume1/home/` to macOS `/Volumes/...` mount points automatically. |
 | **Sukebei RSS XML Parsing Noise** | CDATA or non-standard enclosure URLs in Sukebei RSS | XML parser uses standard XML structs with fallback to item link or magnet extractors. |
 

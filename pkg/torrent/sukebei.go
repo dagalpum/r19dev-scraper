@@ -223,7 +223,8 @@ func (c *SukebeiClient) parseAndScoreItem(raw rssItem, targetQuery string) Torre
 	// Size sanity check
 	if sizeBytes > 0 {
 		gb := float64(sizeBytes) / (1024 * 1024 * 1024)
-		if resolution == "1080p" {
+		switch resolution {
+		case "1080p":
 			if gb >= 4.0 && gb <= 11.0 {
 				score += 20
 			} else if gb < 2.0 {
@@ -231,7 +232,7 @@ func (c *SukebeiClient) parseAndScoreItem(raw rssItem, targetQuery string) Torre
 			} else if gb > 30.0 {
 				score -= 30 // Likely oversized archive
 			}
-		} else if resolution == "4K" {
+		case "4K":
 			if gb >= 10.0 && gb <= 30.0 {
 				score += 20
 			}

@@ -72,9 +72,10 @@ type Client struct {
 	userAgent  string
 	language   string // "en" or "ja"
 	cache      MovieCache
-	dumpStore  *DumpStore
-	mu         sync.Mutex
-	lastReq    time.Time
+	dumpStore     *DumpStore
+	mu            sync.Mutex
+	lastReq       time.Time
+	throttleDelay time.Duration
 }
 
 // NewClient creates a new R18.dev scraper client with language support.
@@ -93,9 +94,10 @@ func NewClient(timeout time.Duration) *Client {
 			Timeout:   timeout,
 			Transport: transport,
 		},
-		userAgent: DefaultUA,
-		language:  "en", // Default to English metadata
-		dumpStore: DefaultDumpStore(),
+		userAgent:     DefaultUA,
+		language:      "en", // Default to English metadata
+		dumpStore:     DefaultDumpStore(),
+		throttleDelay: 350 * time.Millisecond,
 	}
 }
 
@@ -126,7 +128,10 @@ func (c *Client) SetLanguage(lang string) {
 func (c *Client) throttle() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	minInterval := 250 * time.Millisecond
+	minInterval := c.throttleDelay
+	if minInterval < 350*time.Millisecond {
+		minInterval = 350 * time.Millisecond
+	}
 	elapsed := time.Since(c.lastReq)
 	if elapsed < minInterval {
 		time.Sleep(minInterval - elapsed)
@@ -194,7 +199,7 @@ func (c *Client) scrapeOnline(ctx context.Context, id, combinedID string) (*Movi
 	var resp *http.Response
 	var err error
 
-	maxRetries := 3
+	maxRetries := 5
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		c.throttle()
 
@@ -214,14 +219,8 @@ func (c *Client) scrapeOnline(ctx context.Context, id, combinedID string) (*Movi
 
 		resp, err = c.httpClient.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("http request failed: %w", err)
-		}
-
-		// Handle Cloudflare / API rate limit with backoff retry
-		if resp.StatusCode == http.StatusTooManyRequests {
-			resp.Body.Close()
 			if attempt < maxRetries-1 {
-				backoff := time.Duration(600*(1<<attempt)) * time.Millisecond
+				backoff := time.Duration(1000*(1<<attempt)) * time.Millisecond
 				select {
 				case <-time.After(backoff):
 					continue
@@ -229,8 +228,37 @@ func (c *Client) scrapeOnline(ctx context.Context, id, combinedID string) (*Movi
 					return nil, ctx.Err()
 				}
 			}
-			return nil, fmt.Errorf("R18.dev rate limit reached (HTTP 429). Retrying in a moment...")
+			return nil, fmt.Errorf("http request failed: %w", err)
 		}
+
+		// Handle Cloudflare / API rate limit with adaptive exponential backoff retry
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+
+			// Adaptively increase throttle interval to prevent consecutive blocks
+			c.mu.Lock()
+			c.throttleDelay = 1500 * time.Millisecond
+			c.mu.Unlock()
+
+			if attempt < maxRetries-1 {
+				// Exponential backoff: 1s, 2s, 4s, 8s
+				backoff := time.Duration(1000*(1<<attempt)) * time.Millisecond
+				select {
+				case <-time.After(backoff):
+					continue
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return nil, fmt.Errorf("R18.dev rate limit reached (HTTP 429 after %d retries)", maxRetries)
+		}
+
+		// Gradually recover normal throttle delay upon successful response
+		c.mu.Lock()
+		if c.throttleDelay > 350*time.Millisecond {
+			c.throttleDelay = 350 * time.Millisecond
+		}
+		c.mu.Unlock()
 
 		break
 	}

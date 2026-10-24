@@ -652,8 +652,22 @@ func runBackup(args []string) {
 
 func runAudit(args []string) {
 	targetDir := "/Volumes/home/BT/organized"
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		targetDir = args[0]
+	autoHeal := false
+	noTUI := false
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--heal" || a == "-a" || a == "--fix" {
+			autoHeal = true
+			noTUI = true
+		} else if a == "--yes" || a == "-y" {
+			autoHeal = true
+			noTUI = true
+		} else if a == "--no-tui" || a == "--cli" {
+			noTUI = true
+		} else if !strings.HasPrefix(a, "-") {
+			targetDir = a
+		}
 	}
 
 	absTarget, err := filepath.Abs(targetDir)
@@ -678,10 +692,127 @@ func runAudit(args []string) {
 	}
 
 	d, _ := db.Default()
-	if err := audit.RunAuditTUI(absTarget, d); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Audit error: %v\n", err)
+
+	if !noTUI {
+		if err := audit.RunAuditTUI(absTarget, d); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Audit error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Headless CLI mode / One-Shot Auto-Heal
+	auditor, err := audit.New(d)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Auditor error: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Printf("🩺 Starting Library Quality Audit for: %s\n", absTarget)
+	startTime := time.Now()
+	ctx := context.Background()
+
+	progressChan := make(chan audit.AuditProgressEvent, 50)
+	var items []*audit.MovieAudit
+	var auditErr error
+
+	go func() {
+		items, auditErr = auditor.AuditDirectoryWithProgress(ctx, absTarget, progressChan)
+		close(progressChan)
+	}()
+
+	for ev := range progressChan {
+		if ev.Type == audit.ProgressInspecting && ev.TotalMovies > 0 {
+			if ev.CurrentMovieIdx == 1 || ev.CurrentMovieIdx%20 == 0 || ev.CurrentMovieIdx == ev.TotalMovies {
+				fmt.Printf("[%d/%d] 🔍 Auditing %s (%s)...\n", ev.CurrentMovieIdx, ev.TotalMovies, ev.CurrentMovieID, ev.CurrentActress)
+			}
+		}
+	}
+
+	if auditErr != nil {
+		fmt.Fprintf(os.Stderr, "❌ Audit failed: %v\n", auditErr)
+		os.Exit(1)
+	}
+
+	var completeItems []*audit.MovieAudit
+	var incompleteItems []*audit.MovieAudit
+	var noVideoItems []*audit.MovieAudit
+
+	for _, it := range items {
+		switch it.Status {
+		case audit.StatusComplete:
+			completeItems = append(completeItems, it)
+		case audit.StatusIncomplete:
+			incompleteItems = append(incompleteItems, it)
+		case audit.StatusNoVideo:
+			noVideoItems = append(noVideoItems, it)
+		}
+	}
+
+	fmt.Println()
+	fmt.Printf("📊 AUDIT RESULTS: %d total folders checked in %s\n", len(items), time.Since(startTime).Round(time.Millisecond))
+	fmt.Printf("   ✅ Complete: %d\n", len(completeItems))
+	fmt.Printf("   ⚠️  Incomplete: %d\n", len(incompleteItems))
+	if len(noVideoItems) > 0 {
+		fmt.Printf("   ❌ No Video: %d\n", len(noVideoItems))
+	}
+
+	if len(incompleteItems) > 0 {
+		fmt.Printf("\n⚠️  INCOMPLETE MOVIES (%d):\n", len(incompleteItems))
+		for _, inc := range incompleteItems {
+			fmt.Printf("   • %-12s [%s] Missing: %s (%s)\n", inc.MovieID, inc.ActressName, strings.Join(inc.MissingItems, ", "), inc.RelativePath)
+		}
+	}
+
+	if !autoHeal {
+		if len(incompleteItems) > 0 {
+			fmt.Printf("\n💡 To automatically repair missing assets, run:\n")
+			fmt.Printf("   r19dev audit \"%s\" --heal\n", absTarget)
+		} else {
+			fmt.Println("\n💯 All movies are 100% complete! No repairs needed.")
+		}
+		return
+	}
+
+	// Perform Auto-Healing on incomplete items
+	if len(incompleteItems) == 0 {
+		fmt.Println("\n💯 All movies are 100% complete! Nothing to heal.")
+		return
+	}
+
+	fmt.Printf("\n🔧 Auto-healing %d incomplete movies (Predictive CDN & Resilient Fallback)...\n", len(incompleteItems))
+	healedCount := 0
+	failedCount := 0
+
+	for hIdx, item := range incompleteItems {
+		curNum := hIdx + 1
+		fmt.Printf("[%d/%d] 🔄 Healing %s (%s)... Missing: %s\n", curNum, len(incompleteItems), item.MovieID, item.ActressName, strings.Join(item.MissingItems, ", "))
+
+		healErr := auditor.FixMovie(ctx, item, func(step, msg string) {
+			if strings.Contains(step, "error") || strings.Contains(step, "warning") {
+				fmt.Printf("      ⚠️ %s\n", msg)
+			}
+		})
+
+		if healErr == nil && item.Status == audit.StatusComplete {
+			healedCount++
+			fmt.Printf("      ✨ %s healed successfully! (100%% Complete)\n", item.MovieID)
+		} else {
+			failedCount++
+			fmt.Printf("      ❌ %s could not be fully repaired: %v\n", item.MovieID, healErr)
+		}
+	}
+
+	fmt.Println("\n==================================================")
+	fmt.Println("🏁 AUDIT & AUTO-HEAL SUMMARY:")
+	fmt.Printf("   🩺 Total Audited: %d movies\n", len(items))
+	fmt.Printf("   💯 Verified Complete: %d/%d movies\n", len(completeItems)+healedCount, len(items))
+	fmt.Printf("   ✨ Successfully Healed: %d movies\n", healedCount)
+	if failedCount > 0 {
+		fmt.Printf("   ⚠️  Still Incomplete: %d movies\n", failedCount)
+	}
+	fmt.Printf("   ⏱  Duration: %s\n", time.Since(startTime).Round(time.Second))
+	fmt.Println("==================================================")
 }
 
 func runFilters(args []string) {
@@ -784,11 +915,16 @@ Usage:
                                 purge                   Purge unowned titles matching filter rules
                                 reset                   Reset filters.json to factory defaults
 
-  r19dev audit [path]         Interactive TUI Auditor & Doctor to inspect movie folder completeness
+  r19dev audit [path] [flags] Interactive TUI Auditor or Headless Doctor to inspect folder completeness
                               (Checklist: Video, .nfo, movie.html, poster.jpg, fanart.jpg, screenshots)
-                              - Interactive quick fix: press [f] to repair & download missing assets
-                              - Batch fix: press [F] to repair all incomplete movies
-                              - Aliases: 'doctor', 'inspect'
+                              Flags:
+                                --heal, -a, --fix       Auto-heal all incomplete movie folders non-interactively
+                                --yes, -y               Auto-confirm repair in headless mode
+                                --no-tui                Run in headless CLI mode instead of TUI
+                              Interactive TUI Shortcuts:
+                                [f]                     Repair & download missing assets for selected movie
+                                [F]                     Batch repair all incomplete movies
+                              Aliases: 'doctor', 'inspect'
 
   r19dev upgrade-html [path]  Concurrently upgrade all movie.html to Cinematic template
   r19dev backup [path]        Create crash-consistent SQLite backup snapshot (default: NAS)

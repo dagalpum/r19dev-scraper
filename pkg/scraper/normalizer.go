@@ -135,3 +135,55 @@ func NormalizeToCanonicalID(id string) string {
 
 	return strings.ToUpper(clean)
 }
+
+var (
+	reDMMCoverURL = regexp.MustCompile(`(?i)(https?://pics\.dmm\.co\.jp/.+/)([a-z0-9_]+)p[sl]\.jpg`)
+)
+
+// GenerateDMMSampleURLs generates candidate DMM CDN sample screenshot URLs.
+// DMM stores sample screenshots using a standardized pattern:
+//   https://pics.dmm.co.jp/{section}/{content_id}/{content_id}jp-{1..count}.jpg
+// E.g.:
+//   - from coverURL: "https://pics.dmm.co.jp/digital/video/fway00103/fway00103pl.jpg" ->
+//     "https://pics.dmm.co.jp/digital/video/fway00103/fway00103jp-1.jpg" ...
+//   - from contentID: "mida00688" ->
+//     "https://pics.dmm.co.jp/digital/video/mida00688/mida00688jp-1.jpg" ...
+func GenerateDMMSampleURLs(contentID, coverURL string, count int) []string {
+	if count <= 0 {
+		count = 10
+	}
+	if count > 20 {
+		count = 20
+	}
+
+	// 1. Try extracting exact base path and content ID from coverURL if available
+	if coverURL != "" {
+		if m := reDMMCoverURL.FindStringSubmatch(coverURL); len(m) == 3 {
+			basePrefix := m[1]
+			cid := m[2]
+			urls := make([]string, 0, count)
+			for i := 1; i <= count; i++ {
+				urls = append(urls, fmt.Sprintf("%s%sjp-%d.jpg", basePrefix, cid, i))
+			}
+			return urls
+		}
+	}
+
+	// 2. Derive from contentID
+	cid := strings.ToLower(strings.TrimSpace(contentID))
+	if cid == "" {
+		return nil
+	}
+
+	// If contentID is a hyphenated JAV ID like "MIDA-688", normalize to combined ID e.g. "mida00688"
+	if strings.Contains(cid, "-") {
+		cid = NormalizeToCombinedID(cid)
+	}
+
+	section := "digital/video"
+	urls := make([]string, 0, count)
+	for i := 1; i <= count; i++ {
+		urls = append(urls, fmt.Sprintf("https://pics.dmm.co.jp/%s/%s/%sjp-%d.jpg", section, cid, cid, i))
+	}
+	return urls
+}

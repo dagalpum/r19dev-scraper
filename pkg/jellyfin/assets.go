@@ -150,6 +150,16 @@ func DownloadAllAssetsWithProgress(ctx context.Context, movie *scraper.Movie, mo
 	}
 
 	// 2. Download Sample Screenshots concurrently into extrafanart/
+	if len(movie.SampleScreenshots) == 0 {
+		cid := movie.CombinedID
+		if cid == "" && movie.ID != "" {
+			cid = scraper.NormalizeToCombinedID(movie.ID)
+		}
+		if cid != "" {
+			movie.SampleScreenshots = scraper.GenerateDMMSampleURLs(cid, movie.CoverURL, 10)
+		}
+	}
+
 	totalScreenshots := len(movie.SampleScreenshots)
 	if totalScreenshots > 0 {
 		extraDir := filepath.Join(movieDir, "extrafanart")
@@ -169,10 +179,11 @@ func DownloadAllAssetsWithProgress(ctx context.Context, movie *scraper.Movie, mo
 					sem <- struct{}{}
 					defer func() { <-sem }()
 
-					_ = DownloadAsset(ctx, u, dest)
-					done := atomic.AddInt32(&downloadedCount, 1)
-					if reporter != nil {
-						reporter("download_screenshot", int(done), totalScreenshots, fmt.Sprintf("กำลังดาวน์โหลดภาพตัวอย่าง Screenshot (%d/%d)...", int(done), totalScreenshots))
+					if err := DownloadAsset(ctx, u, dest); err == nil {
+						done := atomic.AddInt32(&downloadedCount, 1)
+						if reporter != nil {
+							reporter("download_screenshot", int(done), totalScreenshots, fmt.Sprintf("กำลังดาวน์โหลดภาพตัวอย่าง Screenshot (%d/%d)...", int(done), totalScreenshots))
+						}
 					}
 				}(idx, url, sampleFile)
 			}

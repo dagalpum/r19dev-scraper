@@ -193,3 +193,36 @@ When running `r19dev` locally on macOS while the torrent downloader (qBittorrent
 
 ### Consequences
 - Flawless staging detection and auto-organization between macOS workstations and Synology/Linux NAS torrent daemons.
+
+---
+
+## ADR 010: 3-Tier Preventative Asset Protection & Predictive DMM CDN Fallback
+
+### Status
+Accepted & Implemented
+
+### Context
+During large-scale batch migration and subsequent quality audit (e.g. migrating 80+ movies in one run), two issues emerged:
+1. The Tier-1 offline dump store (`r18_dump.db`) indexes 1.9M+ movies and metadata but lacks a sample screenshots table.
+2. Rapid sequential audit repair queries to R18.dev online API triggered Cloudflare HTTP 429 (Too Many Requests), causing titles like `FWAY-103` and `MIDA-688` to complete without `extrafanart/` sample screenshots.
+3. The CLI lacked a non-interactive `--heal` flag for running automated batch repairs without launching the interactive Bubble Tea TUI.
+
+### Decision
+1. **Level 1 (Predictive DMM CDN Pattern Fallback)**:
+   - DMM CDN sample screenshots follow a strictly deterministic URL schema:
+     `https://pics.dmm.co.jp/{section}/{content_id}/{content_id}jp-{1..count}.jpg`
+   - Implement `GenerateDMMSampleURLs(contentID, coverURL, count)` in `pkg/scraper/normalizer.go`.
+   - When `movie.SampleScreenshots` is empty, `DownloadAllAssetsWithProgress` and `auditor.FixMovieWithProgress` generate candidate URLs and download directly from Akamai/Fastly DMM CDN (`pics.dmm.co.jp`), which has zero Cloudflare rate limits.
+   - Non-existent images return HTTP 404 cleanly; `DownloadAsset` only writes files on HTTP 200, preventing 0-byte corruptions.
+2. **Level 2 (Scraper Resiliency & Adaptive Backoff)**:
+   - In `pkg/scraper/r18dev.go`, increase retries on HTTP 429 from 3 to **5 attempts**.
+   - Implement exponential backoff: `1s`, `2s`, `4s`, `8s` (total wait $> 15\text{s}$).
+   - Implement adaptive dynamic throttling: temporarily increase `throttleDelay` from 350ms to 1,500ms on 429, gradually recovering to 350ms upon success.
+3. **Level 3 (Headless CLI One-Shot Repair & Auto-Heal)**:
+   - Extend `r19dev audit` in `cmd/r19dev/main.go` to support `--heal`, `-a`, `--yes`, `-y`, and `--no-tui`.
+   - Allows operators and scripts to audit and repair library folders in a single headless execution.
+
+### Consequences
+- 100% asset completeness across library collections without missing screenshots.
+- Zero Cloudflare rate limit exposure for static media assets.
+- Clean scriptable maintenance workflows for headless NAS deployments.

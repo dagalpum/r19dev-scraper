@@ -76,3 +76,38 @@ func TestCandidateCombinedIDs(t *testing.T) {
 	}
 }
 
+func TestGenerateDMMSampleURLs(t *testing.T) {
+	// 1. From coverURL
+	cover := "https://pics.dmm.co.jp/digital/video/fway00103/fway00103pl.jpg"
+	urls := GenerateDMMSampleURLs("FWAY-103", cover, 5)
+	if len(urls) != 5 {
+		t.Fatalf("expected 5 URLs, got %d", len(urls))
+	}
+	expectedFirst := "https://pics.dmm.co.jp/digital/video/fway00103/fway00103jp-1.jpg"
+	if urls[0] != expectedFirst {
+		t.Errorf("expected %s, got %s", expectedFirst, urls[0])
+	}
+	expectedFifth := "https://pics.dmm.co.jp/digital/video/fway00103/fway00103jp-5.jpg"
+	if urls[4] != expectedFifth {
+		t.Errorf("expected %s, got %s", expectedFifth, urls[4])
+	}
+
+	// 2. From contentID alone
+	urls2 := GenerateDMMSampleURLs("mida00688", "", 10)
+	if len(urls2) != 10 {
+		t.Fatalf("expected 10 URLs, got %d", len(urls2))
+	}
+	if urls2[0] != "https://pics.dmm.co.jp/digital/video/mida00688/mida00688jp-1.jpg" {
+		t.Errorf("unexpected URL: %s", urls2[0])
+	}
+
+	// 3. From standard hyphen JAV ID
+	urls3 := GenerateDMMSampleURLs("MIDA-688", "", 3)
+	if len(urls3) != 3 {
+		t.Fatalf("expected 3 URLs, got %d", len(urls3))
+	}
+	if urls3[0] != "https://pics.dmm.co.jp/digital/video/mida00688/mida00688jp-1.jpg" {
+		t.Errorf("unexpected URL: %s", urls3[0])
+	}
+}
+

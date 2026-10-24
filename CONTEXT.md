@@ -347,6 +347,20 @@ r19dev-scraper/
   - Translates local macOS paths to NAS internal paths when submitting download tasks.
   - Guarantees zero `Permission Denied` or file not found errors in the organize pipeline.
 
+### 4.35 3-Tier Preventative Asset Protection & Predictive DMM CDN Fallback (`pkg/scraper`, `pkg/jellyfin`, `pkg/audit`)
+* **Problem Solved**: Sequential library quality audits across 80+ titles triggered Cloudflare HTTP 429 rate limits on `r18.dev`, causing missing `extrafanart` sample screenshots on titles where the offline dump store (`r18_dump.db`) contained metadata but no gallery URLs.
+* **Level 1 (Predictive DMM CDN Pattern Fallback - `GenerateDMMSampleURLs`)**:
+  - DMM CDN hosts sample screenshots at a 100% predictable URL schema: `https://pics.dmm.co.jp/{section}/{content_id}/{content_id}jp-{1..count}.jpg`.
+  - When `SampleScreenshots` is empty in `DownloadAllAssetsWithProgress` or `FixMovieWithProgress`, candidate URLs are generated from `CombinedID` or extracted from `CoverURL`.
+  - Downloads proceed directly against Akamai/Fastly DMM CDN (`pics.dmm.co.jp`) with **zero Cloudflare rate limits** or IP blocking. Non-existent images return HTTP 404 cleanly without creating 0-byte corrupted files.
+* **Level 2 (Scraper Resiliency & Adaptive Backoff)**:
+  - In `pkg/scraper/r18dev.go`, retries on HTTP 429 increased from 3 to **5 attempts**.
+  - Applies true exponential backoff: `1s`, `2s`, `4s`, `8s` (total wait $> 15\text{s}$, easily outlasting Cloudflare cooldowns).
+  - Dynamically increases client request throttle delay (`throttleDelay`) from 350ms to 1,500ms on 429, gradually recovering to 350ms on success.
+* **Level 3 (Headless CLI One-Shot Repair & Auto-Heal)**:
+  - Extended `r19dev audit [path]` in `cmd/r19dev/main.go` to support `--heal`, `-a`, `--yes`, `-y`, and `--no-tui`.
+  - Executes non-interactive batch inspection and repairs incomplete movie folders in one shot without requiring the interactive Bubble Tea TUI.
+
 ---
 
 ## 5. Domain Knowledge: JAV ID Conventions

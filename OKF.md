@@ -314,6 +314,24 @@ The torrent engine automates the discovery, quality scoring, and queuing of miss
     - Tracks download status: `queued` $\rightarrow$ `downloading` $\rightarrow$ `staging` $\rightarrow$ `organized`.
     - Persists settings in `app_settings` key-value table (`torrent_client_type`, endpoints, credentials, download paths).
 
+### 3.14 3-Tier Preventative Asset Protection & Quality Auditor (`pkg/scraper`, `pkg/jellyfin`, `pkg/audit`)
+
+To guarantee 100% asset completeness and prevent missing sample gallery screenshots (`extrafanart/`) during large library migrations:
+
+* **Level 1 (Predictive Pattern Fallback for DMM CDN — `pkg/scraper/normalizer.go`)**:
+  - Sample screenshot URLs on DMM CDN follow an invariant URL structure:
+    `https://pics.dmm.co.jp/{section}/{content_id}/{content_id}jp-{1..count}.jpg`
+  - When `movie.SampleScreenshots` is empty (due to offline dump lacking a gallery table or Cloudflare API blocking), `GenerateDMMSampleURLs` derives candidate URLs directly from `CombinedID` or extracts the exact path prefix and content ID from `CoverURL`.
+  - `jellyfin.DownloadAllAssetsWithProgress` and `auditor.FixMovieWithProgress` download screenshots directly from Akamai/Fastly DMM CDN without hitting R18.dev API, bypassing Cloudflare rate limits entirely.
+  - Non-existent indices return HTTP 404 cleanly; `DownloadAsset` only creates files upon HTTP 200, preventing 0-byte corruptions.
+* **Level 2 (Scraper Resiliency & Adaptive Backoff — `pkg/scraper/r18dev.go`)**:
+  - Max retries increased to **5 attempts**.
+  - Exponential backoff: `1s`, `2s`, `4s`, `8s` upon receiving HTTP 429 Too Many Requests (total wait $> 15\text{s}$, outlasting Cloudflare cooldowns).
+  - Adaptive Dynamic Throttle: `throttleDelay` temporarily increases from 350ms to 1,500ms on 429, gradually settling back to 350ms on successful responses.
+* **Level 3 (Headless CLI One-Shot Repair & Auto-Heal — `cmd/r19dev/main.go`, `pkg/audit/auditor.go`)**:
+  - `r19dev audit [path]` supports non-interactive execution with `--heal`, `-a`, `--yes`, `-y`, and `--no-tui`.
+  - Concurrently audits checklist items (Video, NFO, movie.html, poster.jpg, fanart.jpg, extrafanart/ screenshots) and repairs missing items in one shot, providing clean CLI progress logs and verified completion summaries.
+
 ---
 
 ## 4. Operational Runbook & Edge Cases

@@ -966,6 +966,15 @@ func (a *Auditor) FixMovieWithProgress(ctx context.Context, item *MovieAudit, pr
 		userState, _ = a.dbInstance.GetUserState(item.MovieID)
 	}
 
+	cid := movie.CombinedID
+	if cid == "" && item.MovieID != "" {
+		cid = scraper.NormalizeToCombinedID(item.MovieID)
+		movie.CombinedID = cid
+	}
+	if movie.CoverURL == "" && cid != "" {
+		movie.CoverURL = fmt.Sprintf("https://pics.dmm.co.jp/digital/video/%s/%spl.jpg", cid, cid)
+	}
+
 	// 3. Fix Poster
 	if !item.HasPoster {
 		url := movie.CoverURL
@@ -1006,7 +1015,10 @@ func (a *Auditor) FixMovieWithProgress(ctx context.Context, item *MovieAudit, pr
 		report(3, totalSteps, "fanart_ok", "Backdrop fanart already present on disk", "", 1, 1, nil)
 	}
 
-	// 5. Fix Screenshots concurrently
+	// 5. Fix Screenshots concurrently (with DMM CDN pattern fallback)
+	if len(movie.SampleScreenshots) == 0 && cid != "" {
+		movie.SampleScreenshots = scraper.GenerateDMMSampleURLs(cid, movie.CoverURL, 10)
+	}
 	totSamples := len(movie.SampleScreenshots)
 	if !item.HasScreenshots || item.ScreenshotsCount == 0 {
 		if totSamples > 0 {

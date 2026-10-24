@@ -406,7 +406,24 @@ make build
 ./bin/r19dev migrate /Volumes/home/BT/Sorted /Volumes/home/BT/organized --upgrade-all-html
 ```
 
-### 8. Standalone Utilities (`backup` & `upgrade-html`)
+### 8. Quality Auditor & Auto-Healer (`r19dev audit`)
+```bash
+# Launch Interactive Terminal TUI Doctor (inspect folders, press [f] to repair, [F] to batch heal):
+./bin/r19dev audit /Volumes/home/BT/organized
+
+# Headless One-Shot Auto-Heal via CLI (auto-repairs missing assets without TUI prompt):
+./bin/r19dev audit /Volumes/home/BT/organized --heal
+
+# Non-interactive inspection only (prints summary table to stdout):
+./bin/r19dev audit /Volumes/home/BT/organized --no-tui
+```
+
+#### 🛡️ 3-Tier Preventative Asset Protection Architecture:
+1. **Level 1 (Predictive Pattern Fallback for DMM CDN)**: When R18.dev online API is blocked or offline dump lacks gallery records, the engine generates candidate DMM CDN sample URLs (`https://pics.dmm.co.jp/digital/video/{content_id}/{content_id}jp-{1..10}.jpg`) directly, probing and downloading from Akamai/Fastly CDN with **zero Cloudflare rate limits**.
+2. **Level 2 (Scraper Resiliency & Adaptive Backoff)**: Retries on HTTP 429 increased to **5 attempts** with exponential backoff (`1s`, `2s`, `4s`, `8s`). Dynamically adapts request throttle interval from 350ms up to 1,500ms during burst limits before settling back to normal.
+3. **Level 3 (Headless One-Shot Auto-Healer)**: `r19dev audit --heal` scans all movie folders, audits checklist items (Video, NFO, movie.html, poster, fanart, extrafanart), and heals missing assets non-interactively with streaming progress and verified completion summaries.
+
+### 9. Standalone Utilities (`backup` & `upgrade-html`)
 ```bash
 # Create atomic, crash-consistent SQLite backup snapshot directly onto NAS:
 ./bin/r19dev backup /Volumes/home/BT/organized

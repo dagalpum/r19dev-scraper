@@ -19,7 +19,8 @@ The codebase is clean, thoroughly tested (100% test pass rate across all package
 | **Unit Tests** | ✅ Passing | 100% pass rate across `pkg/scanner`, `pkg/matcher`, `pkg/scraper`, `pkg/jellyfin`, `pkg/organizer`, `pkg/migrator`, `pkg/actress`, `pkg/cache`, `pkg/db`, `pkg/torrent`, and `pkg/web` |
 | **Torrent Downloader** | ✅ Dual Engine | Unified `TorrentDownloader` interface supporting **qBittorrent Web API v2** & **Transmission JSON-RPC** with dynamic switching |
 | **Migrator & Reorganizer**| ✅ Passing | 5-phase pipeline, Charm Bubble Tea TUI, smart collision co-location (4K/uncensored/multi-part), 16-worker HTML upgrader |
-| **Library Milestone** | ✅ 6.5 TB | **868 movies / 966 video files (~6.5 TB)** organized on NAS across 3 migration phases (Sorted, Root loose, Misc) |
+| **Asset Protection** | ✅ 3-Tier | Level 1 Predictive DMM CDN fallback, Level 2 Adaptive Backoff (5 retries), Level 3 Headless CLI Auto-Heal (`--heal`) |
+| **Library Milestone** | ✅ 973 Movies | **973 movies / ~7.2 TB** organized on NAS (81 newly migrated movies across 15 actresses, 100% verified complete) |
 | **Frontend** | ✅ Modular | Native ES Modules in `pkg/web/static/js/`, zero Node.js/npm dependencies, 100% offline-ready |
 | **Offline Scraper** | ✅ Sub-ms | Tier-1 `r18_dump.db` (1.9M+ movies, 101k+ actresses, 540k+ translations) resolving in `< 1ms` |
 | **Dependencies** | ✅ Stable | Using standard library + `modernc.org/sqlite` (pure Go, zero CGO) + Charm packages (`bubbletea`, `lipgloss`) |
@@ -97,6 +98,10 @@ make test
 
 # 8. Standalone Concurrent HTML Upgrader (16 workers)
 ./bin/r19dev upgrade-html /Volumes/home/BT/organized
+
+# 9. Quality Auditor & Headless One-Shot Auto-Healer
+./bin/r19dev audit /Volumes/home/BT/organized --heal
+./bin/r19dev audit /Volumes/home/BT/organized --no-tui
 ```
 
 ---
@@ -255,6 +260,7 @@ The following major roadmap milestones from previous versions are now **fully co
 - ✅ **Sukebei Nyaa Torrent Discovery & Smart Scorer**: Quality scoring (4K, 1080p, Uncensored, Chinese subs, seed health).
 - ✅ **Transmission JSON-RPC Direct Integration**: Thread-safe CSRF handshake, queue status, magnet/torrent submission.
 - ✅ **Persistent Download Queue & NAS Staging**: SQLite download queue state machine with REST APIs.
+- ✅ **3-Tier Preventative Asset Protection**: Level 1 (Predictive DMM CDN pattern fallback `GenerateDMMSampleURLs`), Level 2 (Scraper resiliency & 5-retry adaptive backoff on HTTP 429), and Level 3 (Headless CLI One-Shot Repair & Auto-Heal `r19dev audit --heal`).
 
 Recommended future enhancements:
 1. **Multi-Provider Scraper Fallbacks**:
